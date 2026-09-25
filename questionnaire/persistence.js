@@ -10,20 +10,30 @@ export function serializeAnswer(question,value,context={}){
   const t=qtype(question);
   // Choice storage is determined by the configured source, not by the display
   // label of Type_question. This supports custom labels such as "Sélection unique".
-  if(hasDirectChoices(question,context)){out.Valeur_texte=codeOf(value);return out;}
+  // A configured referential is authoritative. Some migrated questionnaires may
+  // still contain legacy CHOIX_QUESTIONS rows for the same question.
   if(refCode(question)){
     if(refSource(question,context)==="STRUCTURES") out.Valeur_structure_Code=codeOf(value); else out.Valeur_reference_Code=codeOf(value);
     return out;
   }
+  if(hasDirectChoices(question,context)){out.Valeur_texte=codeOf(value);return out;}
   if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")||t.includes("montant")){out.Valeur_nombre=Number(value);return out;}
   if(t.includes("date")){out.Valeur_date=value;return out;}
   if(t.includes("bool")||t.includes("oui/non")){out.Valeur_booleen=isTrue(value);return out;}
   out.Valeur_texte=String(value); return out;
 }
+function storedRefCode(value,rows,codeCol){
+  const raw=codeOf(value);
+  const found=(rows??[]).find(r=>String(r.id)===raw || codeOf(r?.[codeCol])===raw);
+  return found ? codeOf(found[codeCol]) : raw;
+}
 export function deserializeAnswer(question,row,context={}){
   if(!row) return ""; const t=qtype(question);
+  if(refCode(question)) {
+    if(refSource(question,context)==="STRUCTURES") return storedRefCode(row.Valeur_structure_Code,context.structures,"Structure_Code");
+    return storedRefCode(row.Valeur_reference_Code,context.referentialValues,"ValeurRef_Code");
+  }
   if(hasDirectChoices(question,context)) return row.Valeur_texte ?? "";
-  if(refCode(question)) return refSource(question,context)==="STRUCTURES" ? codeOf(row.Valeur_structure_Code) : codeOf(row.Valeur_reference_Code);
   if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")||t.includes("montant")) return row.Valeur_nombre ?? "";
   if(t.includes("date")) return row.Valeur_date ?? "";
   if(t.includes("bool")||t.includes("oui/non")) return row.Valeur_booleen ?? "";
