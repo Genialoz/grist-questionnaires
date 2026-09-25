@@ -152,7 +152,17 @@ export function buildRepeatableTypes(def, pageCode) {
 
 export function visibleFicheQuestions(type, def, answers={}) {
   const diagnostics=[];
-  return type.questions
+  // Re-resolve the fiche questions from the authoritative questionnaire definition.
+  // A repeatable type embedded in a page can be a derived view; relying only on
+  // type.questions made completeness incorrectly report "Complet" when that
+  // derived list was absent/stale while the QUESTIONS table still contained the
+  // required fiche questions.
+  const typeCode=codeOf(type?.code ?? type?.TypeFiche_Code);
+  const authoritative=sortByOrder((def.questions ?? []).filter(q=>
+    active(q) && resolveRefCode(q.TypeFiche_Code,def.ficheTypes ?? [],"TypeFiche_Code")===typeCode
+  ));
+  const questions=authoritative.length ? authoritative : (type.questions ?? []);
+  return questions
     .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
     .map(q=>({...q,options:optionsFor(q,def)}));
 }
