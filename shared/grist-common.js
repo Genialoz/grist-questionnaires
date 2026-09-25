@@ -69,9 +69,15 @@ export function isTrue(v) {
   return v === true || v === 1 || String(v).toLowerCase() === "true" || String(v).toLowerCase() === "oui";
 }
 
+export function isRequiredQuestion(question={}) {
+  const mode = String(question.Mode_obligatoire ?? "").trim().toLowerCase();
+  if (mode) return mode === "obligatoire";
+  return isTrue(question.Obligatoire);
+}
+
 export function validateQuestion(question, value, visible=true) {
   if (!visible) return "";
-  const required = isTrue(question.Obligatoire);
+  const required = isRequiredQuestion(question);
   const empty = value == null || value === "" || (Array.isArray(value) && !value.length);
   if (required && empty) return "Ce champ est obligatoire.";
   if (empty) return "";
