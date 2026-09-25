@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"" };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"" };
 
 function active(row) { return row.Active === undefined || row.Active === null || row.Active === "" || isTrue(row.Active); }
 export function resolveRefCode(value, rows, codeColumn) {
@@ -295,7 +295,7 @@ function render() {
   const page=vm.pages[state.pageIndex];
   const title=first(vm.version,["Titre","Titre_affiche","Nom"],"Questionnaire");
   const intro=first(vm.version,["Introduction","Texte_introduction"],"");
-  status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
+  status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
   root.innerHTML=`<div class="card">
     <header class="header"><h1>${escapeHtml(title)}</h1>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
@@ -307,7 +307,11 @@ function render() {
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition)).join("")}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
   </div>`;
-  nav.innerHTML=`<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
+  const locked=responseIsLocked();
+  nav.innerHTML=locked
+    ? `<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div>`
+    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
+  if(locked) root.querySelectorAll("input,select,textarea,button").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
@@ -403,6 +407,8 @@ export function validateVisiblePage(page, answers={}) {
 }
 
 async function nextPage(vm,page) {
+  state.statusMessage="";
+  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
   const errors=validateVisiblePage(page,state.answers);
   const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches);
   document.querySelectorAll(".field").forEach(x=>x.classList.remove("invalid"));
@@ -420,8 +426,8 @@ async function nextPage(vm,page) {
   if (state.pageIndex < vm.pages.length-1) { state.pageIndex++; render(); return; }
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
-  try { await finalizeResponse(); document.querySelector("#status").innerHTML=`<div class="status-info">Questionnaire validé et enregistré.</div>`; render(); }
-  catch(e){showSaveError(e);}
+  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
+  catch(e){state.saving=false;showSaveError(e);render();}
 }
 
 
@@ -450,7 +456,7 @@ async function copyResumeLink(afterSave=false){
 }
 async function saveAndQuit(){
   if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de quitter."));return;}
-  if(await savePrincipal()) await copyResumeLink(true);
+  if(await savePrincipal()){render();await copyResumeLink(true);}
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
