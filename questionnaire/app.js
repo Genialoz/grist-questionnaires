@@ -192,6 +192,7 @@ export function allowsPostValidationEdit(version={}) {
   return isTrue(first(version,["Autoriser_modification_apres_validation","Modification_apres_validation","Modifiable_apres_validation"],false));
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
+function responseIsDeleted(){return isTrue(state.response?.Supprime_logiquement);}
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
@@ -226,8 +227,8 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     isTrue(q.Lecture_seule)?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"}>Effacer la réponse</button>`:""}</div>`;
-  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
+  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -286,6 +287,11 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
 
 function render() {
   const root=document.querySelector("#form-root"), nav=document.querySelector("#navigation"), status=document.querySelector("#status");
+  if(responseIsDeleted()) {
+    status.innerHTML=`<div class="status-info">Cette réponse a été supprimée. Elle n’est plus accessible ni modifiable.</div>`;
+    root.innerHTML=`<div class="card deleted-response"><h1>Réponse supprimée</h1><p>Votre réponse a bien été supprimée. Ce lien de reprise ne permet plus de la consulter ou de la modifier.</p></div>`;
+    nav.innerHTML=""; return;
+  }
   const vm=buildViewModel(state.definition,state.answers); state.diagnostics=vm.diagnostics;
   if (!vm.pages.length) {
     const d=state.definition;
@@ -360,6 +366,7 @@ function render() {
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
   status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
+  status.querySelector("[data-delete-response]")?.addEventListener("click",()=>deleteResponse());
   document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){state.pageIndex++;render();}return;}nextPage(vm,page)});
 
@@ -478,8 +485,8 @@ function accessibleResponse(def){
 }
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
-  if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button></div></div>`;
-  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button></div></div>`;
+  if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button><button type="button" class="btn btn-small btn-danger" data-delete-response>Supprimer ma réponse</button></div></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button><button type="button" class="btn btn-small btn-danger" data-delete-response>Supprimer ma réponse</button></div></div>`;
 }
 export function campaignResumeBaseUrl(campaign, referrer="") {
   const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
@@ -499,6 +506,20 @@ async function copyResumeLink(afterSave=false){
 async function saveAndQuit(){
   if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de quitter."));return;}
   if(await savePrincipal()){render();await copyResumeLink(true);}
+}
+async function deleteResponse(){
+  if(!state.response || responseIsDeleted()) return;
+  const confirmed=globalThis.confirm?.("Supprimer définitivement l’accès à cette réponse ? Cette action ne pourra pas être annulée par le répondant.");
+  if(!confirmed) return;
+  try {
+    state.saving=true; state.saveError=""; render();
+    const fresh=await checkResponseRevision();
+    if(!fresh) throw new Error("La réponse à supprimer est introuvable.");
+    await grist.docApi.applyUserActions([["UpdateRecord","REPONSES",fresh.id,{Supprime_logiquement:true,Revision:Number(fresh.Revision||0)+1}]]);
+    await refreshPersistenceRows();
+    state.response=state.definition.responses.find(r=>r.id===fresh.id) ?? {...fresh,Supprime_logiquement:true};
+    state.saving=false; state.ficheEditor=null; render();
+  } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
@@ -548,7 +569,8 @@ async function boot() {
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     const resumed=accessibleResponse(state.definition);
-    const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
+    const deleted=(state.definition.responses??[]).find(r=>isTrue(r.Supprime_logiquement));
+    const rc=resumed?.Reponse_Code ?? deleted?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     render();
   } catch(e) {

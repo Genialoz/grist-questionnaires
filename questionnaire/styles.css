@@ -59,3 +59,4 @@ textarea { min-height:110px; resize:vertical; }
 .response-status-validated{background:#edf4ff;color:#234f88}
 
 .fiche-validation-summary { margin-top:16px; padding:10px 12px; border:1px solid #a31621; border-radius:8px; background:#fff7f7; color:#8a101a; font-size:.92rem; font-weight:600; }
+.btn-danger{border-color:#b4232c;color:#9d1720;background:#fff}.btn-danger:hover{background:#fff4f4}.deleted-response{border-color:#e1c7c9}
