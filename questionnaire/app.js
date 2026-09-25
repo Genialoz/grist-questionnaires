@@ -1,4 +1,4 @@
-import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, validateQuestion} from "../shared/grist-common.js";
+import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion} from "../shared/grist-common.js";
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 
 export const TABLES = [
@@ -233,7 +233,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
 
 function renderFicheField(q, answers) {
   const qc=codeOf(q.Question_Code);
-  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isTrue(q.Obligatoire)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function ficheSummary(fiche,index) {
   const firstValue=Object.values(fiche.answers ?? {}).find(v=>v!=="" && v!=null);
@@ -330,7 +330,7 @@ function render() {
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>`<section class="section">${s.questions.length?`<h2>${escapeHtml(first(s,["Titre","Libelle","Libellé","Nom"],""))}</h2>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isTrue(q.Obligatoire)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
