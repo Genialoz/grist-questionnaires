@@ -118,7 +118,7 @@ function renderControl(q) {
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
   if (kind==="select") return `<select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>`;
-  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}</div>`;
+  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${value!=="" && !isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-clear-question="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -172,6 +172,11 @@ function render() {
   nav.innerHTML=`<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Terminer la prévisualisation":"Suivant"}</button>`;
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
+  root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
+    const code=e.currentTarget.dataset.clearQuestion;
+    state.answers[code]="";
+    render();
+  }));
   document.querySelector("#prev")?.addEventListener("click",()=>{state.pageIndex--;render()});
   document.querySelector("#next")?.addEventListener("click",()=>nextPage(vm,page));
 }

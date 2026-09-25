@@ -31,3 +31,5 @@ textarea { min-height:110px; resize:vertical; }
 .btn:disabled { opacity:.45; cursor:not-allowed; }
 .preview-badge { display:inline-block; font-size:.78rem; padding:4px 8px; border-radius:99px; background:#eee9f5; color:#5c3b8b; margin-bottom:10px; }
 @media (max-width:600px){ #app{padding:12px}.card{padding:16px}.header h1{font-size:1.35rem} }
+
+.clear-answer { justify-self:start; border:0; background:transparent; padding:2px 0; color:#65418f; text-decoration:underline; font-size:.88rem; }
