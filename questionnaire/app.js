@@ -20,6 +20,18 @@ export function resolveRefCode(value, rows, codeColumn) {
 function first(row, names, fallback="") { for (const n of names) if (row?.[n] != null && row[n] !== "") return row[n]; return fallback; }
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
+export function buildResumeUrl(gristPageUrl, accessToken, resumeToken) {
+  const access=String(accessToken??"").trim(), resume=String(resumeToken??"").trim();
+  if(!access || !resume) throw new Error("Le lien de reprise ne peut pas être généré : jeton manquant.");
+  let url;
+  try { url=new URL(String(gristPageUrl??"")); } catch { throw new Error("Adresse de la page Grist indisponible pour générer le lien de reprise."); }
+  if(!/^https?:$/.test(url.protocol) || !/(?:\/o\/docs\/|\/doc\/)/.test(url.pathname)) throw new Error("Adresse Grist invalide pour générer le lien de reprise.");
+  url.search=""; url.hash="";
+  url.searchParams.set("Acces_",access);
+  url.searchParams.set("Reprise_",resume);
+  return url.toString();
+}
+
 
 export function normalizeRules(loaded) {
   return (loaded.REGLES_CONDITION ?? []).map(rule=>({
@@ -314,6 +326,8 @@ function render() {
   root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{if(state.ficheEditor){state.ficheEditor.answers[e.currentTarget.dataset.clearFicheQuestion]="";render()}}));
   root.querySelector("[data-cancel-fiche]")?.addEventListener("click",()=>{state.ficheEditor=null;render()});
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
+  status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
+  status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
   document.querySelector("#prev")?.addEventListener("click",async()=>{if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>nextPage(vm,page));
 
@@ -417,7 +431,19 @@ function accessibleResponse(def){
 }
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
-  return `<div class="resume-notice"><strong>Reprise activée</strong><p>Cette réponse possède un jeton individuel. Le lien Grist de reprise sera fourni par la configuration sécurisée de la campagne.</p></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button></div></div>`;
+}
+function currentResumeUrl(){return buildResumeUrl(document.referrer,selectedCampaign().Jeton_acces,state.response?.Jeton_reprise);}
+async function copyText(text){
+  if(globalThis.navigator?.clipboard?.writeText){await navigator.clipboard.writeText(text);return;}
+  const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();const ok=document.execCommand?.("copy");area.remove();if(!ok)throw new Error("La copie automatique du lien a échoué.");
+}
+async function copyResumeLink(afterSave=false){
+  try{const url=currentResumeUrl();await copyText(url);state.saveError="";const node=document.querySelector("#status");if(node)node.insertAdjacentHTML("afterbegin",`<div class="status-info">${afterSave?"Réponse sauvegardée. ":""}Lien de reprise copié. Vous pouvez le conserver pour revenir plus tard.</div>`);}catch(e){showSaveError(e);}
+}
+async function saveAndQuit(){
+  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de quitter."));return;}
+  if(await savePrincipal()) await copyResumeLink(true);
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
