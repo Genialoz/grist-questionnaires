@@ -33,3 +33,17 @@ textarea { min-height:110px; resize:vertical; }
 @media (max-width:600px){ #app{padding:12px}.card{padding:16px}.header h1{font-size:1.35rem} }
 
 .clear-answer { justify-self:start; border:0; background:transparent; padding:2px 0; color:#65418f; text-decoration:underline; font-size:.88rem; }
+
+.repeatable { margin-top:24px; padding-top:20px; border-top:1px solid #ecebf0; }
+.repeatable-heading { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+.repeatable-heading h3 { margin:0; }
+.repeatable-heading span,.fiche-summary,.empty-fiches { color:#696875; font-size:.9rem; }
+.fiche-card { display:flex; justify-content:space-between; gap:16px; align-items:center; border:1px solid #dedde5; border-radius:10px; padding:14px; margin:12px 0; }
+.fiche-actions,.fiche-editor-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.btn-small { padding:6px 10px; font-size:.88rem; }
+.add-fiche { margin-top:8px; }
+.fiche-editor { border:1px solid #cfc8da; border-radius:12px; padding:18px; margin-top:14px; background:#fbfaff; }
+.fiche-editor h3 { margin-top:0; }
+.fiche-editor-actions { justify-content:flex-end; margin-top:18px; }
+.fiche-count-error { color:#a31621; font-size:.88rem; margin:6px 0; }
+@media (max-width:600px){.fiche-card{align-items:flex-start;flex-direction:column}.fiche-actions{width:100%}}
