@@ -242,6 +242,12 @@ export function validateFiche(type,def,answers={},principalAnswers={}) {
   return errors;
 }
 
+export function ficheCompleteness(type,def,fiche={},principalAnswers={}) {
+  const errors=validateFiche(type,def,fiche.answers ?? {},principalAnswers);
+  const complete=Object.keys(errors).length===0;
+  return complete ? {state:"complete",label:"Complet",complete:true} : {state:"incomplete",label:"À compléter",complete:false};
+}
+
 export function canAddFiche(type,list=[]) {
   if (!type.allowAdd) return false;
   return type.maximum==null || list.length<type.maximum;
@@ -262,7 +268,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const list=targetState.fiches[type.code] ?? [];
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
   const atMax=!canAddFiche(type,list);
-  const cards=list.map((fiche,index)=>`<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status">${escapeHtml(fiche.status || "Brouillon")}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`).join("");
+  const cards=list.map((fiche,index)=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{});return `<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${cards || `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>`}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!readOnly && !editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
 }
