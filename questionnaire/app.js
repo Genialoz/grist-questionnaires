@@ -181,6 +181,15 @@ export function allowsPostValidationEdit(version={}) {
   return isTrue(first(version,["Autoriser_modification_apres_validation","Modification_apres_validation","Modifiable_apres_validation"],false));
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
+
+export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
+  if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
+  const errors=validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions);
+  const incomplete=Object.keys(errors.principal).length>0 || Object.keys(errors.fiches).length>0;
+  return incomplete
+    ? {state:"incomplete",label:"Brouillon · À compléter",ready:false}
+    : {state:"ready",label:"Brouillon · Prêt à valider",ready:true};
+}
 function assertResponseEditable(){if(responseIsLocked())throw new Error("Cette réponse a été validée et n’est plus modifiable.");}
 
 export function controlKind(question) {
@@ -299,8 +308,9 @@ function render() {
   status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
   const locked=responseIsLocked();
+  const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
-    <header class="header"><h1>${escapeHtml(title)}</h1>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
+    <header class="header"><div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>`<section class="section">${s.questions.length?`<h2>${escapeHtml(first(s,["Titre","Libelle","Libellé","Nom"],""))}</h2>`:""}
