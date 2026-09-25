@@ -45,6 +45,13 @@ export function validateWholeResponse(definition,viewModel,answers,fiches,valida
   return errors;
 }
 
+export function addedRecordId(result){
+  const value=Array.isArray(result) ? result[0] : result;
+  if(Number.isInteger(value) && value>0) return value;
+  if(value && Number.isInteger(value.id) && value.id>0) return value.id;
+  throw new Error("Grist n’a pas renvoyé l’identifiant de la ligne créée.");
+}
+
 export function generateResumeToken(cryptoLike=globalThis.crypto){
   if(!cryptoLike?.getRandomValues) throw new Error("Génération sécurisée du lien de reprise indisponible.");
   const bytes=new Uint8Array(32); cryptoLike.getRandomValues(bytes);
