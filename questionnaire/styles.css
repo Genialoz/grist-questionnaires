@@ -57,3 +57,5 @@ textarea { min-height:110px; resize:vertical; }
 .response-status{display:inline-flex;align-items:center;padding:.3rem .65rem;border-radius:999px;font-size:.82rem;font-weight:700;white-space:nowrap;background:#eef1f5;color:#4b5563}
 .response-status-ready{background:#eef7f0;color:#28613a}
 .response-status-validated{background:#edf4ff;color:#234f88}
+
+.fiche-validation-summary { margin-top:16px; padding:10px 12px; border:1px solid #a31621; border-radius:8px; background:#fff7f7; color:#8a101a; font-size:.92rem; font-weight:600; }

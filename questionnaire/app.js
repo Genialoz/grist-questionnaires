@@ -280,7 +280,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
   const atMax=!canAddFiche(type,list);
   const cards=list.map((fiche,index)=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{});return `<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
-  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${cards || `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>`}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!readOnly && !editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
 }
 
@@ -407,7 +407,20 @@ async function saveCurrentFiche() {
     const node=document.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`);
     if(node) node.textContent=msg;
   }
-  if (Object.keys(errors).length) return;
+  if (Object.keys(errors).length) {
+    const summary=document.querySelector("[data-fiche-validation-summary]");
+    if (summary) {
+      summary.textContent="Certains champs obligatoires doivent être complétés avant d’enregistrer la fiche.";
+      summary.hidden=false;
+    }
+    const firstCode=Object.keys(errors)[0];
+    const firstField=document.querySelector(`[data-fiche-field="${CSS.escape(firstCode)}"]`);
+    if (firstField) {
+      firstField.scrollIntoView?.({behavior:"smooth",block:"center"});
+      firstField.querySelector("input, select, textarea, button")?.focus?.({preventScroll:true});
+    }
+    return;
+  }
   try {
     state.saving=true; render();
     await persistFiche(type,state.ficheEditor);
