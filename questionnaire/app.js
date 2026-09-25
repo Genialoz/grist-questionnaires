@@ -1,5 +1,5 @@
 import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, validateQuestion} from "../shared/grist-common.js";
-import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken, addedRecordId} from "./persistence.js";
+import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
@@ -406,10 +406,21 @@ function selectedCampaign(){const cs=state.definition.campaigns??[]; /* Jeton_ac
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), code=uniqueCode("REP"), vc=state.definition.version.id;
-  if(!state.response){const fields={Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces};const result=await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,fields]]);state.response={id:addedRecordId(result),...fields};}
-  if(!state.response)throw new Error("La réponse n’a pas pu être créée dans Grist.");
+  if(!state.response){
+    const fields={Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces};
+    await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,fields]]);
+    await refreshPersistenceRows();
+    state.response=state.definition.responses.find(r=>codeOf(r.Reponse_Code)===codeOf(code))??null;
+  }
+  if(!state.response)throw new Error("La réponse a été créée mais n’est pas relisible dans cette session Grist.");
   let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement));
-  if(!principal){const ec=uniqueCode("ELT"),fields={Element_Code:ec,Reponse_Code:state.response.id,Type_element:"Principal",Statut:"Brouillon",Ordre:0,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};const result=await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);principal={id:addedRecordId(result),...fields};}
+  if(!principal){
+    const ec=uniqueCode("ELT"),fields={Element_Code:ec,Reponse_Code:state.response.id,Type_element:"Principal",Statut:"Brouillon",Ordre:0,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};
+    await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);
+    await refreshPersistenceRows();
+    principal=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===codeOf(ec))??null;
+  }
+  if(!principal)throw new Error("L’élément principal a été créé mais n’est pas relisible dans cette session Grist.");
   state.principalElement=principal;
 }
 function gristValueFields(question,value){const fields=serializeAnswer(question,value,state.definition);if(fields.Valeur_reference_Code)fields.Valeur_reference_Code=rowIdByCode(state.definition.referentialValues,"ValeurRef_Code",fields.Valeur_reference_Code);if(fields.Valeur_structure_Code)fields.Valeur_structure_Code=rowIdByCode(state.definition.structures,"Structure_Code",fields.Valeur_structure_Code);return fields;}
