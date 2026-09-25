@@ -75,22 +75,24 @@ function conditionVisible(conditionCode, def, answers, diagnostics) {
   catch(e){ diagnostics.push(`Condition ${cc} invalide : ${e.message}`); return false; }
 }
 
-function optionsFor(q, def) {
+export function optionsFor(q, def) {
   const qc=codeOf(q.Question_Code);
-  const direct=sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
-    .map(c=>({value:codeOf(c.Choix_Code), label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
-  if (direct.length) return direct;
   const rc=resolveRefCode(q.Referentiel_Code,def.referentials,"Referentiel_Code");
-  if (!rc) return [];
-  const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
-  const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
-  if (source==="STRUCTURES") {
-    return sortByOrder((def.structures ?? []).filter(active))
-      .map(v=>({value:codeOf(v.Structure_Code), label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
+  if (rc) {
+    const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
+    const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
+    if (source==="STRUCTURES") {
+      return sortByOrder((def.structures ?? []).filter(active))
+        .map(v=>({value:codeOf(v.Structure_Code), label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
+    }
+    if (source==="VALEURS_REFERENTIELS") {
+      return sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)))
+        .map(v=>({value:codeOf(v.ValeurRef_Code), label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
+    }
+    return [];
   }
-  if (source!=="VALEURS_REFERENTIELS") return [];
-  return sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)))
-    .map(v=>({value:codeOf(v.ValeurRef_Code), label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
+  return sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
+    .map(c=>({value:codeOf(c.Choix_Code), label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
 }
 
 
