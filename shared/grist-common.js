@@ -70,7 +70,7 @@ export function isTrue(v) {
 }
 
 export function isRequiredQuestion(question={}) {
-  const mode = String(question.Mode_obligatoire ?? "").trim().toLowerCase();
+  const mode = String(question.Mode_obligation ?? question.Mode_obligatoire ?? "").trim().toLowerCase();
   if (mode) return mode === "obligatoire";
   return isTrue(question.Obligatoire);
 }
