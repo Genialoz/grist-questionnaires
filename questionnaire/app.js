@@ -206,7 +206,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     isTrue(q.Lecture_seule)?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") return `<select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>`;
+  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
   if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
@@ -222,9 +222,10 @@ function ficheSummary(fiche,index) {
 }
 
 
-export function validateFiche(type,def,answers={}) {
+export function validateFiche(type,def,answers={},principalAnswers={}) {
   const errors={};
-  for (const q of visibleFicheQuestions(type,def,answers)) {
+  const conditionAnswers={...principalAnswers,...answers};
+  for (const q of visibleFicheQuestions(type,def,conditionAnswers)) {
     const code=codeOf(q.Question_Code);
     const error=validateQuestion(q,answers[code],true);
     if (error) errors[code]=error;
@@ -240,11 +241,10 @@ export function validateFicheCounts(types=[],fiches={}) {
   const errors={};
   for (const type of types) {
     const count=(fiches[type.code] ?? []).length;
-    if (count<type.minimum) {
-      const singular=String(type.labelSingular || "fiche").toLowerCase();
-      const plural=String(type.labelPlural || `${singular}s`).toLowerCase();
-      errors[type.code]=`Vous devez saisir au moins ${type.minimum} ${type.minimum>1?plural:singular}.`;
-    }
+    const singular=String(type.labelSingular || "fiche").toLowerCase();
+    const plural=String(type.labelPlural || `${singular}s`).toLowerCase();
+    if (count<type.minimum) errors[type.code]=`Vous devez saisir au moins ${type.minimum} ${type.minimum>1?plural:singular}.`;
+    else if (type.maximum!=null && count>type.maximum) errors[type.code]=`Vous ne pouvez pas saisir plus de ${type.maximum} ${type.maximum>1?plural:singular}.`;
   }
   return errors;
 }
@@ -254,7 +254,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
   const atMax=!canAddFiche(type,list);
   const cards=list.map((fiche,index)=>`<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status">${escapeHtml(fiche.status || "Brouillon")}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`).join("");
-  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,editor.answers).map(q=>renderFicheField(q,editor.answers)).join("")}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${cards || `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>`}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!readOnly && !editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
 }
 
@@ -372,7 +372,7 @@ async function saveCurrentFiche() {
   const page=vm.pages[state.pageIndex];
   const type=(page?.repeatableTypes ?? []).find(t=>t.code===state.ficheEditor.typeCode);
   if (!type) return;
-  const errors=validateFiche(type,state.definition,state.ficheEditor.answers);
+  const errors=validateFiche(type,state.definition,state.ficheEditor.answers,state.answers);
   document.querySelectorAll("[data-fiche-field]").forEach(x=>x.classList.remove("invalid"));
   document.querySelectorAll("[data-fiche-error]").forEach(x=>x.textContent="");
   for (const [code,msg] of Object.entries(errors)) {
