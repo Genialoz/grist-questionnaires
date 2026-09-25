@@ -335,6 +335,7 @@ function render() {
     </section>`).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
+    ${(()=>{const q=(state.definition?.questions??[]).find(x=>codeOf(x.Question_Code)==="Q002");if(!q)return `<div class="diagnostic"><strong>Diagnostic Q002 :</strong> question introuvable</div>`;const keys=Object.keys(q).filter(k=>/oblig|mode/i.test(k));return `<div class="diagnostic"><strong>Diagnostic Q002 :</strong> clés=${escapeHtml(keys.join(", ")||"aucune")} · Mode_obligatoire=${escapeHtml(String(q.Mode_obligatoire))} · Obligatoire=${escapeHtml(String(q.Obligatoire))} · reconnu_obligatoire=${isRequiredQuestion(q)?"OUI":"NON"}</div>`;})()}
   </div>`;
   nav.innerHTML=locked
     ? `<div class="readonly-nav"><div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
