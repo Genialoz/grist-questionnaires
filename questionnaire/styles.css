@@ -1,0 +1,33 @@
+body { background:#f5f4f8; }
+#app { max-width:900px; margin:0 auto; padding:24px; }
+.card { background:white; border:1px solid #dedde5; border-radius:14px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,.04); }
+.header { margin-bottom:18px; }
+.header h1 { margin:0 0 8px; font-size:1.65rem; }
+.intro { color:#5b5a66; white-space:pre-wrap; }
+.progress { height:7px; background:#e8e7ec; border-radius:99px; overflow:hidden; margin:18px 0 8px; }
+.progress > div { height:100%; background:#6f4aa8; transition:width .2s; }
+.progress-label { font-size:.86rem; color:#666; }
+.section { border-top:1px solid #ecebf0; padding-top:20px; margin-top:20px; }
+.section:first-child { border-top:0; padding-top:0; }
+.section h2 { font-size:1.15rem; }
+.field { margin:18px 0; }
+.field label,.field legend { font-weight:650; display:block; margin-bottom:7px; }
+.required { color:#8c2452; }
+.help { font-size:.9rem; color:#696875; margin:5px 0; }
+input,select,textarea { width:100%; border:1px solid #bdbbc5; border-radius:8px; padding:10px 11px; background:white; }
+textarea { min-height:110px; resize:vertical; }
+.radio-group { display:grid; gap:8px; }
+.radio-option { display:flex; gap:8px; align-items:flex-start; font-weight:400 !important; }
+.radio-option input { width:auto; margin-top:4px; }
+.error { color:#a31621; font-size:.88rem; margin-top:5px; }
+.invalid input,.invalid select,.invalid textarea { border-color:#a31621; }
+#status { margin-bottom:12px; }
+.status-error { padding:12px; border-radius:8px; background:#fff0f0; color:#8a111a; white-space:pre-wrap; }
+.status-info { padding:12px; border-radius:8px; background:#f0f3f8; color:#424653; }
+.diagnostic { margin-top:16px; font-size:.82rem; color:#755; }
+#navigation { display:flex; justify-content:space-between; gap:12px; margin-top:24px; }
+.btn { border:1px solid #77717f; border-radius:8px; padding:9px 16px; background:white; }
+.btn-primary { background:#6f4aa8; color:white; border-color:#6f4aa8; margin-left:auto; }
+.btn:disabled { opacity:.45; cursor:not-allowed; }
+.preview-badge { display:inline-block; font-size:.78rem; padding:4px 8px; border-radius:99px; background:#eee9f5; color:#5c3b8b; margin-bottom:10px; }
+@media (max-width:600px){ #app{padding:12px}.card{padding:16px}.header h1{font-size:1.35rem} }
