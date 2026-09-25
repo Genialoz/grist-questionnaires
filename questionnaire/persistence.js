@@ -33,7 +33,10 @@ export function hydrateResponse(rows,definition,reponseCode){
   const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>String(e.Type_element??"").toLowerCase()==="fiche"&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
-    const tc=codeOf(el.TypeFiche_Code); if(!tc) continue; (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,revision:Number(el.Revision||0),status:el.Statut||"Brouillon",answers:answersFor(el)});
+    const rawTc=codeOf(el.TypeFiche_Code);
+    const ficheType=(definition.ficheTypes??[]).find(t=>String(t.id)===rawTc || codeOf(t.TypeFiche_Code)===rawTc);
+    const tc=ficheType ? codeOf(ficheType.TypeFiche_Code) : rawTc;
+    if(!tc) continue; (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,revision:Number(el.Revision||0),status:el.Statut||"Brouillon",answers:answersFor(el)});
   }
   return {response,principalAnswers:principal?answersFor(principal):{},principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
 }
