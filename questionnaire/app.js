@@ -1,11 +1,13 @@
 import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, validateQuestion} from "../shared/grist-common.js";
+import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
-  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION"
+  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION",
+  "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false };
 
 function active(row) { return row.Active === undefined || row.Active === null || row.Active === "" || isTrue(row.Active); }
 export function resolveRefCode(value, rows, codeColumn) {
@@ -56,7 +58,11 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     referentialValues:loaded.VALEURS_REFERENTIELS.filter(active),
     structures:loaded.STRUCTURES.filter(active),
     conditions:byVersion(loaded.CONDITIONS).filter(active),
-    rules:normalizeRules(loaded)
+    rules:normalizeRules(loaded),
+    campaigns:byVersion(loaded.CAMPAGNES).filter(active),
+    responses:loaded.REPONSES,
+    responseElements:loaded.ELEMENTS_REPONSE,
+    responseValues:loaded.VALEURS_REPONSE
   };
 }
 
@@ -157,6 +163,12 @@ export function buildViewModel(def, answers={}) {
   return {version:def.version,pages,diagnostics};
 }
 
+export function allowsPostValidationEdit(version={}) {
+  return isTrue(first(version,["Autoriser_modification_apres_validation","Modification_apres_validation","Modifiable_apres_validation"],false));
+}
+function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
+function assertResponseEditable(){if(responseIsLocked())throw new Error("Cette réponse a été validée et n’est plus modifiable.");}
+
 export function controlKind(question) {
   const t=String(question.Type_question ?? question.Type ?? "").trim().toLowerCase();
   if (t.includes("texte long")) return "textarea";
@@ -227,7 +239,7 @@ export function renderRepeatableType(type,targetState,def) {
   const list=targetState.fiches[type.code] ?? [];
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
   const atMax=!canAddFiche(type,list);
-  const cards=list.map((fiche,index)=>`<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">Modifier</button>${type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`).join("");
+  const cards=list.map((fiche,index)=>`<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status">${escapeHtml(fiche.status || "Brouillon")}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">Modifier</button>${type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`).join("");
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,editor.answers).map(q=>renderFicheField(q,editor.answers)).join("")}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>Annuler</button><button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button></div></div>`:"";
   return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${cards || `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>`}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
 }
@@ -269,18 +281,19 @@ function render() {
   const page=vm.pages[state.pageIndex];
   const title=first(vm.version,["Titre","Titre_affiche","Nom"],"Questionnaire");
   const intro=first(vm.version,["Introduction","Texte_introduction"],"");
-  status.innerHTML="";
+  status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+resumeNotice();
+  const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
   root.innerHTML=`<div class="card">
-    <header class="header"><span class="preview-badge">Prévisualisation</span><h1>${escapeHtml(title)}</h1>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
-    <div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div></header>
+    <header class="header"><h1>${escapeHtml(title)}</h1>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
+    ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
-    ${page.sections.map(s=>`<section class="section"><h2>${escapeHtml(first(s,["Titre","Libelle","Libellé","Nom"],""))}</h2>
+    ${page.sections.map(s=>`<section class="section">${s.questions.length?`<h2>${escapeHtml(first(s,["Titre","Libelle","Libellé","Nom"],""))}</h2>`:""}
       ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isTrue(q.Obligatoire)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition)).join("")}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
   </div>`;
-  nav.innerHTML=`<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Terminer la prévisualisation":"Suivant"}</button>`;
+  nav.innerHTML=`<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
@@ -293,14 +306,15 @@ function render() {
     const typeCode=e.currentTarget.dataset.editFiche, index=Number(e.currentTarget.dataset.index);
     state.ficheEditor={typeCode,index,answers:{...(state.fiches[typeCode]?.[index]?.answers ?? {})}}; render();
   }));
-  root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>{deleteFiche(state,e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index));render()}));
+  root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
   root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
   root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{if(state.ficheEditor){state.ficheEditor.answers[e.currentTarget.dataset.clearFicheQuestion]="";render()}}));
   root.querySelector("[data-cancel-fiche]")?.addEventListener("click",()=>{state.ficheEditor=null;render()});
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
-  document.querySelector("#prev")?.addEventListener("click",()=>{state.pageIndex--;render()});
+  document.querySelector("#prev")?.addEventListener("click",async()=>{if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>nextPage(vm,page));
+
 }
 
 
@@ -311,7 +325,7 @@ function onFicheAnswer(e) {
   state.ficheEditor.answers[code]=e.target.value;
   if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
 }
-function saveCurrentFiche() {
+async function saveCurrentFiche() {
   if (!state.ficheEditor) return;
   const vm=buildViewModel(state.definition,state.answers);
   const page=vm.pages[state.pageIndex];
@@ -326,8 +340,11 @@ function saveCurrentFiche() {
     if(node) node.textContent=msg;
   }
   if (Object.keys(errors).length) return;
-  saveDraftFiche(state);
-  render();
+  try {
+    state.saving=true; render();
+    await persistFiche(type,state.ficheEditor);
+    state.ficheEditor=null; state.saving=false; render();
+  } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
 function onAnswer(e) {
@@ -349,7 +366,7 @@ export function validateVisiblePage(page, answers={}) {
   return errors;
 }
 
-function nextPage(vm,page) {
+async function nextPage(vm,page) {
   const errors=validateVisiblePage(page,state.answers);
   const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches);
   document.querySelectorAll(".field").forEach(x=>x.classList.remove("invalid"));
@@ -363,11 +380,52 @@ function nextPage(vm,page) {
     if(node) node.textContent=msg;
   }
   if (Object.keys(errors).length || Object.keys(ficheErrors).length) return;
+  if (!await savePrincipal()) return;
   if (state.pageIndex < vm.pages.length-1) { state.pageIndex++; render(); return; }
-  document.querySelector("#form-root").innerHTML=`<div class="card"><span class="preview-badge">Prévisualisation</span><h1>Fin de la prévisualisation</h1><p>Aucune réponse n’a été enregistrée dans Grist.</p></div>`;
-  document.querySelector("#navigation").innerHTML=`<button class="btn" id="restart-preview">Revenir au questionnaire</button>`;
-  document.querySelector("#restart-preview").addEventListener("click",()=>{state.pageIndex=0;render()});
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
+  try { await finalizeResponse(); document.querySelector("#status").innerHTML=`<div class="status-info">Questionnaire validé et enregistré.</div>`; render(); }
+  catch(e){showSaveError(e);}
 }
+
+
+function accessibleResponse(def){
+  const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
+  return rows.length===1 ? rows[0] : null;
+}
+function resumeNotice(){
+  if(!state.response?.Jeton_reprise)return "";
+  return `<div class="resume-notice"><strong>Reprise activée</strong><p>Cette réponse possède un jeton individuel. Le lien Grist de reprise sera fourni par la configuration sécurisée de la campagne.</p></div>`;
+}
+function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
+function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
+async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
+function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
+function selectedCampaign(){const cs=state.definition.campaigns??[]; /* Jeton_acces is enforced by Grist ACL for anonymous links. */ const candidate=state.selectedRecord?.Campagne_Code; if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;} if(cs.length===1)return cs[0]; throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
+async function ensureResponse(){
+  if(state.response&&state.principalElement)return;
+  const campaign=selectedCampaign(), code=uniqueCode("REP"), vc=state.definition.version.id;
+  if(!state.response){await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,{Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces}]]);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>codeOf(r.Reponse_Code)===code);}
+  if(!state.response)throw new Error("La réponse n’a pas pu être créée dans Grist.");
+  let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement));
+  if(!principal){const ec=uniqueCode("ELT");await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,{Element_Code:ec,Reponse_Code:state.response.id,Type_element:"Principal",Statut:"Brouillon",Ordre:0,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()}]]);await refreshPersistenceRows();principal=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
+  state.principalElement=principal;
+}
+function gristValueFields(question,value){const fields=serializeAnswer(question,value,state.definition);if(fields.Valeur_reference_Code)fields.Valeur_reference_Code=rowIdByCode(state.definition.referentialValues,"ValeurRef_Code",fields.Valeur_reference_Code);if(fields.Valeur_structure_Code)fields.Valeur_structure_Code=rowIdByCode(state.definition.structures,"Structure_Code",fields.Valeur_structure_Code);return fields;}
+async function checkResponseRevision(){await refreshPersistenceRows();const fresh=state.definition.responses.find(r=>r.id===state.response?.id);if(state.response&&fresh)assertRevision(state.response.Revision,fresh.Revision);return fresh;}
+async function writeAnswers(element,questions,answers){
+  const actions=[]; const existing=state.definition.responseValues.filter(v=>String(v.Element_Code)===String(element.id));
+  for(const q of questions){const qc=codeOf(q.Question_Code), old=existing.find(v=>String(v.Question_Code)===String(q.id));const fields={...gristValueFields(q,answers[qc]),Element_Code:element.id,Question_Code:q.id};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(answers[qc]!==undefined&&answers[qc]!=="")actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
+  if(actions.length)await grist.docApi.applyUserActions(actions);
+}
+async function bumpRevisions(element){const rr=Number(state.response.Revision||0)+1,er=Number(element.Revision||0)+1;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Revision:rr}]]);state.response={...state.response,Revision:rr};element.Revision=er;}
+async function savePrincipal(){try{assertResponseEditable();state.saving=true;render();await ensureResponse();await checkResponseRevision();const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));await writeAnswers(state.principalElement,qs,state.answers);await bumpRevisions(state.principalElement);await refreshPersistenceRows();state.saving=false;return true;}catch(e){state.saving=false;showSaveError(e);render();return false;}}
+async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();let fiche=editor.index==null?null:state.fiches[type.code]?.[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,{Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:"Fiche",Statut:"Brouillon",Ordre:(state.fiches[type.code]?.length??0)+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()}]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
+  await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
+}
+async function cancelCurrentFiche(typeCode,index){assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
+function showSaveError(e){const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(e?.message??e)}</div>`;}
 
 async function boot() {
   try {
@@ -375,6 +433,9 @@ async function boot() {
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
+    const resumed=accessibleResponse(state.definition);
+    const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
+    if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     render();
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
