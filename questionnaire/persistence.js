@@ -4,6 +4,7 @@ const EMPTY={Valeur_texte:null,Valeur_nombre:null,Valeur_date:null,Valeur_boolee
 function qtype(q){return String(q?.Type_question ?? q?.Type ?? "").trim().toLowerCase();}
 function refCode(q){return codeOf(q?.Referentiel_Code);}
 function refSource(q,ctx){const rc=refCode(q); const r=(ctx?.referentials??[]).find(x=>codeOf(x.Referentiel_Code)===rc || String(x.id)===rc); return String(r?.Type_source??"VALEURS_REFERENTIELS").toUpperCase();}
+function hasDirectChoices(q,ctx){const qc=codeOf(q?.Question_Code), qid=String(q?.id??""); return (ctx?.choices??[]).some(c=>{const raw=codeOf(c.Question_Code); return raw===qc || (qid && String(c.Question_Code)===qid);});}
 export function serializeAnswer(question,value,context={}){
   const out={...EMPTY}; if(value===""||value==null) return out;
   const t=qtype(question);
@@ -11,6 +12,7 @@ export function serializeAnswer(question,value,context={}){
   if(t.includes("date")){out.Valeur_date=value;return out;}
   if(t.includes("bool")||t.includes("oui/non")){out.Valeur_booleen=isTrue(value);return out;}
   if(t.includes("liste")||t.includes("déroul")||t.includes("deroul")||t.includes("radio")){
+    if(hasDirectChoices(question,context)){out.Valeur_texte=codeOf(value);return out;}
     if(refSource(question,context)==="STRUCTURES") out.Valeur_structure_Code=codeOf(value); else out.Valeur_reference_Code=codeOf(value); return out;
   }
   out.Valeur_texte=String(value); return out;
@@ -20,7 +22,10 @@ export function deserializeAnswer(question,row,context={}){
   if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")||t.includes("montant")) return row.Valeur_nombre ?? "";
   if(t.includes("date")) return row.Valeur_date ?? "";
   if(t.includes("bool")||t.includes("oui/non")) return row.Valeur_booleen ?? "";
-  if(t.includes("liste")||t.includes("déroul")||t.includes("deroul")||t.includes("radio")) return refSource(question,context)==="STRUCTURES" ? codeOf(row.Valeur_structure_Code) : codeOf(row.Valeur_reference_Code);
+  if(t.includes("liste")||t.includes("déroul")||t.includes("deroul")||t.includes("radio")){
+    if(hasDirectChoices(question,context)) return row.Valeur_texte ?? "";
+    return refSource(question,context)==="STRUCTURES" ? codeOf(row.Valeur_structure_Code) : codeOf(row.Valeur_reference_Code);
+  }
   return row.Valeur_texte ?? "";
 }
 function sameRef(value,row,codeCol){const raw=codeOf(value); return raw===codeOf(row?.[codeCol]) || String(value)===String(row?.id);}
