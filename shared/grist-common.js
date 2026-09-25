@@ -9,7 +9,8 @@ export function rowsFromTable(table) {
 }
 
 export function normalizeRef(value) {
-  if (value == null || value === "") return null;
+  // Grist représente une référence vide par 0 dans les données brutes.
+  if (value == null || value === "" || value === 0) return null;
   if (Array.isArray(value)) {
     if (value[0] === "L" || value[0] === "l") return value.slice(1).map(normalizeRef);
     if (value.length === 2 && typeof value[0] === "string") return normalizeRef(value[1]);
