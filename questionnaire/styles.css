@@ -47,3 +47,6 @@ textarea { min-height:110px; resize:vertical; }
 .fiche-editor-actions { justify-content:flex-end; margin-top:18px; }
 .fiche-count-error { color:#a31621; font-size:.88rem; margin:6px 0; }
 @media (max-width:600px){.fiche-card{align-items:flex-start;flex-direction:column}.fiche-actions{width:100%}}
+.fiche-status{display:inline-block;margin-left:.45rem;padding:.12rem .45rem;border-radius:999px;background:#eef1f5;font-size:.78rem;font-weight:600;color:#4b5563}
+
+.resume-notice{margin:12px 0;padding:12px;border:1px solid #d9d9d9;border-radius:8px}.resume-notice p{margin:6px 0 10px}
