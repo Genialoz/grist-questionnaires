@@ -8,6 +8,13 @@ export const TABLES = [
 const state = { definition:null, answers:{}, pageIndex:0, diagnostics:[], selectedRecord:null };
 
 function active(row) { return row.Active === undefined || row.Active === null || row.Active === "" || isTrue(row.Active); }
+export function resolveRefCode(value, rows, codeColumn) {
+  const raw=codeOf(value);
+  if (!raw) return "";
+  const byId=(rows ?? []).find(r=>String(r.id)===String(raw));
+  if (byId) return codeOf(byId[codeColumn]);
+  return raw;
+}
 function first(row, names, fallback="") { for (const n of names) if (row?.[n] != null && row[n] !== "") return row[n]; return fallback; }
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
@@ -27,7 +34,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   version ??= versions.find(v => /brouillon|active|publi/i.test(String(v.Statut ?? ""))) ?? versions[0] ?? null;
   if (!version) throw new Error("Aucune version de questionnaire disponible.");
   const vc=codeOf(version.Version_Code);
-  const byVersion = rows => rows.filter(r => !("Version_Code" in r) || codeOf(r.Version_Code)===vc);
+  const byVersion = rows => rows.filter(r => !("Version_Code" in r) || resolveRefCode(r.Version_Code, versions, "Version_Code")===vc);
   return {
     version,
     pages:byVersion(loaded.PAGES).filter(active),
@@ -44,7 +51,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
 }
 
 function conditionVisible(conditionCode, def, answers, diagnostics) {
-  const cc=codeOf(conditionCode);
+  const cc=resolveRefCode(conditionCode,def.conditions,"Condition_Code");
   if (!cc) return true;
   const condition=def.conditions.find(c=>codeOf(c.Condition_Code)===cc);
   if (!condition) { diagnostics.push(`Condition introuvable : ${cc}`); return false; }
@@ -54,10 +61,10 @@ function conditionVisible(conditionCode, def, answers, diagnostics) {
 
 function optionsFor(q, def) {
   const qc=codeOf(q.Question_Code);
-  const direct=sortByOrder(def.choices.filter(c=>codeOf(c.Question_Code)===qc))
+  const direct=sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
     .map(c=>({value:codeOf(c.Choix_Code), label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
   if (direct.length) return direct;
-  const rc=codeOf(q.Referentiel_Code);
+  const rc=resolveRefCode(q.Referentiel_Code,def.referentials,"Referentiel_Code");
   if (!rc) return [];
   const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
   const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
@@ -66,7 +73,7 @@ function optionsFor(q, def) {
       .map(v=>({value:codeOf(v.Structure_Code), label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
   }
   if (source!=="VALEURS_REFERENTIELS") return [];
-  return sortByOrder(def.referentialValues.filter(v=>codeOf(v.Referentiel_Code)===rc && active(v)))
+  return sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)))
     .map(v=>({value:codeOf(v.ValeurRef_Code), label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
 }
 
@@ -74,10 +81,10 @@ export function buildViewModel(def, answers={}) {
   const diagnostics=[];
   const pages=sortByOrder(def.pages).filter(p=>conditionVisible(p.Condition_Code,def,answers,diagnostics)).map(page=>{
     const pc=codeOf(page.Page_Code);
-    const sections=sortByOrder(def.sections.filter(s=>codeOf(s.Page_Code)===pc))
+    const sections=sortByOrder(def.sections.filter(s=>resolveRefCode(s.Page_Code,def.pages,"Page_Code")===pc))
       .filter(s=>conditionVisible(s.Condition_Code,def,answers,diagnostics)).map(section=>{
         const sc=codeOf(section.Section_Code);
-        const questions=sortByOrder(def.questions.filter(q=>codeOf(q.Section_Code)===sc))
+        const questions=sortByOrder(def.questions.filter(q=>resolveRefCode(q.Section_Code,def.sections,"Section_Code")===sc))
           .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
           .map(q=>({...q, options:optionsFor(q,def)}));
         return {...section,questions};
