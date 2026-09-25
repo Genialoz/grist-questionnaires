@@ -433,7 +433,14 @@ function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
   return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button></div></div>`;
 }
-function currentResumeUrl(){return buildResumeUrl(document.referrer,selectedCampaign().Jeton_acces,state.response?.Jeton_reprise);}
+export function campaignResumeBaseUrl(campaign, referrer="") {
+  const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
+  if(configured) return configured;
+  const fallback=String(referrer??"").trim();
+  if(fallback && /(?:\/o\/docs\/|\/doc\/)/.test((()=>{try{return new URL(fallback).pathname}catch{return ""}})())) return fallback;
+  throw new Error("Adresse Grist de reprise non configurée pour cette campagne.");
+}
+function currentResumeUrl(){const campaign=selectedCampaign();return buildResumeUrl(campaignResumeBaseUrl(campaign,document.referrer),campaign.Jeton_acces,state.response?.Jeton_reprise);}
 async function copyText(text){
   if(globalThis.navigator?.clipboard?.writeText){await navigator.clipboard.writeText(text);return;}
   const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();const ok=document.execCommand?.("copy");area.remove();if(!ok)throw new Error("La copie automatique du lien a échoué.");
