@@ -325,8 +325,27 @@ function onFicheAnswer(e) {
   state.ficheEditor.answers[code]=e.target.value;
   if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
 }
+export function collectFicheAnswers(root, currentAnswers={}) {
+  const answers={...currentAnswers};
+  if (!root?.querySelectorAll) return answers;
+  const controls=[...root.querySelectorAll("[data-fiche-question]")];
+  const codes=new Set(controls.map(el=>el.dataset?.ficheQuestion).filter(Boolean));
+  for (const code of codes) {
+    const group=controls.filter(el=>el.dataset?.ficheQuestion===code);
+    const radio=group.find(el=>el.type==="radio" && el.checked);
+    const nonRadio=group.find(el=>el.type!=="radio");
+    if (radio) answers[code]=radio.value;
+    else if (nonRadio) answers[code]=nonRadio.value;
+    else if (group.some(el=>el.type==="radio")) answers[code]="";
+  }
+  return answers;
+}
+
 async function saveCurrentFiche() {
   if (!state.ficheEditor) return;
+  // Read the rendered controls once more at save time. This makes radio/select
+  // persistence independent from change/input event timing and re-renders.
+  state.ficheEditor.answers=collectFicheAnswers(document.querySelector("[data-fiche-editor]"),state.ficheEditor.answers);
   state.saveError="";
   const vm=buildViewModel(state.definition,state.answers);
   const page=vm.pages[state.pageIndex];
