@@ -126,7 +126,34 @@ function render() {
   const root=document.querySelector("#form-root"), nav=document.querySelector("#navigation"), status=document.querySelector("#status");
   const vm=buildViewModel(state.definition,state.answers); state.diagnostics=vm.diagnostics;
   if (!vm.pages.length) {
-    root.innerHTML=`<div class="card"><strong>Aucune page visible.</strong></div>`; nav.innerHTML=""; return;
+    const d=state.definition;
+    const pageSample=(d.pages ?? []).slice(0,3).map(p=>({
+      id:p.id, Page_Code:p.Page_Code, Version_Code:p.Version_Code,
+      Condition_Code:p.Condition_Code, Active:p.Active, Ordre:p.Ordre
+    }));
+    const versionSample={
+      id:d.version?.id, Version_Code:d.version?.Version_Code,
+      Questionnaire_Code:d.version?.Questionnaire_Code, Statut:d.version?.Statut
+    };
+    root.innerHTML=`<div class="card">
+      <h2>Diagnostic du widget</h2>
+      <p><strong>Aucune page visible.</strong></p>
+      <p>Le widget communique bien avec Grist. Voici ce qu'il a réellement chargé :</p>
+      <pre style="white-space:pre-wrap;overflow:auto;background:#f5f5f7;padding:12px;border-radius:8px">${escapeHtml(JSON.stringify({
+        version:versionSample,
+        nombres:{
+          pages:d.pages?.length ?? 0,
+          sections:d.sections?.length ?? 0,
+          questions:d.questions?.length ?? 0,
+          conditions:d.conditions?.length ?? 0,
+          regles:d.rules?.length ?? 0
+        },
+        pages_exemple:pageSample,
+        diagnostics:vm.diagnostics
+      },null,2))}</pre>
+      <p>Copiez ce bloc ou envoyez-en une capture d'écran.</p>
+    </div>`;
+    nav.innerHTML=""; return;
   }
   if (state.pageIndex>=vm.pages.length) state.pageIndex=vm.pages.length-1;
   const page=vm.pages[state.pageIndex];
