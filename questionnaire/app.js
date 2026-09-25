@@ -2,7 +2,7 @@ import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, validateQ
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
-  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","CONDITIONS","REGLES_CONDITION"
+  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION"
 ];
 
 const state = { definition:null, answers:{}, pageIndex:0, diagnostics:[], selectedRecord:null };
@@ -37,6 +37,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     choices:loaded.CHOIX_QUESTIONS.filter(active),
     referentials:loaded.REFERENTIELS.filter(active),
     referentialValues:loaded.VALEURS_REFERENTIELS.filter(active),
+    structures:loaded.STRUCTURES.filter(active),
     conditions:byVersion(loaded.CONDITIONS).filter(active),
     rules:loaded.REGLES_CONDITION
   };
@@ -58,6 +59,13 @@ function optionsFor(q, def) {
   if (direct.length) return direct;
   const rc=codeOf(q.Referentiel_Code);
   if (!rc) return [];
+  const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
+  const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
+  if (source==="STRUCTURES") {
+    return sortByOrder((def.structures ?? []).filter(active))
+      .map(v=>({value:codeOf(v.Structure_Code), label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
+  }
+  if (source!=="VALEURS_REFERENTIELS") return [];
   return sortByOrder(def.referentialValues.filter(v=>codeOf(v.Referentiel_Code)===rc && active(v)))
     .map(v=>({value:codeOf(v.ValeurRef_Code), label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
 }
