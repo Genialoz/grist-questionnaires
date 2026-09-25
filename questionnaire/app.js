@@ -152,16 +152,17 @@ export function buildRepeatableTypes(def, pageCode) {
 
 export function visibleFicheQuestions(type, def, answers={}) {
   const diagnostics=[];
-  // Re-resolve the fiche questions from the authoritative questionnaire definition.
-  // A repeatable type embedded in a page can be a derived view; relying only on
-  // type.questions made completeness incorrectly report "Complet" when that
-  // derived list was absent/stale while the QUESTIONS table still contained the
-  // required fiche questions.
+  // Validate exactly the questions that buildRepeatableTypes attached to this
+  // fiche on the current page. Re-resolving them from def.questions can diverge
+  // from the rendered fiche and incorrectly let an empty fiche pass validation.
+  const rendered=sortByOrder((type?.questions ?? []).filter(active));
   const typeCode=codeOf(type?.code ?? type?.TypeFiche_Code);
-  const authoritative=sortByOrder((def.questions ?? []).filter(q=>
+  const fallback=sortByOrder((def.questions ?? []).filter(q=>
     active(q) && resolveRefCode(q.TypeFiche_Code,def.ficheTypes ?? [],"TypeFiche_Code")===typeCode
   ));
-  const questions=authoritative.length ? authoritative : (type.questions ?? []);
+  // The rendered list is authoritative whenever it exists. The fallback only
+  // supports callers/tests that provide a fiche type before page composition.
+  const questions=rendered.length ? rendered : fallback;
   return questions
     .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
     .map(q=>({...q,options:optionsFor(q,def)}));
