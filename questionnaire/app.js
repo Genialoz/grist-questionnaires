@@ -185,8 +185,9 @@ function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
   state.answers[code]=e.target.value;
-  // Re-render only when a configured condition may depend on this question.
-  if (state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
+  // A radio must re-render immediately so its clear button reflects the new state.
+  // Conditional source questions also re-render to update dependent visibility.
+  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
 }
 
 export function validateVisiblePage(page, answers={}) {
