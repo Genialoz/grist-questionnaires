@@ -366,7 +366,6 @@ function render() {
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
   status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
-  status.querySelector("[data-delete-response]")?.addEventListener("click",()=>deleteResponse());
   document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){state.pageIndex++;render();}return;}nextPage(vm,page)});
 
@@ -485,8 +484,8 @@ function accessibleResponse(def){
 }
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
-  if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button><button type="button" class="btn btn-small btn-danger" data-delete-response>Supprimer ma réponse</button></div></div>`;
-  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button><button type="button" class="btn btn-small btn-danger" data-delete-response>Supprimer ma réponse</button></div></div>`;
+  if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button></div></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button></div></div>`;
 }
 export function campaignResumeBaseUrl(campaign, referrer="") {
   const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
@@ -506,20 +505,6 @@ async function copyResumeLink(afterSave=false){
 async function saveAndQuit(){
   if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de quitter."));return;}
   if(await savePrincipal()){render();await copyResumeLink(true);}
-}
-async function deleteResponse(){
-  if(!state.response || responseIsDeleted()) return;
-  const confirmed=globalThis.confirm?.("Supprimer définitivement l’accès à cette réponse ? Cette action ne pourra pas être annulée par le répondant.");
-  if(!confirmed) return;
-  try {
-    state.saving=true; state.saveError=""; render();
-    const fresh=await checkResponseRevision();
-    if(!fresh) throw new Error("La réponse à supprimer est introuvable.");
-    await grist.docApi.applyUserActions([["UpdateRecord","REPONSES",fresh.id,{Supprime_logiquement:true,Revision:Number(fresh.Revision||0)+1}]]);
-    await refreshPersistenceRows();
-    state.response=state.definition.responses.find(r=>r.id===fresh.id) ?? {...fresh,Supprime_logiquement:true};
-    state.saving=false; state.ficheEditor=null; render();
-  } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
