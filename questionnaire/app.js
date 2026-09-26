@@ -453,6 +453,7 @@ function render() {
     </section>`;
     }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
+    ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
   </div>`;
   nav.innerHTML=locked
@@ -597,7 +598,17 @@ async function nextPage(vm,page) {
     const node=document.querySelector(`[data-fiche-count-error="${CSS.escape(typeCode)}"]`);
     if(node) node.textContent=msg;
   }
-  if (Object.keys(errors).length || Object.keys(ficheErrors).length) return;
+  if (Object.keys(errors).length || Object.keys(ficheErrors).length) {
+    const summary=document.querySelector("[data-page-validation-summary]");
+    if(summary){
+      const count=Object.keys(errors).length+Object.keys(ficheErrors).length;
+      summary.textContent=count===1 ? "1 réponse obligatoire ou invalide est à corriger avant de continuer." : `${count} réponses obligatoires ou invalides sont à corriger avant de continuer.`;
+      summary.hidden=false;
+    }
+    const firstInvalid=document.querySelector(".field.invalid, [data-fiche-count-error]:not(:empty)");
+    firstInvalid?.scrollIntoView?.({behavior:"smooth",block:"center"});
+    return;
+  }
   if (!await savePrincipal()) return;
   if (state.pageIndex < vm.pages.length-1) { state.pageIndex++; render(); return; }
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
