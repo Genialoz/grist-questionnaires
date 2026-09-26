@@ -549,6 +549,25 @@ function render() {
 }
 
 
+function renderPreservingInputFocus(target) {
+  const questionCode=target?.dataset?.ficheQuestion ?? target?.dataset?.question;
+  if (!questionCode) { render(); return; }
+  const isFiche=Boolean(target?.dataset?.ficheQuestion);
+  const inSubFiche=Boolean(target?.closest?.("[data-subfiche-editor]"));
+  const start=typeof target.selectionStart==="number" ? target.selectionStart : null;
+  const end=typeof target.selectionEnd==="number" ? target.selectionEnd : null;
+  render();
+  let scope=document;
+  if (isFiche) scope=document.querySelector(inSubFiche ? "[data-subfiche-editor]" : "[data-fiche-editor]") ?? document;
+  const attr=isFiche ? "data-fiche-question" : "data-question";
+  const next=scope.querySelector(`[${attr}="${CSS.escape(questionCode)}"]`);
+  if (!next) return;
+  next.focus({preventScroll:true});
+  if (start!==null && typeof next.setSelectionRange==="function") {
+    try { next.setSelectionRange(start,end ?? start); } catch (_) {}
+  }
+}
+
 function onFicheAnswer(e) {
   const editor=e.target.closest("[data-subfiche-editor]") ? state.subFicheEditor : state.ficheEditor;
   if (!editor) return;
@@ -564,7 +583,7 @@ function onFicheAnswer(e) {
   sanitizeDependentAnswers(state.definition,combined);
   for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
+  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -647,7 +666,7 @@ function onAnswer(e) {
   } else state.answers[code]=e.target.value;
   sanitizeDependentAnswers(state.definition,state.answers);
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
+  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
 }
 
 export function validateVisiblePage(page, answers={}) {
