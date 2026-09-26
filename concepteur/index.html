@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Concepteur de questionnaires</title>
+<link rel="stylesheet" href="../shared/common.css"><link rel="stylesheet" href="./styles.css">
+<script src="https://docs.getgrist.com/grist-plugin-api.js"></script></head>
+<body><main id="designer"><header class="topbar"><div><h1>Concepteur</h1><p>Construction du questionnaire</p></div>
+<div class="selectors"><label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label></div></header>
+<div id="status" role="status" aria-live="polite"></div><section class="workspace">
+<aside class="panel tree-panel"><div class="panel-title">Structure</div><div id="tree"></div></aside>
+<section class="panel canvas-panel"><div class="panel-title">Construction</div><div id="canvas" class="empty-state">Sélectionnez un élément dans l’arborescence.</div></section>
+<aside class="panel properties-panel"><div class="panel-title">Propriétés</div><div id="properties" class="empty-state">Aucun élément sélectionné.</div></aside>
+</section></main><script type="module" src="./app.js"></script></body></html>
