@@ -46,12 +46,14 @@ export function evaluateRule(rule, answers = {}) {
   if (["vide","empty","est vide"].includes(op)) return actual == null || actual === "" || (Array.isArray(actual) && !actual.length);
   if (["non vide","not empty","pas vide"].includes(op)) return !(actual == null || actual === "" || (Array.isArray(actual) && !actual.length));
   if (["contient","contains"].includes(op)) return Array.isArray(actual) ? actual.map(String).includes(String(expected)) : String(actual ?? "").includes(String(expected));
+  if (["ne contient pas","not contains","does not contain"].includes(op)) return Array.isArray(actual) ? !actual.map(String).includes(String(expected)) : !String(actual ?? "").includes(String(expected));
   if ([">",">=","<","<="].includes(op)) {
     const a=num(actual), b=num(expected); if (!Number.isFinite(a)||!Number.isFinite(b)) return false;
     return op===">"?a>b:op===">="?a>=b:op==="<"?a<b:a<=b;
   }
   const a=norm(actual), b=norm(expected);
-  if (["!=","<>","≠"].includes(op)) return String(a ?? "") !== String(b ?? "");
+  if (["!=","<>","≠"].includes(op)) return Array.isArray(a) ? !a.map(String).includes(String(b ?? "")) : String(a ?? "") !== String(b ?? "");
+  if (Array.isArray(a)) return a.map(String).includes(String(b ?? ""));
   return String(a ?? "") === String(b ?? "");
 }
 
@@ -61,7 +63,7 @@ export function evaluateCondition(condition, rules = [], answers = {}) {
   const relevant = sortByOrder(rules.filter(r => codeOf(r.Condition_Code) === code));
   if (!relevant.length) return false;
   const results = relevant.map(r => evaluateRule(r, answers));
-  const logic = String(condition.Operateur_logique ?? condition.Logique ?? condition.Type_operateur ?? "AND").toUpperCase();
+  const logic = String(condition.Operateur_global ?? condition.Operateur_logique ?? condition.Logique ?? condition.Type_operateur ?? "AND").toUpperCase();
   return logic === "OR" || logic === "OU" ? results.some(Boolean) : results.every(Boolean);
 }
 
@@ -73,6 +75,12 @@ export function isRequiredQuestion(question={}) {
   const mode = String(question.Mode_obligation ?? question.Mode_obligatoire ?? "").trim().toLowerCase();
   if (mode) return mode === "obligatoire";
   return isTrue(question.Obligatoire);
+}
+
+function positiveLimit(v) {
+  if (v == null || v === "") return null;
+  const n=Number(v);
+  return Number.isFinite(n) && n>0 ? n : null;
 }
 
 export function validateQuestion(question, value, visible=true) {
@@ -88,8 +96,12 @@ export function validateQuestion(question, value, visible=true) {
     if (question.Valeur_min !== "" && question.Valeur_min != null && n < Number(question.Valeur_min)) return `La valeur minimale est ${question.Valeur_min}.`;
     if (question.Valeur_max !== "" && question.Valeur_max != null && n > Number(question.Valeur_max)) return `La valeur maximale est ${question.Valeur_max}.`;
   }
-  const s=String(value);
-  if (question.Longueur_min !== "" && question.Longueur_min != null && s.length < Number(question.Longueur_min)) return `Minimum ${question.Longueur_min} caractères.`;
-  if (question.Longueur_max !== "" && question.Longueur_max != null && s.length > Number(question.Longueur_max)) return `Maximum ${question.Longueur_max} caractères.`;
+  // Longueur_min/max concernent les réponses textuelles, pas les tableaux de choix multiples.
+  if (!Array.isArray(value)) {
+    const s=String(value);
+    const min=positiveLimit(question.Longueur_min), max=positiveLimit(question.Longueur_max);
+    if (min!=null && s.length < min) return `Minimum ${min} caractères.`;
+    if (max!=null && s.length > max) return `Maximum ${max} caractères.`;
+  }
   return "";
 }
