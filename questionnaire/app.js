@@ -3,7 +3,7 @@ import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse,
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
-  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION",
+  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX",
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE"
 ];
 
@@ -71,6 +71,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     structures:loaded.STRUCTURES.filter(active),
     conditions:byVersion(loaded.CONDITIONS).filter(active),
     rules:normalizeRules(loaded),
+    choiceFilters:loaded.FILTRES_CHOIX.filter(active),
     campaigns:byVersion(loaded.CAMPAGNES).filter(active),
     responses:loaded.REPONSES,
     responseElements:loaded.ELEMENTS_REPONSE,
@@ -87,24 +88,89 @@ function conditionVisible(conditionCode, def, answers, diagnostics) {
   catch(e){ diagnostics.push(`Condition ${cc} invalide : ${e.message}`); return false; }
 }
 
-export function optionsFor(q, def) {
+function choiceFiltersForQuestion(q,def) {
+  const qc=codeOf(q.Question_Code);
+  return sortByOrder((def.choiceFilters ?? []).filter(f=>active(f) && resolveRefCode(f.Question_Code,def.questions,"Question_Code")===qc));
+}
+
+function hierarchyCodes(rows,codeCol,parentCol,start,mode) {
+  const startCode=codeOf(start);
+  if (!startCode) return new Set();
+  const children=new Map();
+  for (const row of rows ?? []) {
+    const code=codeOf(row[codeCol]);
+    if (!code) continue;
+    const parent=resolveRefCode(row[parentCol],rows,codeCol);
+    if (parent) {
+      const list=children.get(parent) ?? [];
+      list.push(code); children.set(parent,list);
+    }
+  }
+  const direct=children.get(startCode) ?? [];
+  const descendants=[];
+  const seen=new Set();
+  const walk=code=>{
+    for (const child of children.get(code) ?? []) {
+      if (seen.has(child)) continue;
+      seen.add(child); descendants.push(child); walk(child);
+    }
+  };
+  walk(startCode);
+  if (mode==="Valeur") return new Set([startCode]);
+  if (mode==="Enfants") return new Set(direct);
+  if (mode==="Valeur_et_enfants") return new Set([startCode,...direct]);
+  if (mode==="Descendants") return new Set(descendants);
+  return new Set([startCode,...descendants]);
+}
+
+function applyChoiceFilters(q,def,answers,options,sourceRows,codeCol,parentCol) {
+  let out=options;
+  for (const filter of choiceFiltersForQuestion(q,def)) {
+    // Source=Contexte sera branchée quand le contexte sécurisé sera disponible.
+    if (String(filter.Source ?? "Question") !== "Question") continue;
+    const sourceCode=resolveRefCode(filter.Question_source_Code,def.questions,"Question_Code");
+    const selected=answers?.[sourceCode] ?? "";
+    if (!selected) { out=[]; continue; }
+    const allowed=hierarchyCodes(sourceRows,codeCol,parentCol,selected,String(filter.Mode_filtrage ?? "Valeur_et_descendants"));
+    out=out.filter(o=>allowed.has(codeOf(o.value)));
+  }
+  return out;
+}
+
+export function optionsFor(q, def, answers={}) {
   const qc=codeOf(q.Question_Code);
   const rc=resolveRefCode(q.Referentiel_Code,def.referentials,"Referentiel_Code");
   if (rc) {
     const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
     const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
     if (source==="STRUCTURES") {
-      return sortByOrder((def.structures ?? []).filter(active))
-        .map(v=>({value:codeOf(v.Structure_Code), label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
+      const rows=sortByOrder((def.structures ?? []).filter(active));
+      const options=rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
+      return applyChoiceFilters(q,def,answers,options,rows,"Structure_Code","Parent_Code");
     }
     if (source==="VALEURS_REFERENTIELS") {
-      return sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)))
-        .map(v=>({value:codeOf(v.ValeurRef_Code), label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
+      const rows=sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)));
+      const options=rows.map(v=>({value:codeOf(v.ValeurRef_Code),label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
+      return applyChoiceFilters(q,def,answers,options,rows,"ValeurRef_Code","Parent_Code");
     }
     return [];
   }
   return sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
-    .map(c=>({value:codeOf(c.Choix_Code), label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
+    .filter(c=>conditionVisible(c.Condition_Code,def,answers,[]))
+    .map(c=>({value:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
+}
+
+export function sanitizeDependentAnswers(def,answers={}) {
+  let changed=true, passes=0;
+  while (changed && passes++<10) {
+    changed=false;
+    for (const q of def.questions ?? []) {
+      const qc=codeOf(q.Question_Code), current=answers[qc];
+      if (current==="" || current==null || !choiceFiltersForQuestion(q,def).length) continue;
+      if (!optionsFor(q,def,answers).some(o=>String(o.value)===String(current))) { answers[qc]=""; changed=true; }
+    }
+  }
+  return answers;
 }
 
 
@@ -164,7 +230,7 @@ export function visibleFicheQuestions(type, def, answers={}) {
   const questions=authoritative.length ? authoritative : (type.questions ?? []);
   return questions
     .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
-    .map(q=>({...q,options:optionsFor(q,def)}));
+    .map(q=>({...q,options:optionsFor(q,def,answers)}));
 }
 
 export function buildViewModel(def, answers={}) {
@@ -179,7 +245,7 @@ export function buildViewModel(def, answers={}) {
           !resolveRefCode(q.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")
         ))
           .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
-          .map(q=>({...q, options:optionsFor(q,def)}));
+          .map(q=>({...q, options:optionsFor(q,def,answers)}));
         return {...section,questions};
       });
     return {...page,sections,repeatableTypes:buildRepeatableTypes(def,pc)};
@@ -431,7 +497,11 @@ function onFicheAnswer(e) {
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
   state.ficheEditor.answers[code]=e.target.value;
-  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
+  const combined={...state.answers,...state.ficheEditor.answers};
+  sanitizeDependentAnswers(state.definition,combined);
+  for (const key of Object.keys(state.ficheEditor.answers)) state.ficheEditor.answers[key]=combined[key] ?? "";
+  const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
+  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -479,9 +549,9 @@ function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
   state.answers[code]=e.target.value;
-  // A radio must re-render immediately so its clear button reflects the new state.
-  // Conditional source questions also re-render to update dependent visibility.
-  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code)) render();
+  sanitizeDependentAnswers(state.definition,state.answers);
+  const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
+  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
 }
 
 export function validateVisiblePage(page, answers={}) {
