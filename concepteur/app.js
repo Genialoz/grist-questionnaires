@@ -5,8 +5,7 @@ const $=s=>document.querySelector(s);
 const esc=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const active=r=>r.Active===undefined||r.Active===null||r.Active===""||r.Active===true||r.Active===1||String(r.Active).toLowerCase()==="true";
 const first=(r,n,f="")=>{for(const k of n)if(r?.[k]!=null&&r[k]!=="")return r[k];return f};
-const QUESTION_FIELDS=new Set(["Libelle","Aide","Description","Texte_aide","Type_question","Type_reponse","Type","Format","Mode_obligation","Referentiel_Code","Valeur_min","Valeur_max","Longueur_min","Longueur_max","Nb_decimales","Valeur_par_defaut","Lecture_seule","Masquee","Ordre","Active"]);
-const field=(r,n)=>n.find(k=>Object.prototype.hasOwnProperty.call(r||{},k))||n.find(k=>QUESTION_FIELDS.has(k))||null;
+const field=(r,n)=>n.find(k=>Object.prototype.hasOwnProperty.call(r||{},k))||null;
 function ref(v,rows,col){const x=codeOf(v);if(!x)return "";const r=(rows||[]).find(a=>String(a.id)===String(x));return r?codeOf(r[col]):x}
 function label(r,t){if(t==="page")return first(r,["Titre","Nom","Libelle","Page_Code"],codeOf(r.Page_Code));if(t==="section")return first(r,["Titre","Nom","Libelle","Section_Code"],codeOf(r.Section_Code));if(t==="fiche")return first(r,["Libelle_singulier","Libelle","Nom","TypeFiche_Code"],codeOf(r.TypeFiche_Code));if(t==="question")return first(r,["Libelle","Libellé","Question","Titre","Question_Code"],codeOf(r.Question_Code));if(t==="questionnaire")return first(r,["Nom","Titre","Questionnaire_Code"],codeOf(r.Questionnaire_Code));return first(r,["Nom","Libelle","Titre","Version_Code"],codeOf(r.Version_Code))}
 async function reload(){for(const t of TABLES)S.data[t]=rowsFromTable(await grist.docApi.fetchTable(t));renderSelectors()}
