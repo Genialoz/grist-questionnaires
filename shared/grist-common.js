@@ -96,8 +96,17 @@ export function validateQuestion(question, value, visible=true) {
     if (question.Valeur_min !== "" && question.Valeur_min != null && n < Number(question.Valeur_min)) return `La valeur minimale est ${question.Valeur_min}.`;
     if (question.Valeur_max !== "" && question.Valeur_max != null && n > Number(question.Valeur_max)) return `La valeur maximale est ${question.Valeur_max}.`;
   }
-  // Longueur_min/max concernent les réponses textuelles, pas les tableaux de choix multiples.
-  if (!Array.isArray(value)) {
+  // Longueur_min/max ne concernent que les saisies textuelles libres.
+  // Elles ne doivent jamais valider la longueur du code technique d'un choix radio,
+  // d'une liste, d'une case à cocher ou d'une valeur de référentiel.
+  // Les contraintes de caractères sont une propriété des saisies textuelles libres.
+  // On les applique donc par liste positive de types texte, au lieu d'essayer
+  // d'énumérer tous les libellés possibles de types de choix ("Boutons radio",
+  // "Choix unique", "Sélection unique", etc.).
+  const isFreeText = type.includes("texte") || type.includes("text") ||
+    type.includes("email") || type.includes("e-mail") ||
+    type.includes("zone de texte") || type.includes("textarea");
+  if (isFreeText) {
     const s=String(value);
     const min=positiveLimit(question.Longueur_min), max=positiveLimit(question.Longueur_max);
     if (min!=null && s.length < min) return `Minimum ${min} caractères.`;
