@@ -292,7 +292,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     q.Valeur_min!==""&&q.Valeur_min!=null?`min="${escapeHtml(q.Valeur_min)}"`:"",
     q.Valeur_max!==""&&q.Valeur_max!=null?`max="${escapeHtml(q.Valeur_max)}"`:"",
     q.Longueur_min!==""&&q.Longueur_min!=null?`minlength="${escapeHtml(q.Longueur_min)}"`:"",
-    q.Longueur_max!==""&&q.Longueur_max!=null?`maxlength="${escapeHtml(q.Longueur_max)}"`:"",
+    q.Longueur_max!==""&&q.Longueur_max!=null&&Number(q.Longueur_max)>0?`maxlength="${escapeHtml(q.Longueur_max)}"`:"",
     isTrue(q.Lecture_seule)?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
@@ -440,7 +440,7 @@ function render() {
   const locked=responseIsLocked();
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
-    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit>Sauvegarder et quitter</button>`:""}</div></div>
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit>Enregistrer</button>`:""}</div></div>
     <header class="header"><div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
@@ -625,7 +625,7 @@ function accessibleResponse(def){
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
   if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button></div></div>`;
-  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Sauvegarder et quitter</button></div></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit>Enregistrer</button></div></div>`;
 }
 export function campaignResumeBaseUrl(campaign, referrer="") {
   const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
@@ -639,12 +639,26 @@ async function copyText(text){
   if(globalThis.navigator?.clipboard?.writeText){await navigator.clipboard.writeText(text);return;}
   const area=document.createElement("textarea");area.value=text;area.setAttribute("readonly","");area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();const ok=document.execCommand?.("copy");area.remove();if(!ok)throw new Error("La copie automatique du lien a échoué.");
 }
+function temporaryButtonFeedback(selector,label,delay=2200){
+  document.querySelectorAll(selector).forEach(button=>{
+    const original=button.textContent;
+    button.textContent=label;
+    button.disabled=true;
+    globalThis.setTimeout?.(()=>{if(button.isConnected){button.textContent=original;button.disabled=false;}},delay);
+  });
+}
 async function copyResumeLink(afterSave=false){
-  try{const url=currentResumeUrl();await copyText(url);state.saveError="";const node=document.querySelector("#status");if(node)node.insertAdjacentHTML("afterbegin",`<div class="status-info">${afterSave?"Réponse sauvegardée. ":""}Lien de reprise copié. Vous pouvez le conserver pour revenir plus tard.</div>`);}catch(e){showSaveError(e);}
+  try{
+    const url=currentResumeUrl();
+    await copyText(url);
+    state.saveError="";
+    temporaryButtonFeedback("[data-copy-resume]","✓ Lien copié");
+    if(afterSave) temporaryButtonFeedback("[data-save-quit]","✓ Réponse enregistrée");
+  }catch(e){showSaveError(e);}
 }
 async function saveAndQuit(){
-  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de quitter."));return;}
-  if(await savePrincipal()){render();await copyResumeLink(true);}
+  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant d’enregistrer."));return;}
+  if(await savePrincipal()){render();temporaryButtonFeedback("[data-save-quit]","✓ Réponse enregistrée");}
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
