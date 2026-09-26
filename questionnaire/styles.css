@@ -72,3 +72,10 @@ textarea { min-height:110px; resize:vertical; }
 .fiche-filter{display:flex;align-items:center;gap:7px;color:#696875;font-size:.88rem}.fiche-filter select{min-width:145px}.fiche-reset{align-self:flex-end}
 @media (max-width:600px){.fiche-filter{justify-content:space-between}.fiche-filter select{flex:1}.fiche-reset{align-self:stretch}}
 .section-description { color:#5b5a66; white-space:pre-wrap; margin:8px 0 14px; }
+
+/* Accès rapide à l’ajout d’une fiche */
+.fiche-add-top{display:flex;justify-content:flex-end;margin:12px 0 4px}
+.fiche-add-bottom{display:flex;justify-content:flex-start;margin-top:14px}
+.fiche-add-top .add-fiche,.fiche-add-bottom .add-fiche{font-weight:700}
+.add-fiche-floating{position:fixed;right:24px;bottom:24px;z-index:35;box-shadow:0 5px 18px rgba(0,0,0,.18);font-weight:700}
+@media (max-width:600px){.fiche-add-top{justify-content:stretch}.fiche-add-top .add-fiche,.fiche-add-bottom .add-fiche{width:100%}.add-fiche-floating{right:16px;bottom:16px;max-width:calc(100vw - 32px)}}
