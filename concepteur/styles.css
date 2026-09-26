@@ -18,3 +18,7 @@
 #status .status-ok{background:#eef7ef}
 #status .status-error{background:#fff0f0}
 .form-actions button:disabled{opacity:.6;cursor:wait}
+
+.choice-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.bulk-choices{margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:8px}
+.bulk-choices textarea{width:100%;min-height:130px;box-sizing:border-box;margin-top:6px}
