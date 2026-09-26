@@ -9,7 +9,10 @@ export const TABLES = [
 
 const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
 
-function active(row) { return row.Active === undefined || row.Active === null || row.Active === "" || isTrue(row.Active); }
+function active(row) {
+  const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
+  return value === undefined || value === null || value === "" || isTrue(value);
+}
 export function resolveRefCode(value, rows, codeColumn) {
   const raw=codeOf(value);
   if (!raw) return "";
