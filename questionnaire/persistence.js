@@ -8,10 +8,6 @@ function hasDirectChoices(q,ctx){const qc=codeOf(q?.Question_Code), qid=String(q
 export function serializeAnswer(question,value,context={}){
   const out={...EMPTY}; if(value===""||value==null) return out;
   const t=qtype(question);
-  // Choice storage is determined by the configured source, not by the display
-  // label of Type_question. This supports custom labels such as "Sélection unique".
-  // A configured referential is authoritative. Some migrated questionnaires may
-  // still contain legacy CHOIX_QUESTIONS rows for the same question.
   if(refCode(question)){
     if(refSource(question,context)==="STRUCTURES") out.Valeur_structure_Code=codeOf(value); else out.Valeur_reference_Code=codeOf(value);
     return out;
@@ -45,7 +41,15 @@ export function hydrateResponse(rows,definition,reponseCode){
   if(!response) return {response:null,principalAnswers:{},fiches:{},revisions:{response:null,elements:{}}};
   const elements=(rows.ELEMENTS_REPONSE??[]).filter(e=>sameRef(e.Reponse_Code,response,"Reponse_Code"));
   const values=rows.VALEURS_REPONSE??[]; const questions=definition.questions??[];
-  const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(q) out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);} return out;};
+  const selections=rows.SELECTIONS_REPONSE??[];
+  const multi=q=>qtype(q).includes("case");
+  const selectedCode=s=>{
+    if(s.Choix_Code){const raw=codeOf(s.Choix_Code),row=(definition.choices??[]).find(x=>String(x.id)===raw||codeOf(x.Choix_Code)===raw);return row?codeOf(row.Choix_Code):raw;}
+    if(s.ValeurRef_Code){const raw=codeOf(s.ValeurRef_Code),row=(definition.referentialValues??[]).find(x=>String(x.id)===raw||codeOf(x.ValeurRef_Code)===raw);return row?codeOf(row.ValeurRef_Code):raw;}
+    if(s.Structure_Code){const raw=codeOf(s.Structure_Code),row=(definition.structures??[]).find(x=>String(x.id)===raw||codeOf(x.Structure_Code)===raw);return row?codeOf(row.Structure_Code):raw;}
+    return "";
+  };
+  const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(q){if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);}} return out;};
   const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>String(e.Type_element??"").toLowerCase()==="fiche"&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){

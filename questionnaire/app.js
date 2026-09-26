@@ -4,7 +4,7 @@ import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse,
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
   "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX",
-  "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE"
+  "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
 const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
@@ -78,7 +78,8 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     campaigns:byVersion(loaded.CAMPAGNES).filter(active),
     responses:loaded.REPONSES,
     responseElements:loaded.ELEMENTS_REPONSE,
-    responseValues:loaded.VALEURS_REPONSE
+    responseValues:loaded.VALEURS_REPONSE,
+    responseSelections:loaded.SELECTIONS_REPONSE
   };
 }
 
@@ -142,27 +143,25 @@ function applyChoiceFilters(q,def,answers,options,sourceRows,codeCol,parentCol) 
 
 export function optionsFor(q, def, answers={}) {
   const qc=codeOf(q.Question_Code);
+  const local=sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
+    .filter(c=>conditionVisible(c.Condition_Code,def,answers,[]))
+    .map(c=>({value:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code)),source:"choice",rowId:c.id,exclusive:isTrue(c.Exclusif)}));
   const rc=resolveRefCode(q.Referentiel_Code,def.referentials,"Referentiel_Code");
+  let refs=[];
   if (rc) {
     const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
     const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
     if (source==="STRUCTURES") {
       const rows=sortByOrder((def.structures ?? []).filter(active));
-      const options=rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code))}));
-      return applyChoiceFilters(q,def,answers,options,rows,"Structure_Code","Parent_Code");
-    }
-    if (source==="VALEURS_REFERENTIELS") {
+      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code)),source:"structure",rowId:v.id,exclusive:false})),rows,"Structure_Code","Parent_Code");
+    } else if (source==="VALEURS_REFERENTIELS") {
       const rows=sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)));
-      const options=rows.map(v=>({value:codeOf(v.ValeurRef_Code),label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code))}));
-      return applyChoiceFilters(q,def,answers,options,rows,"ValeurRef_Code","Parent_Code");
+      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.ValeurRef_Code),label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code)),source:"reference",rowId:v.id,exclusive:false})),rows,"ValeurRef_Code","Parent_Code");
     }
-    return [];
   }
-  return sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
-    .filter(c=>conditionVisible(c.Condition_Code,def,answers,[]))
-    .map(c=>({value:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code))}));
+  const seen=new Set();
+  return [...refs,...local].filter(o=>{const k=String(o.value);if(seen.has(k))return false;seen.add(k);return true;});
 }
-
 export function sanitizeDependentAnswers(def,answers={}) {
   let changed=true, passes=0;
   while (changed && passes++<10) {
@@ -170,7 +169,9 @@ export function sanitizeDependentAnswers(def,answers={}) {
     for (const q of def.questions ?? []) {
       const qc=codeOf(q.Question_Code), current=answers[qc];
       if (current==="" || current==null || !choiceFiltersForQuestion(q,def).length) continue;
-      if (!optionsFor(q,def,answers).some(o=>String(o.value)===String(current))) { answers[qc]=""; changed=true; }
+      const allowed=new Set(optionsFor(q,def,answers).map(o=>String(o.value)));
+      if(Array.isArray(current)){const next=current.filter(v=>allowed.has(String(v)));if(next.length!==current.length){answers[qc]=next;changed=true;}}
+      else if (!allowed.has(String(current))) { answers[qc]=""; changed=true; }
     }
   }
   return answers;
@@ -279,6 +280,7 @@ export function controlKind(question) {
   if (t.includes("nombre") || t.includes("numérique") || t.includes("numerique")) return "number";
   if (t.includes("date")) return "date";
   if (t.includes("radio")) return "radio";
+  if (t.includes("case")) return "checkbox";
   if (t.includes("liste") || t.includes("déroul") || t.includes("deroul")) return "select";
   return "text";
 }
@@ -296,6 +298,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
   if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
   if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${selected.size===0?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -306,16 +309,16 @@ function renderFicheField(q, answers) {
 }
 function ficheSummary(fiche,index) {
   const firstValue=Object.values(fiche.answers ?? {}).find(v=>v!=="" && v!=null);
-  return firstValue ? String(firstValue) : `Fiche ${index+1}`;
+  return firstValue ? (Array.isArray(firstValue)?firstValue.join(", "):String(firstValue)) : `Fiche ${index+1}`;
 }
 
 export function filterAndSortFiches(list=[], ui={}) {
   const query=String(ui.query ?? "").trim().toLocaleLowerCase("fr");
   const filters=ui.filters ?? {};
   let rows=list.map((fiche,index)=>({fiche,index}));
-  if(query) rows=rows.filter(({fiche})=>Object.values(fiche.answers ?? {}).some(v=>String(v ?? "").toLocaleLowerCase("fr").includes(query)));
+  if(query) rows=rows.filter(({fiche})=>Object.values(fiche.answers ?? {}).some(v=>(Array.isArray(v)?v.join(" "):String(v ?? "")).toLocaleLowerCase("fr").includes(query)));
   for (const [questionCode,wanted] of Object.entries(filters)) {
-    if (wanted!=="" && wanted!=null) rows=rows.filter(({fiche})=>String(fiche.answers?.[questionCode] ?? "")===String(wanted));
+    if (wanted!=="" && wanted!=null) rows=rows.filter(({fiche})=>(Array.isArray(fiche.answers?.[questionCode])?fiche.answers[questionCode].map(String).includes(String(wanted)):String(fiche.answers?.[questionCode] ?? "")===String(wanted)));
   }
   const sort=ui.sort ?? "recent";
   if(sort==="oldest") rows.sort((a,b)=>a.index-b.index);
@@ -499,12 +502,17 @@ function onFicheAnswer(e) {
   if (!state.ficheEditor) return;
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
-  state.ficheEditor.answers[code]=e.target.value;
+  if(e.target.type==="checkbox"){
+    let selected=[...(Array.isArray(state.ficheEditor.answers[code])?state.ficheEditor.answers[code]:[])].map(String);
+    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>!document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive==="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
+    else selected=selected.filter(v=>v!==String(e.target.value));
+    state.ficheEditor.answers[code]=selected;
+  } else state.ficheEditor.answers[code]=e.target.value;
   const combined={...state.answers,...state.ficheEditor.answers};
   sanitizeDependentAnswers(state.definition,combined);
   for (const key of Object.keys(state.ficheEditor.answers)) state.ficheEditor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
+  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -513,10 +521,12 @@ export function collectFicheAnswers(root, currentAnswers={}) {
   const codes=new Set(controls.map(el=>el.dataset?.ficheQuestion).filter(Boolean));
   for (const code of codes) {
     const group=controls.filter(el=>el.dataset?.ficheQuestion===code);
+    const checkboxes=group.filter(el=>el.type==="checkbox");
     const radio=group.find(el=>el.type==="radio" && el.checked);
-    const nonRadio=group.find(el=>el.type!=="radio");
-    if (radio) answers[code]=radio.value;
-    else if (nonRadio) answers[code]=nonRadio.value;
+    const nonChoice=group.find(el=>el.type!=="radio" && el.type!=="checkbox");
+    if(checkboxes.length) answers[code]=checkboxes.filter(el=>el.checked).map(el=>el.value);
+    else if (radio) answers[code]=radio.value;
+    else if (nonChoice) answers[code]=nonChoice.value;
     else if (group.some(el=>el.type==="radio")) answers[code]="";
   }
   return answers;
@@ -551,10 +561,15 @@ async function saveCurrentFiche() {
 function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
-  state.answers[code]=e.target.value;
+  if(e.target.type==="checkbox"){
+    let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
+    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>!document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive==="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
+    else selected=selected.filter(v=>v!==String(e.target.value));
+    state.answers[code]=selected;
+  } else state.answers[code]=e.target.value;
   sanitizeDependentAnswers(state.definition,state.answers);
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
+  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
 }
 
 export function validateVisiblePage(page, answers={}) {
@@ -622,7 +637,7 @@ async function saveAndQuit(){
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
-async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
+async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
 function selectedCampaign(){const cs=state.definition.campaigns??[]; /* Jeton_acces is enforced by Grist ACL for anonymous links. */ const candidate=state.selectedRecord?.Campagne_Code; if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;} if(cs.length===1)return cs[0]; throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
 async function ensureResponse(){
@@ -647,18 +662,48 @@ async function ensureResponse(){
 }
 function gristValueFields(question,value){const fields=serializeAnswer(question,value,state.definition);if(fields.Valeur_reference_Code)fields.Valeur_reference_Code=rowIdByCode(state.definition.referentialValues,"ValeurRef_Code",fields.Valeur_reference_Code);if(fields.Valeur_structure_Code)fields.Valeur_structure_Code=rowIdByCode(state.definition.structures,"Structure_Code",fields.Valeur_structure_Code);return fields;}
 async function checkResponseRevision(){await refreshPersistenceRows();const fresh=state.definition.responses.find(r=>r.id===state.response?.id);if(state.response&&fresh)assertRevision(state.response.Revision,fresh.Revision);return fresh;}
+function isMultiQuestion(q){return controlKind(q)==="checkbox";}
+function selectionTarget(q,value){
+  const option=optionsFor(q,state.definition,state.answers).find(o=>String(o.value)===String(value));
+  if(!option)return null;
+  if(option.source==="choice")return {Choix_Code:option.rowId,ValeurRef_Code:null,Structure_Code:null};
+  if(option.source==="reference")return {Choix_Code:null,ValeurRef_Code:option.rowId,Structure_Code:null};
+  if(option.source==="structure")return {Choix_Code:null,ValeurRef_Code:null,Structure_Code:option.rowId};
+  return null;
+}
 async function writeAnswers(element,questions,answers){
   const actions=[]; const existing=state.definition.responseValues.filter(v=>String(v.Element_Code)===String(element.id));
-  for(const q of questions){const qc=codeOf(q.Question_Code), old=existing.find(v=>String(v.Question_Code)===String(q.id));const fields={...gristValueFields(q,answers[qc]),Element_Code:element.id,Question_Code:q.id};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(answers[qc]!==undefined&&answers[qc]!=="")actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
+  for(const q of questions){
+    const qc=codeOf(q.Question_Code), old=existing.find(v=>String(v.Question_Code)===String(q.id));
+    if(isMultiQuestion(q)){
+      let valueRow=old;
+      if(!valueRow){
+        const created=await grist.docApi.applyUserActions([["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),Element_Code:element.id,Question_Code:q.id,...gristValueFields(q,"")}]]); 
+        await refreshPersistenceRows();
+        valueRow=state.definition.responseValues.find(v=>String(v.Element_Code)===String(element.id)&&String(v.Question_Code)===String(q.id));
+      }
+      if(!valueRow)throw new Error(`Impossible de créer la valeur technique pour ${qc}.`);
+      const oldSelections=(state.definition.responseSelections??[]).filter(s=>String(s.Valeur_Code)===String(valueRow.id));
+      for(const s of oldSelections)actions.push(["RemoveRecord","SELECTIONS_REPONSE",s.id]);
+      for(const selected of (Array.isArray(answers[qc])?answers[qc]:[])){
+        const target=selectionTarget(q,selected); if(!target)continue;
+        actions.push(["AddRecord","SELECTIONS_REPONSE",null,{Selection_Code:uniqueCode("SEL"),Valeur_Code:valueRow.id,...target}]);
+      }
+      continue;
+    }
+    const fields={...gristValueFields(q,answers[qc]),Element_Code:element.id,Question_Code:q.id};
+    if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);
+    else if(answers[qc]!==undefined&&answers[qc]!=="")actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);
+  }
   if(actions.length)await grist.docApi.applyUserActions(actions);
 }
 async function bumpRevisions(element){const rr=Number(state.response.Revision||0)+1,er=Number(element.Revision||0)+1;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Revision:rr}]]);state.response={...state.response,Revision:rr};element.Revision=er;}
 async function savePrincipal(){try{state.saveError="";assertResponseEditable();state.saving=true;render();await ensureResponse();await checkResponseRevision();const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));await writeAnswers(state.principalElement,qs,state.answers);await bumpRevisions(state.principalElement);await refreshPersistenceRows();state.saving=false;return true;}catch(e){state.saving=false;showSaveError(e);render();return false;}}
 async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();let fiche=editor.index==null?null:state.fiches[type.code]?.[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,{Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:"Fiche",Statut:"Brouillon",Ordre:(state.fiches[type.code]?.length??0)+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()}]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
-  await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
+  await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
 async function cancelCurrentFiche(typeCode,index){assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
-async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
+async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
 async function boot() {
@@ -669,7 +714,7 @@ async function boot() {
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     const resumed=accessibleResponse(state.definition);
     const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
-    if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
+    if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     render();
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
