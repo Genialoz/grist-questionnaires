@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -233,16 +233,15 @@ function findRepeatableType(types,code){for(const t of types??[]){if(t.code===co
 function childFiches(type,parentFiche){return (state.fiches[type.code]??[]).filter(f=>String(f.parentElementId??"")===String(parentFiche?.elementId??""));}
 function renderSubFiches(parentType,parentFiche,readOnly=false){
   if(!parentFiche?.elementId || !(parentType.children??[]).length) return "";
-  return `<div class="subfiches">${parentType.children.map(type=>{
+  return `<div class="subfiches subfiches-inline">${parentType.children.map(type=>{
     const list=childFiches(type,parentFiche);
-    const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index);return `<article class="fiche-card subfiche-card"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
+    const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index);return `<article class="fiche-card subfiche-card"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
     const canAdd=!readOnly&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
-    const ed=state.ficheEditor?.typeCode===type.code&&String(state.ficheEditor.parentElementId)===String(parentFiche.elementId)?state.ficheEditor:null;
-    const editorHtml=ed?`<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h4>${ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...ed.answers}).map(q=>renderFicheField(q,ed.answers)).join("")}<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div><div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>Annuler</button><button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la sous-fiche</button></div></div>`:"";
+    const ed=state.subFicheEditor?.typeCode===type.code&&String(state.subFicheEditor.parentElementId)===String(parentFiche.elementId)?state.subFicheEditor:null;
+    const editorHtml=ed?`<div class="fiche-editor subfiche-editor" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers)).join("")}<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div><div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>Annuler</button><button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button></div></div>`:"";
     return `<section class="repeatable subfiche-group"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}</span></div>${cards||`<p class="empty-fiches">Aucun ${escapeHtml(type.labelSingular.toLowerCase())} saisi.</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
   }).join("")}</div>`;
 }
-
 
 
 export function visibleFicheQuestions(type, def, answers={}) {
@@ -429,14 +428,18 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=5 || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div>${renderSubFiches(type,fiche,readOnly)}</article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
-  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],readOnly) : (type.children?.length ? `<p class="help">Enregistrez d’abord cette fiche pour pouvoir ajouter ses sous-fiches.</p>` : "")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
   const canShowAdd=!readOnly && !editor && type.allowAdd;
   const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
   const floatingAdd=canShowAdd && list.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-floating="${escapeHtml(type.code)}" aria-label="${addLabel}">+ Ajouter</button>` : "";
   return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
+}
+
+function scrollToEditor(selector){
+  requestAnimationFrame(()=>document.querySelector(selector)?.scrollIntoView({behavior:"smooth",block:"start"}));
 }
 
 function render() {
@@ -482,7 +485,7 @@ function render() {
   const locked=responseIsLocked();
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
-    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${state.ficheEditor?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${state.ficheEditor?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header"><div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
@@ -516,8 +519,8 @@ function render() {
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
-  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{state.ficheEditor={typeCode:e.currentTarget.dataset.addSubfiche,index:null,parentElementId:Number(e.currentTarget.dataset.parentElement),answers:{}};render()}));
-  root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=Number(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.ficheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render()}));
+  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{state.subFicheEditor={typeCode:e.currentTarget.dataset.addSubfiche,index:null,parentElementId:Number(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor("[data-subfiche-editor]")}));
+  root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=Number(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.subFicheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render();scrollToEditor("[data-subfiche-editor]")}));
   root.querySelectorAll("[data-delete-subfiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentSubFiche(e.currentTarget.dataset.deleteSubfiche,Number(e.currentTarget.dataset.parentElement),Number(e.currentTarget.dataset.subIndex))));
   root.querySelectorAll("[data-add-fiche-floating]").forEach(floating=>{
     const code=floating.dataset.addFicheFloating;
@@ -528,14 +531,16 @@ function render() {
   });
   root.querySelectorAll("[data-edit-fiche]").forEach(el=>el.addEventListener("click",e=>{
     const typeCode=e.currentTarget.dataset.editFiche, index=Number(e.currentTarget.dataset.index);
-    state.ficheEditor={typeCode,index,answers:{...(state.fiches[typeCode]?.[index]?.answers ?? {})}}; render();
+    state.ficheEditor={typeCode,index,answers:{...(state.fiches[typeCode]?.[index]?.answers ?? {})}}; state.subFicheEditor=null; render(); scrollToEditor(`[data-fiche-editor="${CSS.escape(typeCode)}"]`);
   }));
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
   root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
-  root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{if(state.ficheEditor){state.ficheEditor.answers[e.currentTarget.dataset.clearFicheQuestion]="";render()}}));
-  root.querySelector("[data-cancel-fiche]")?.addEventListener("click",()=>{state.ficheEditor=null;render()});
+  root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{const ed=e.currentTarget.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor;if(ed){ed.answers[e.currentTarget.dataset.clearFicheQuestion]="";render()}}));
+  root.querySelector("[data-cancel-fiche]")?.addEventListener("click",()=>{state.ficheEditor=null;state.subFicheEditor=null;render()});
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
+  root.querySelector("[data-cancel-subfiche]")?.addEventListener("click",()=>{state.subFicheEditor=null;render();scrollToEditor("[data-fiche-editor]")});
+  root.querySelector("[data-save-subfiche]")?.addEventListener("click",()=>saveCurrentSubFiche());
   status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
   document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
@@ -545,18 +550,19 @@ function render() {
 
 
 function onFicheAnswer(e) {
-  if (!state.ficheEditor) return;
+  const editor=e.target.closest("[data-subfiche-editor]") ? state.subFicheEditor : state.ficheEditor;
+  if (!editor) return;
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
   if(e.target.type==="checkbox"){
-    let selected=[...(Array.isArray(state.ficheEditor.answers[code])?state.ficheEditor.answers[code]:[])].map(String);
+    let selected=[...(Array.isArray(editor.answers[code])?editor.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
-    state.ficheEditor.answers[code]=selected;
-  } else state.ficheEditor.answers[code]=e.target.value;
-  const combined={...state.answers,...state.ficheEditor.answers};
+    editor.answers[code]=selected;
+  } else editor.answers[code]=e.target.value;
+  const combined={...state.answers,...(state.ficheEditor?.answers??{}),...editor.answers};
   sanitizeDependentAnswers(state.definition,combined);
-  for (const key of Object.keys(state.ficheEditor.answers)) state.ficheEditor.answers[key]=combined[key] ?? "";
+  for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) render();
 }
@@ -580,6 +586,7 @@ export function collectFicheAnswers(root, currentAnswers={}) {
 
 async function saveCurrentFiche() {
   if (!state.ficheEditor) return;
+  if (state.subFicheEditor) { showSaveError(new Error("Enregistrez ou annulez la sous-fiche en cours avant d’enregistrer la fiche.")); return; }
   // Read the rendered controls once more at save time. This makes radio/select
   // persistence independent from change/input event timing and re-renders.
   state.ficheEditor.answers=collectFicheAnswers(document.querySelector("[data-fiche-editor]"),state.ficheEditor.answers);
@@ -601,6 +608,31 @@ async function saveCurrentFiche() {
     state.saving=true; render();
     await persistFiche(type,state.ficheEditor);
     state.ficheEditor=null; state.saving=false; render();
+  } catch(e) { state.saving=false; showSaveError(e); render(); }
+}
+
+async function saveCurrentSubFiche() {
+  if (!state.subFicheEditor) return;
+  const editor=state.subFicheEditor;
+  const root=document.querySelector("[data-subfiche-editor]");
+  editor.answers=collectFicheAnswers(root,editor.answers);
+  const vm=buildViewModel(state.definition,state.answers);
+  const page=vm.pages[state.pageIndex];
+  const type=findRepeatableType(page?.repeatableTypes ?? [],editor.typeCode);
+  if (!type) return;
+  const parentAnswers=state.ficheEditor?.answers ?? {};
+  const errors=validateFiche(type,state.definition,editor.answers,{...state.answers,...parentAnswers});
+  root?.querySelectorAll("[data-fiche-field]").forEach(x=>x.classList.remove("invalid"));
+  root?.querySelectorAll("[data-fiche-error]").forEach(x=>x.textContent="");
+  for (const [code,msg] of Object.entries(errors)) {
+    root?.querySelector(`[data-fiche-field="${CSS.escape(code)}"]`)?.classList.add("invalid");
+    const node=root?.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`); if(node) node.textContent=msg;
+  }
+  if (Object.keys(errors).length) return;
+  try {
+    state.saving=true; render();
+    await persistFiche(type,editor);
+    state.subFicheEditor=null; state.saving=false; render(); scrollToEditor("[data-fiche-editor]");
   } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
@@ -630,7 +662,7 @@ export function validateVisiblePage(page, answers={}) {
 
 async function nextPage(vm,page) {
   state.statusMessage="";
-  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
+  if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
   const errors=validateVisiblePage(page,state.answers);
   const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches);
   document.querySelectorAll(".field").forEach(x=>x.classList.remove("invalid"));
@@ -670,7 +702,7 @@ function accessibleResponse(def){
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
   if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button></div></div>`;
-  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit${state.ficheEditor?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button></div></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button></div></div>`;
 }
 export function campaignResumeBaseUrl(campaign, referrer="") {
   const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
@@ -702,7 +734,7 @@ async function copyResumeLink(afterSave=false){
   }catch(e){showSaveError(e);}
 }
 async function saveAndQuit(){
-  if(state.ficheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant d’enregistrer."));return;}
+  if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant d’enregistrer."));return;}
   if(await savePrincipal()){render();temporaryButtonFeedback("[data-save-quit]","✓ Réponse enregistrée");}
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
