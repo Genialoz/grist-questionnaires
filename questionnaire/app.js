@@ -320,9 +320,9 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
   const canShowAdd=!readOnly && !editor && type.allowAdd;
-  const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
-  const floatingAdd=canShowAdd && list.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" aria-label="${addLabel}">${addLabel}</button>` : "";
-  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${canShowAdd?`<div class="fiche-add-top">${addButton}</div>`:""}${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
+  const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
+  const floatingAdd=canShowAdd && list.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-floating="${escapeHtml(type.code)}" aria-label="${addLabel}">+ Ajouter</button>` : "";
+  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
 }
 
 function render() {
@@ -400,7 +400,14 @@ function render() {
   root.querySelectorAll("[data-fiche-reset]").forEach(el=>el.addEventListener("click",e=>{const code=e.currentTarget.dataset.ficheReset; state.ficheListUi[code]={query:"",sort:state.ficheListUi[code]?.sort??"recent",filters:{}}; render();}));
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
-    root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
+  root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
+  root.querySelectorAll("[data-add-fiche-floating]").forEach(floating=>{
+    const code=floating.dataset.addFicheFloating;
+    const normal=root.querySelector(`[data-add-fiche-normal="${CSS.escape(code)}"]`);
+    if(!normal || typeof IntersectionObserver==="undefined") return;
+    const observer=new IntersectionObserver(entries=>{floating.classList.toggle("is-visible",!entries[0].isIntersecting);},{threshold:.05});
+    observer.observe(normal);
+  });
   root.querySelectorAll("[data-edit-fiche]").forEach(el=>el.addEventListener("click",e=>{
     const typeCode=e.currentTarget.dataset.editFiche, index=Number(e.currentTarget.dataset.index);
     state.ficheEditor={typeCode,index,answers:{...(state.fiches[typeCode]?.[index]?.answers ?? {})}}; render();
