@@ -22,3 +22,6 @@
 .choice-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
 .bulk-choices{margin-top:10px;padding:10px;border:1px solid #ddd;border-radius:8px}
 .bulk-choices textarea{width:100%;min-height:130px;box-sizing:border-box;margin-top:6px}
+
+.choice-row.choice-deleted input{opacity:.45;text-decoration:line-through}
+.choice-row.choice-deleted{opacity:.7}
