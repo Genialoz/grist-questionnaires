@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"" };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
 
 function active(row) { return row.Active === undefined || row.Active === null || row.Active === "" || isTrue(row.Active); }
 export function resolveRefCode(value, rows, codeColumn) {
@@ -152,17 +152,16 @@ export function buildRepeatableTypes(def, pageCode) {
 
 export function visibleFicheQuestions(type, def, answers={}) {
   const diagnostics=[];
-  // Validate exactly the questions that buildRepeatableTypes attached to this
-  // fiche on the current page. Re-resolving them from def.questions can diverge
-  // from the rendered fiche and incorrectly let an empty fiche pass validation.
-  const rendered=sortByOrder((type?.questions ?? []).filter(active));
+  // Re-resolve the fiche questions from the authoritative questionnaire definition.
+  // A repeatable type embedded in a page can be a derived view; relying only on
+  // type.questions made completeness incorrectly report "Complet" when that
+  // derived list was absent/stale while the QUESTIONS table still contained the
+  // required fiche questions.
   const typeCode=codeOf(type?.code ?? type?.TypeFiche_Code);
-  const fallback=sortByOrder((def.questions ?? []).filter(q=>
+  const authoritative=sortByOrder((def.questions ?? []).filter(q=>
     active(q) && resolveRefCode(q.TypeFiche_Code,def.ficheTypes ?? [],"TypeFiche_Code")===typeCode
   ));
-  // The rendered list is authoritative whenever it exists. The fallback only
-  // supports callers/tests that provide a fiche type before page composition.
-  const questions=rendered.length ? rendered : fallback;
+  const questions=authoritative.length ? authoritative : (type.questions ?? []);
   return questions
     .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
     .map(q=>({...q,options:optionsFor(q,def)}));
@@ -192,7 +191,6 @@ export function allowsPostValidationEdit(version={}) {
   return isTrue(first(version,["Autoriser_modification_apres_validation","Modification_apres_validation","Modifiable_apres_validation"],false));
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
-function responseIsDeleted(){return isTrue(state.response?.Supprime_logiquement);}
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
@@ -227,8 +225,8 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     isTrue(q.Lecture_seule)?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
-  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
+  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -240,6 +238,37 @@ function renderFicheField(q, answers) {
 function ficheSummary(fiche,index) {
   const firstValue=Object.values(fiche.answers ?? {}).find(v=>v!=="" && v!=null);
   return firstValue ? String(firstValue) : `Fiche ${index+1}`;
+}
+
+export function filterAndSortFiches(list=[], ui={}) {
+  const query=String(ui.query ?? "").trim().toLocaleLowerCase("fr");
+  const filters=ui.filters ?? {};
+  let rows=list.map((fiche,index)=>({fiche,index}));
+  if(query) rows=rows.filter(({fiche})=>Object.values(fiche.answers ?? {}).some(v=>String(v ?? "").toLocaleLowerCase("fr").includes(query)));
+  for (const [questionCode,wanted] of Object.entries(filters)) {
+    if (wanted!=="" && wanted!=null) rows=rows.filter(({fiche})=>String(fiche.answers?.[questionCode] ?? "")===String(wanted));
+  }
+  const sort=ui.sort ?? "recent";
+  if(sort==="oldest") rows.sort((a,b)=>a.index-b.index);
+  else rows.sort((a,b)=>b.index-a.index);
+  return rows;
+}
+
+function ficheFilterQuestions(type) {
+  const explicit=(type.questions ?? []).filter(q=>isTrue(first(q,["Filtre_fiche","Utiliser_filtre_fiche","Afficher_filtre_fiche"],false)));
+  if (explicit.length) return explicit;
+  // Until the Concepteur exposes the setting, categorical fiche questions are
+  // safe generic defaults. An explicit configuration will take priority later.
+  return (type.questions ?? []).filter(q=>["select","radio"].includes(controlKind(q)));
+}
+function ficheFilterTools(type,ui,def) {
+  return ficheFilterQuestions(type).map(q=>{
+    const qc=codeOf(q.Question_Code), current=ui.filters?.[qc] ?? "";
+    const label=first(q,["Libelle","Libellé","Titre"],qc);
+    const opts=optionsFor(q,def);
+    if(!opts.length) return "";
+    return `<label class="fiche-filter"><span>${escapeHtml(label)}</span><select data-fiche-filter="${escapeHtml(type.code)}" data-question-code="${escapeHtml(qc)}"><option value="">Tous</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(current)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select></label>`;
+  }).join("");
 }
 
 
@@ -280,18 +309,20 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const list=targetState.fiches[type.code] ?? [];
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
   const atMax=!canAddFiche(type,list);
-  const cards=list.map((fiche,index)=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{});return `<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const ui=targetState.ficheListUi?.[type.code] ?? {query:"",sort:"recent"};
+  const visibleRows=filterAndSortFiches(list,ui);
+  const hasActiveFilters=Object.values(ui.filters ?? {}).some(v=>v!=="" && v!=null);
+  const showTools=list.length>=5 || Boolean(ui.query) || hasActiveFilters;
+  const filters=ficheFilterTools(type,ui,def);
+  const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{});return `<article class="fiche-card"><div><strong>${escapeHtml(type.labelSingular)} ${index+1}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span><div class="fiche-summary">${escapeHtml(ficheSummary(fiche,index))}</div></div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const empty=list.length===0 ? `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
-  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${cards || `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>`}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!readOnly && !editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
+  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${!readOnly && !editor && type.allowAdd?`<button type="button" class="btn add-fiche" data-add-fiche="${escapeHtml(type.code)}"${atMax?" disabled":""}>+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
 }
 
 function render() {
   const root=document.querySelector("#form-root"), nav=document.querySelector("#navigation"), status=document.querySelector("#status");
-  if(responseIsDeleted()) {
-    status.innerHTML=`<div class="status-info">Cette réponse a été supprimée. Elle n’est plus accessible ni modifiable.</div>`;
-    root.innerHTML=`<div class="card deleted-response"><h1>Réponse supprimée</h1><p>Votre réponse a bien été supprimée. Ce lien de reprise ne permet plus de la consulter ou de la modifier.</p></div>`;
-    nav.innerHTML=""; return;
-  }
   const vm=buildViewModel(state.definition,state.answers); state.diagnostics=vm.diagnostics;
   if (!vm.pages.length) {
     const d=state.definition;
@@ -333,12 +364,18 @@ function render() {
   const locked=responseIsLocked();
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
-    <header class="header"><div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit>Sauvegarder et quitter</button>`:""}</div></div>
+    <header class="header"><div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
-    ${page.sections.map(s=>`<section class="section">${s.questions.length?`<h2>${escapeHtml(first(s,["Titre","Libelle","Libellé","Nom"],""))}</h2>`:""}
+    ${page.sections.map(s=>{
+      const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
+      const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
+      if(!s.questions.length && !sectionDescription) return "";
+      return `<section class="section">${sectionTitle?`<h2>${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
       ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
-    </section>`).join("")}
+    </section>`;
+    }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
   </div>`;
@@ -353,7 +390,13 @@ function render() {
     state.answers[code]="";
     render();
   }));
-  root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
+  root.querySelectorAll("[data-fiche-search]").forEach(el=>el.addEventListener("input",e=>{const code=e.currentTarget.dataset.ficheSearch; state.ficheListUi[code]={...(state.ficheListUi[code]??{}),query:e.currentTarget.value}; render(); const next=root.querySelector(`[data-fiche-search="${CSS.escape(code)}"]`); next?.focus(); if(next) next.setSelectionRange(next.value.length,next.value.length);}));
+  root.querySelectorAll("[data-fiche-sort]").forEach(el=>el.addEventListener("change",e=>{const code=e.currentTarget.dataset.ficheSort; state.ficheListUi[code]={...(state.ficheListUi[code]??{}),sort:e.currentTarget.value}; render();}));
+  root.querySelectorAll("[data-fiche-filter]").forEach(el=>el.addEventListener("change",e=>{const code=e.currentTarget.dataset.ficheFilter,qc=e.currentTarget.dataset.questionCode; const current=state.ficheListUi[code]??{}; state.ficheListUi[code]={...current,filters:{...(current.filters??{}),[qc]:e.currentTarget.value}}; render();}));
+  root.querySelectorAll("[data-fiche-reset]").forEach(el=>el.addEventListener("click",e=>{const code=e.currentTarget.dataset.ficheReset; state.ficheListUi[code]={query:"",sort:state.ficheListUi[code]?.sort??"recent",filters:{}}; render();}));
+  root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
+  root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
+    root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
   root.querySelectorAll("[data-edit-fiche]").forEach(el=>el.addEventListener("click",e=>{
     const typeCode=e.currentTarget.dataset.editFiche, index=Number(e.currentTarget.dataset.index);
     state.ficheEditor={typeCode,index,answers:{...(state.fiches[typeCode]?.[index]?.answers ?? {})}}; render();
@@ -413,20 +456,7 @@ async function saveCurrentFiche() {
     const node=document.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`);
     if(node) node.textContent=msg;
   }
-  if (Object.keys(errors).length) {
-    const summary=document.querySelector("[data-fiche-validation-summary]");
-    if (summary) {
-      summary.textContent="Certains champs obligatoires doivent être complétés avant d’enregistrer la fiche.";
-      summary.hidden=false;
-    }
-    const firstCode=Object.keys(errors)[0];
-    const firstField=document.querySelector(`[data-fiche-field="${CSS.escape(firstCode)}"]`);
-    if (firstField) {
-      firstField.scrollIntoView?.({behavior:"smooth",block:"center"});
-      firstField.querySelector("input, select, textarea, button")?.focus?.({preventScroll:true});
-    }
-    return;
-  }
+  if (Object.keys(errors).length) return;
   try {
     state.saving=true; render();
     await persistFiche(type,state.ficheEditor);
@@ -554,8 +584,7 @@ async function boot() {
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     const resumed=accessibleResponse(state.definition);
-    const deleted=(state.definition.responses??[]).find(r=>isTrue(r.Supprime_logiquement));
-    const rc=resumed?.Reponse_Code ?? deleted?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
+    const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     render();
   } catch(e) {

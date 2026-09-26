@@ -60,3 +60,15 @@ textarea { min-height:110px; resize:vertical; }
 
 .fiche-validation-summary { margin-top:16px; padding:10px 12px; border:1px solid #a31621; border-radius:8px; background:#fff7f7; color:#8a101a; font-size:.92rem; font-weight:600; }
 .deleted-response{border-color:#e1c7c9}
+
+/* Ergonomie répondant : barre persistante + outils de liste de fiches */
+.respondent-toolbar{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:12px;margin:-24px -24px 20px;padding:12px 24px;background:rgba(255,255,255,.96);border-bottom:1px solid #e6e4eb;backdrop-filter:blur(8px)}
+.respondent-toolbar-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.fiche-list-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}
+.fiche-search{flex:1 1 220px}.fiche-search input{width:100%}
+.fiche-sort{display:flex;align-items:center;gap:7px;color:#696875;font-size:.88rem}.fiche-sort select{min-width:150px}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+@media (max-width:600px){.respondent-toolbar{margin:-16px -16px 16px;padding:10px 16px;align-items:flex-start}.respondent-toolbar-actions{width:100%}.respondent-toolbar-actions .btn{flex:1}.fiche-list-tools{align-items:stretch;flex-direction:column}.fiche-sort{justify-content:space-between}.fiche-sort select{flex:1}}
+.fiche-filter{display:flex;align-items:center;gap:7px;color:#696875;font-size:.88rem}.fiche-filter select{min-width:145px}.fiche-reset{align-self:flex-end}
+@media (max-width:600px){.fiche-filter{justify-content:space-between}.fiche-filter select{flex:1}.fiche-reset{align-self:stretch}}
+.section-description { color:#5b5a66; white-space:pre-wrap; margin:8px 0 14px; }
