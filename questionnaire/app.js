@@ -216,7 +216,7 @@ export function buildRepeatableTypes(def, pageCode) {
       labelSingular:first(type,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],"Fiche"),
       labelPlural:first(type,["Libelle_pluriel","Libellé_pluriel"],"Fiches"),
       minimum:Number(type.Minimum || 0),
-      maximum:type.Maximum==="" || type.Maximum==null ? null : Number(type.Maximum),
+      maximum:type.Maximum==="" || type.Maximum==null || Number(type.Maximum)<=0 ? null : Number(type.Maximum),
       allowAdd:type.Autoriser_ajout===undefined ? true : isTrue(type.Autoriser_ajout),
       allowDelete:type.Autoriser_suppression===undefined ? true : isTrue(type.Autoriser_suppression),
       titleQuestionCode:resolveRefCode(type.Question_titre_Code,def.questions,"Question_Code"),
