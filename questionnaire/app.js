@@ -504,7 +504,7 @@ function onFicheAnswer(e) {
   if (!code) return;
   if(e.target.type==="checkbox"){
     let selected=[...(Array.isArray(state.ficheEditor.answers[code])?state.ficheEditor.answers[code]:[])].map(String);
-    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>!document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive==="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
+    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
     state.ficheEditor.answers[code]=selected;
   } else state.ficheEditor.answers[code]=e.target.value;
@@ -563,7 +563,7 @@ function onAnswer(e) {
   if (!code) return;
   if(e.target.type==="checkbox"){
     let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
-    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>!document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive==="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
+    if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
     state.answers[code]=selected;
   } else state.answers[code]=e.target.value;
