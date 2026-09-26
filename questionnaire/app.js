@@ -239,7 +239,7 @@ function renderSubFiches(parentType,parentFiche,readOnly=false){
     const canAdd=!readOnly&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
     const ed=state.subFicheEditor?.typeCode===type.code&&String(state.subFicheEditor.parentElementId)===String(parentFiche.elementId)?state.subFicheEditor:null;
     const editorHtml=ed?`<div class="fiche-editor subfiche-editor" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers)).join("")}<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div><div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>Annuler</button><button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button></div></div>`:"";
-    return `<section class="repeatable subfiche-group"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}</span></div>${cards||`<p class="empty-fiches">Aucun ${escapeHtml(type.labelSingular.toLowerCase())} saisi.</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
+    return `<section class="repeatable subfiche-group" data-subfiche-group="${escapeHtml(type.code)}"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}</span></div>${cards||`<p class="empty-fiches">Aucun ${escapeHtml(type.labelSingular.toLowerCase())} saisi.</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
   }).join("")}</div>`;
 }
 
@@ -632,7 +632,7 @@ async function saveCurrentSubFiche() {
   try {
     state.saving=true; render();
     await persistFiche(type,editor);
-    state.subFicheEditor=null; state.saving=false; render(); scrollToEditor("[data-fiche-editor]");
+    state.subFicheEditor=null; state.saving=false; render(); scrollToEditor(`[data-subfiche-group="${CSS.escape(editor.typeCode)}"]`);
   } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
