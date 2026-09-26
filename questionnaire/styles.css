@@ -79,3 +79,12 @@ textarea { min-height:110px; resize:vertical; }
 .add-fiche-floating{position:fixed;right:24px;bottom:24px;z-index:35;display:none;margin:0!important;padding:7px 11px;font-size:.84rem;box-shadow:0 4px 14px rgba(0,0,0,.16);font-weight:650}
 .add-fiche-floating.is-visible{display:inline-flex}
 @media (max-width:600px){.fiche-add-bottom .add-fiche{width:100%}.add-fiche-floating{right:14px;bottom:14px;width:auto;max-width:calc(100vw - 28px)}}
+
+/* Fiche card: title first, stable identifier deliberately secondary. */
+.fiche-card-main{min-width:0;flex:1}
+.fiche-title-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap}
+.fiche-title{font-size:1rem;color:#24232b}
+.fiche-identifier{margin-top:.18rem;color:#85838f;font-size:.76rem;font-weight:500}
+.fiche-summary{margin-top:.55rem;display:grid;gap:.18rem}
+.fiche-summary-item{color:#5f5d69;font-size:.9rem;line-height:1.35}
+.fiche-summary-label{font-weight:600;color:#4f4d58}

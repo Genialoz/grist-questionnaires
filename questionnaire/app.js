@@ -20,6 +20,10 @@ export function resolveRefCode(value, rows, codeColumn) {
   if (byId) return codeOf(byId[codeColumn]);
   return raw;
 }
+function resolveRefCodes(value, rows, codeColumn) {
+  const rawValues=Array.isArray(value) ? (value[0]==="L" ? value.slice(1) : value) : (value==null||value==="" ? [] : [value]);
+  return rawValues.map(v=>resolveRefCode(v,rows,codeColumn)).filter(Boolean);
+}
 function first(row, names, fallback="") { for (const n of names) if (row?.[n] != null && row[n] !== "") return row[n]; return fallback; }
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
@@ -215,7 +219,7 @@ export function buildRepeatableTypes(def, pageCode) {
       allowAdd:type.Autoriser_ajout===undefined ? true : isTrue(type.Autoriser_ajout),
       allowDelete:type.Autoriser_suppression===undefined ? true : isTrue(type.Autoriser_suppression),
       titleQuestionCode:resolveRefCode(type.Question_titre_Code,def.questions,"Question_Code"),
-      summaryQuestionCode:resolveRefCode(type.Question_resume_Code,def.questions,"Question_Code"),
+      summaryQuestionCodes:resolveRefCodes(type.Question_resume_Code,def.questions,"Question_Code"),
       questions
     };
   }).filter(type=>type.questions.length>0);
@@ -321,7 +325,14 @@ function displayFicheAnswer(type,def,fiche,questionCode) {
 }
 function ficheCardText(type,def,fiche,index) {
   const fallback=`${type.labelSingular} ${index+1}`;
-  return {identifier:`Fiche ${String(index+1).padStart(3,"0")}`,title:displayFicheAnswer(type,def,fiche,type.titleQuestionCode)||fallback,summary:displayFicheAnswer(type,def,fiche,type.summaryQuestionCode)};
+  const summaries=(type.summaryQuestionCodes??[]).map(questionCode=>{
+    const q=(type.questions??[]).find(x=>codeOf(x.Question_Code)===codeOf(questionCode));
+    if(!q)return null;
+    const value=displayFicheAnswer(type,def,fiche,questionCode);
+    if(!value)return null;
+    return {label:first(q,["Libelle","Libellé","Titre"],codeOf(q.Question_Code)),value};
+  }).filter(Boolean);
+  return {identifier:`Fiche ${String(index+1).padStart(3,"0")}`,title:displayFicheAnswer(type,def,fiche,type.titleQuestionCode)||fallback,summaries};
 }
 
 export function filterAndSortFiches(list=[], ui={}) {
@@ -399,7 +410,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=5 || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div><strong>${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${card.summary?`<div class="fiche-summary">${escapeHtml(card.summary)}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
