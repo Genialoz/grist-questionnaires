@@ -203,15 +203,16 @@ export function deleteFiche(targetState,typeCode,index) {
 }
 
 export function buildRepeatableTypes(def, pageCode) {
-  return sortByOrder((def.ficheTypes ?? []).filter(active)).map(type=>{
+  const all=sortByOrder((def.ficheTypes ?? []).filter(active)).map(type=>{
     const code=codeOf(type.TypeFiche_Code);
+    const parentCode=resolveRefCode(type.Parent_Code,def.ficheTypes,"TypeFiche_Code");
     const questions=sortByOrder((def.questions ?? []).filter(q=>
       active(q) &&
       resolveRefCode(q.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")===code &&
       resolveRefCode(q.Page_Code,def.pages,"Page_Code")===pageCode
     ));
     return {
-      code,
+      code,parentCode,
       labelSingular:first(type,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],"Fiche"),
       labelPlural:first(type,["Libelle_pluriel","Libellé_pluriel"],"Fiches"),
       minimum:Number(type.Minimum || 0),
@@ -220,10 +221,28 @@ export function buildRepeatableTypes(def, pageCode) {
       allowDelete:type.Autoriser_suppression===undefined ? true : isTrue(type.Autoriser_suppression),
       titleQuestionCode:resolveRefCode(type.Question_titre_Code,def.questions,"Question_Code"),
       summaryQuestionCodes:resolveRefCodes(type.Question_resume_Code,def.questions,"Question_Code"),
-      questions
+      questions,children:[]
     };
   }).filter(type=>type.questions.length>0);
+  const byCode=Object.fromEntries(all.map(t=>[t.code,t]));
+  for(const t of all) if(t.parentCode && byCode[t.parentCode]) byCode[t.parentCode].children.push(t);
+  return all.filter(t=>!t.parentCode);
 }
+
+function findRepeatableType(types,code){for(const t of types??[]){if(t.code===code)return t;const c=findRepeatableType(t.children,code);if(c)return c;}return null;}
+function childFiches(type,parentFiche){return (state.fiches[type.code]??[]).filter(f=>String(f.parentElementId??"")===String(parentFiche?.elementId??""));}
+function renderSubFiches(parentType,parentFiche,readOnly=false){
+  if(!parentFiche?.elementId || !(parentType.children??[]).length) return "";
+  return `<div class="subfiches">${parentType.children.map(type=>{
+    const list=childFiches(type,parentFiche);
+    const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index);return `<article class="fiche-card subfiche-card"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
+    const canAdd=!readOnly&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
+    const ed=state.ficheEditor?.typeCode===type.code&&String(state.ficheEditor.parentElementId)===String(parentFiche.elementId)?state.ficheEditor:null;
+    const editorHtml=ed?`<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h4>${ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...ed.answers}).map(q=>renderFicheField(q,ed.answers)).join("")}<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div><div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>Annuler</button><button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la sous-fiche</button></div></div>`:"";
+    return `<section class="repeatable subfiche-group"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}</span></div>${cards||`<p class="empty-fiches">Aucun ${escapeHtml(type.labelSingular.toLowerCase())} saisi.</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
+  }).join("")}</div>`;
+}
+
 
 
 export function visibleFicheQuestions(type, def, answers={}) {
@@ -410,7 +429,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=5 || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div>${renderSubFiches(type,fiche,readOnly)}</article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
@@ -497,6 +516,9 @@ function render() {
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
+  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{state.ficheEditor={typeCode:e.currentTarget.dataset.addSubfiche,index:null,parentElementId:Number(e.currentTarget.dataset.parentElement),answers:{}};render()}));
+  root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=Number(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.ficheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render()}));
+  root.querySelectorAll("[data-delete-subfiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentSubFiche(e.currentTarget.dataset.deleteSubfiche,Number(e.currentTarget.dataset.parentElement),Number(e.currentTarget.dataset.subIndex))));
   root.querySelectorAll("[data-add-fiche-floating]").forEach(floating=>{
     const code=floating.dataset.addFicheFloating;
     const normal=root.querySelector(`[data-add-fiche-normal="${CSS.escape(code)}"]`);
@@ -564,7 +586,7 @@ async function saveCurrentFiche() {
   state.saveError="";
   const vm=buildViewModel(state.definition,state.answers);
   const page=vm.pages[state.pageIndex];
-  const type=(page?.repeatableTypes ?? []).find(t=>t.code===state.ficheEditor.typeCode);
+  const type=findRepeatableType(page?.repeatableTypes ?? [],state.ficheEditor.typeCode);
   if (!type) return;
   const errors=validateFiche(type,state.definition,state.ficheEditor.answers,state.answers);
   document.querySelectorAll("[data-fiche-field]").forEach(x=>x.classList.remove("invalid"));
@@ -747,10 +769,11 @@ async function writeAnswers(element,questions,answers){
 }
 async function bumpRevisions(element){const rr=Number(state.response.Revision||0)+1,er=Number(element.Revision||0)+1;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Revision:rr}]]);state.response={...state.response,Revision:rr};element.Revision=er;}
 async function savePrincipal(){try{state.saveError="";assertResponseEditable();state.saving=true;render();await ensureResponse();await checkResponseRevision();const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));await writeAnswers(state.principalElement,qs,state.answers);await bumpRevisions(state.principalElement);await refreshPersistenceRows();state.saving=false;return true;}catch(e){state.saving=false;showSaveError(e);render();return false;}}
-async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();let fiche=editor.index==null?null:state.fiches[type.code]?.[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,{Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:"Fiche",Statut:"Brouillon",Ordre:(state.fiches[type.code]?.length??0)+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()}]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
+async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
   await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
 async function cancelCurrentFiche(typeCode,index){assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
 async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 

@@ -52,11 +52,14 @@ export function hydrateResponse(rows,definition,reponseCode){
   const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(q){if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);}} return out;};
   const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
   const fiches={};
-  for(const el of sortByOrder(elements.filter(e=>String(e.Type_element??"").toLowerCase()==="fiche"&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
+  for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
     const rawTc=codeOf(el.TypeFiche_Code);
     const ficheType=(definition.ficheTypes??[]).find(t=>String(t.id)===rawTc || codeOf(t.TypeFiche_Code)===rawTc);
     const tc=ficheType ? codeOf(ficheType.TypeFiche_Code) : rawTc;
-    if(!tc) continue; (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,revision:Number(el.Revision||0),status:el.Statut||"Brouillon",answers:answersFor(el)});
+    if(!tc) continue;
+    const parentRaw=codeOf(el.Parent_Code);
+    const parentEl=parentRaw ? elements.find(x=>String(x.id)===parentRaw || codeOf(x.Element_Code)===parentRaw) : null;
+    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",answers:answersFor(el)});
   }
   return {response,principalAnswers:principal?answersFor(principal):{},principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
 }
