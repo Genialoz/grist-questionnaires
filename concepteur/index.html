@@ -2,8 +2,16 @@
 <title>Concepteur de questionnaires</title><link rel="stylesheet" href="../shared/common.css"><link rel="stylesheet" href="./styles.css">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script></head><body><main id="designer">
 <header class="topbar"><div><h1>Concepteur</h1><p>Construction du questionnaire</p></div><div class="selectors">
-<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label></div></header>
-<div id="status"></div><section class="workspace"><aside class="panel"><div class="panel-title">Structure</div>
+<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
+<div id="status"></div>
+<dialog id="new-questionnaire-dialog" class="app-dialog">
+<form id="new-questionnaire-form" class="form-grid">
+<div class="dialog-head"><div><h2>Nouveau questionnaire</h2><p>Crée le questionnaire et sa première version.</p></div><button type="button" class="dialog-close" id="cancel-new-questionnaire" aria-label="Fermer">×</button></div>
+<div class="editor-section"><h3>Identification</h3><div class="form-field"><label>Nom interne <input name="internal-name" required placeholder="Ex. Frais de déplacement 2026-2027"></label><div class="hint">Utilisé pour retrouver le questionnaire dans Gristionnaire.</div></div></div>
+<div class="editor-section"><h3>Affichage aux répondants</h3><div class="form-field"><label>Titre affiché <input name="display-title" placeholder="Optionnel — le nom interne sera utilisé si vide"></label></div><div class="form-field"><label>Description / introduction <textarea name="introduction" placeholder="Optionnel"></textarea></label></div><div class="form-field"><label>Logo <input name="logo-url" type="url" placeholder="Optionnel — URL du logo"></label><div class="hint">Le logo pourra être remplacé ou supprimé ultérieurement. L’import direct d’un fichier sera ajouté avec la gestion des médias.</div></div><div class="form-field"><label>Pied de page <textarea name="footer" placeholder="Optionnel"></textarea></label></div><label class="check"><input name="show-toc" type="checkbox"> Afficher un sommaire</label></div>
+<div class="form-actions"><button type="button" class="secondary-btn" id="cancel-new-questionnaire-2">Annuler</button><button type="submit" class="btn btn-primary">Créer le questionnaire</button></div>
+</form></dialog>
+<section class="workspace"><aside class="panel"><div class="panel-title">Structure</div>
 <div class="addbar"><button id="add-page">+ Page</button><button id="add-section">+ Section</button><button id="add-question">+ Question</button></div><div id="tree"></div></aside>
 <section class="panel"><div class="panel-title">Construction</div><div id="canvas" class="empty-state">Sélectionnez un élément.</div></section>
 <aside class="panel properties-panel"><div class="panel-title">Propriétés</div><div id="properties" class="empty-state">Aucun élément sélectionné.</div></aside>
