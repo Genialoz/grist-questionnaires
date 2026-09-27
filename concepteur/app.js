@@ -41,6 +41,142 @@ async function fetchOptionalTable(name){try{return rowsFromTable(await grist.doc
 async function deleteQuestionnaire(id){const q=S.data.QUESTIONNAIRES.find(x=>String(x.id)===String(id));if(!q)return;const vs=versionsForQuestionnaire(q),vIds=new Set(vs.map(v=>String(v.id))),vCodes=new Set(vs.map(v=>codeOf(v.Version_Code)));const campaigns=await fetchOptionalTable("CAMPAGNES"),linkedCampaigns=campaigns.filter(c=>vIds.has(String(codeOf(c.Version_Code)))||vCodes.has(ref(c.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code")));const responses=await fetchOptionalTable("REPONSES");const campaignIds=new Set(linkedCampaigns.map(c=>String(c.id))),campaignCodes=new Set(linkedCampaigns.map(c=>codeOf(c.Campagne_Code)));const linkedResponses=responses.filter(r=>vIds.has(String(codeOf(r.Version_Code)))||vCodes.has(ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code"))||campaignIds.has(String(codeOf(r.Campagne_Code)))||campaignCodes.has(codeOf(r.Campagne_Code)));if(linkedCampaigns.length||linkedResponses.length){alert("Ce questionnaire possède déjà une campagne ou des réponses. Pour protéger les données collectées, archivez-le au lieu de le supprimer.");return}if(!confirm(`Supprimer définitivement « ${label(q,"questionnaire")} » et toute sa définition ? Cette action est irréversible.`))return;const belongs=r=>vIds.has(String(codeOf(r.Version_Code)))||vCodes.has(ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code"));const qs=S.data.QUESTIONS.filter(belongs),qIds=new Set(qs.map(x=>String(x.id))),qCodes=new Set(qs.map(x=>codeOf(x.Question_Code)));const qref=v=>qIds.has(String(codeOf(v)))||qCodes.has(ref(v,S.data.QUESTIONS,"Question_Code"));const conds=S.data.CONDITIONS.filter(belongs),condIds=new Set(conds.map(x=>String(x.id))),condCodes=new Set(conds.map(x=>codeOf(x.Condition_Code)));const cref=v=>condIds.has(String(codeOf(v)))||condCodes.has(ref(v,S.data.CONDITIONS,"Condition_Code"));const actions=[];const rem=(table,arr)=>arr.forEach(r=>actions.push(["RemoveRecord",table,Number(r.id)]));rem("REGLES_CONDITION",S.data.REGLES_CONDITION.filter(r=>cref(r.Condition_Code)));rem("FILTRES_CHOIX",S.data.FILTRES_CHOIX.filter(r=>qref(r.Question_Code)));rem("COLONNES_MATRICE",S.data.COLONNES_MATRICE.filter(r=>qref(r.Question_Code)));rem("CHOIX_QUESTIONS",S.data.CHOIX_QUESTIONS.filter(r=>qref(r.Question_Code)));rem("CONDITIONS",conds);rem("QUESTIONS",qs);rem("TYPES_FICHES",S.data.TYPES_FICHES.filter(belongs));rem("SECTIONS",S.data.SECTIONS.filter(belongs));rem("PAGES",S.data.PAGES.filter(belongs));rem("VERSIONS_QUESTIONNAIRES",vs);actions.push(["RemoveRecord","QUESTIONNAIRES",Number(q.id)]);try{await grist.docApi.applyUserActions(actions);S.questionnaire=null;S.version=null;S.selected=null;await reload();renderQuestionnaireManager();status("Questionnaire supprimé.",false,true)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}}
 function previewQuestionHtml(q){const type=String(first(q,["Type_question","Type_reponse","Type","Format"],"Texte"));return `<div class="preview-question"><div class="preview-question-label">${esc(label(q,"question"))}${String(first(q,["Mode_obligation"],"")).toLowerCase().includes("oblig")?' <span aria-hidden="true">*</span>':""}</div><div class="hint">${esc(type)}</div><div class="preview-fake-input"></div></div>`}
 function renderRespondentPreview(){const v=versionRow();if(!v)return;const {pages,sections,questions}=current(),logo=first(v,["Logo_Data","Logo_URL","Logo","Url_logo"],""),size=first(v,["Logo_Taille"],"moyen"),align=first(v,["Logo_Alignement"],"gauche"),title=first(v,["Titre","Titre_affiche","Nom"],label(questionnaireRow(),"questionnaire")),intro=first(v,["Introduction","Texte_introduction"],""),footer=first(v,["Pied_de_page","Pied_page","Footer"],"");const tocMode=first(v,["Mode_sommaire"],Boolean(first(v,["Afficher_sommaire","Sommaire"],false))?"toujours":"desactive");const toc=tocMode!=="desactive"?`<nav class="preview-toc"><div class="preview-toc-title">Sommaire</div>${pages.map(p=>{const pc=codeOf(p.Page_Code),secs=sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc);return `<div class="preview-toc-page"><strong>${esc(label(p,"page"))}</strong>${secs.length?`<div>${secs.map(sec=>`<span>${esc(label(sec,"section"))}</span>`).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";let body="";for(const [pi,p] of pages.entries()){const pc=codeOf(p.Page_Code);body+=`<div class="preview-page"><h2>${esc(label(p,"page"))}</h2>${tocMode==="accueil"&&pi>0?'<div class="preview-return-toc">← Retour au sommaire</div>':""}`;for(const sec of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(sec.Section_Code);body+=`<div class="preview-section"><h3>${esc(label(sec,"section"))}</h3>${questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc&&!isMatrixLine(q)).map(previewQuestionHtml).join("")}</div>`}body+="</div>"}$("#respondent-preview-content").innerHTML=`<div class="preview-sheet">${logo?`<div class="preview-logo logo-${esc(size)} align-${esc(align)}"><img src="${esc(logo)}" alt=""></div>`:""}<h1>${esc(title)}</h1>${intro?`<div class="preview-intro">${esc(intro)}</div>`:""}${toc}${body||'<div class="empty-state">Aucune page dans cette version.</div>'}${footer?`<div class="preview-footer">${esc(footer)}</div>`:""}</div>`;$("#respondent-preview-dialog").showModal()}
+function renderSelectors(){const qs=S.data.QUESTIONNAIRES.filter(questionnaireIsActive);if(!S.questionnaire)S.questionnaire=codeOf(qs[0]?.Questionnaire_Code);$("#questionnaire-select").innerHTML=qs.map(q=>`<option value="${esc(codeOf(q.Questionnaire_Code))}" ${codeOf(q.Questionnaire_Code)===S.questionnaire?"selected":""}>${esc(label(q,"questionnaire"))}</option>`).join("");const vs=versions();if(!vs.some(v=>codeOf(v.Version_Code)===S.version))S.version=codeOf(vs[0]?.Version_Code);$("#version-select").innerHTML=vs.map(v=>`<option value="${esc(codeOf(v.Version_Code))}" ${codeOf(v.Version_Code)===S.version?"selected":""}>${esc(label(v,"version"))}</option>`).join("");renderTree()}
+const vm=r=>!("Version_Code" in r)||ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code")===S.version;
+function current(){return {pages:sortByOrder(S.data.PAGES.filter(r=>active(r)&&vm(r))),sections:sortByOrder(S.data.SECTIONS.filter(r=>active(r)&&vm(r))),questions:sortByOrder(S.data.QUESTIONS.filter(r=>active(r)&&vm(r))),fiches:sortByOrder(S.data.TYPES_FICHES.filter(r=>active(r)&&vm(r)))}}
+function ficheParentCode(f){return ref(f?.Parent_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
+function isSubFiche(f){return Boolean(ficheParentCode(f))}
+function item(t,r,txt,cls){const on=S.selected?.type===t&&String(S.selected.row.id)===String(r.id);const badge=t==="fiche"?(isSubFiche(r)?'<span class="badge">Sous-fiche</span>':'<span class="badge">Fiche</span>'):"";const draggable=t==="page"||t==="section"||t==="question";return `<button class="tree-item ${cls} ${on?"selected":""}" data-type="${t}" data-id="${r.id}" ${draggable?'draggable="true" title="Glisser-déposer pour réordonner"':""}>${esc(txt)}${badge}</button>`}
+function renderTree(){const {pages,sections,questions,fiches}=current();let h="";for(const p of pages){const pc=codeOf(p.Page_Code);h+=item("page",p,label(p,"page"),"tree-page");for(const s of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(s.Section_Code);h+=item("section",s,label(s,"section"),"tree-section");const sq=questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc);for(const q of sq.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")))h+=item("question",q,label(q,"question"),"tree-question");const ft=new Set(sq.map(q=>ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")).filter(Boolean));const parents=fiches.filter(f=>!isSubFiche(f)&&(ft.has(codeOf(f.TypeFiche_Code))||fiches.some(sf=>ficheParentCode(sf)===codeOf(f.TypeFiche_Code)&&ft.has(codeOf(sf.TypeFiche_Code)))));for(const f of parents){h+=item("fiche",f,label(f,"fiche"),"tree-fiche");const fc=codeOf(f.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===fc))h+=item("question",q,label(q,"question"),"tree-question fiche-question");for(const sf of fiches.filter(x=>ficheParentCode(x)===fc)){h+=item("fiche",sf,label(sf,"fiche"),"tree-fiche subfiche");const sfc=codeOf(sf.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===sfc))h+=item("question",q,label(q,"question"),"tree-question fiche-question subfiche-question")}}}}$("#tree").innerHTML=h||'<div class="empty-state">Aucune page.</div>';document.querySelectorAll(".tree-item").forEach(b=>b.onclick=()=>select(b.dataset.type,b.dataset.id));bindTreeDragDrop()}
+const rows=t=>({page:S.data.PAGES,section:S.data.SECTIONS,question:S.data.QUESTIONS,fiche:S.data.TYPES_FICHES}[t]||[]);
+
+let treeDrag=null;
+let treeDragPointerY=null;
+let treeDragScrollFrame=null;
+function dragSiblings(type,row){
+ const {pages,sections,questions}=current();
+ if(type==="page")return pages;
+ if(type==="section")return sections.filter(x=>String(x.Page_Code)===String(row.Page_Code));
+ if(type==="question")return questions.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")&&String(q.Section_Code)===String(row.Section_Code));
+ return [];
+}
+function isMainTreeQuestion(row){return Boolean(row)&&!isMatrixLine(row)&&!ref(row.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
+function pageForSection(section){return S.data.PAGES.find(p=>String(p.id)===String(codeOf(section?.Page_Code)||section?.Page_Code))||null}
+function sectionForQuestion(question){return S.data.SECTIONS.find(s=>String(s.id)===String(codeOf(question?.Section_Code)||question?.Section_Code))||null}
+function treeDropPlan(drag,targetType,target){
+ const source=rows(drag.type).find(x=>String(x.id)===String(drag.id));
+ if(!source||!target||String(source.id)===String(target.id)&&drag.type===targetType)return null;
+ if(drag.type==="page"&&targetType==="page")return {kind:"reorder",source,target};
+ if(drag.type==="section"){
+  if(targetType==="page")return {kind:"move-section",source,targetPage:target,targetSection:null};
+  if(targetType==="section")return {kind:String(source.Page_Code)===String(target.Page_Code)?"reorder":"move-section",source,targetPage:pageForSection(target),targetSection:target};
+ }
+ if(drag.type==="question"&&isMainTreeQuestion(source)){
+  if(targetType==="section")return {kind:"move-question",source,targetSection:target,targetQuestion:null};
+  if(targetType==="question"&&isMainTreeQuestion(target))return {kind:String(source.Section_Code)===String(target.Section_Code)?"reorder":"move-question",source,targetSection:sectionForQuestion(target),targetQuestion:target};
+ }
+ return null;
+}
+async function reorderTreeItem(type,sourceId,targetId){
+ const source=rows(type).find(x=>String(x.id)===String(sourceId)),target=rows(type).find(x=>String(x.id)===String(targetId));
+ if(!source||!target||source.id===target.id)return;
+ const siblings=dragSiblings(type,source);
+ if(!siblings.some(x=>String(x.id)===String(target.id)))throw new Error(type==="section"?"Déplacez la section dans sa page actuelle.":type==="question"?"Déplacez la question dans sa section actuelle.":"Déplacement impossible.");
+ const ordered=[...siblings].sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id));
+ const from=ordered.findIndex(x=>String(x.id)===String(source.id)),to=ordered.findIndex(x=>String(x.id)===String(target.id));
+ if(from<0||to<0||from===to)return;
+ const [moved]=ordered.splice(from,1);ordered.splice(to,0,moved);
+ const table=tableFor(type),actions=[];
+ ordered.forEach((r,i)=>{const order=i+1;if(Number(r.Ordre)!==order)actions.push(["UpdateRecord",table,Number(r.id),{Ordre:order}])});
+ if(!actions.length)return;
+ await grist.docApi.applyUserActions(actions);await finishTreeMove(type,source.id,"Ordre mis à jour.");
+}
+function orderedMainQuestions(sectionId,excludeId=null){return current().questions.filter(q=>isMainTreeQuestion(q)&&String(q.Section_Code)===String(sectionId)&&String(q.id)!==String(excludeId)).sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id))}
+function orderedSections(pageId,excludeId=null){return current().sections.filter(s=>String(s.Page_Code)===String(pageId)&&String(s.id)!==String(excludeId)).sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id))}
+function normalizeOrderActions(table,list){const actions=[];list.forEach((r,i)=>{const order=i+1;if(Number(r.Ordre)!==order)actions.push(["UpdateRecord",table,Number(r.id),{Ordre:order}])});return actions}
+async function finishTreeMove(type,id,message){
+ await reload();const fresh=rows(type).find(x=>String(x.id)===String(id));if(fresh)S.selected={type,row:fresh};renderTree();renderEditor();
+ requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${id}"]`)?.scrollIntoView({block:"nearest"}));status(message);
+}
+async function moveQuestionToSection(source,targetSection,targetQuestion=null){
+ if(!source||!targetSection||!isMainTreeQuestion(source))throw new Error("Cette question ne peut pas être déplacée ici.");
+ const oldSectionId=Number(codeOf(source.Section_Code)||source.Section_Code),newSectionId=Number(targetSection.id),newPage=pageForSection(targetSection),newPageId=newPage?Number(newPage.id):null;
+ const dest=orderedMainQuestions(newSectionId,source.id);let insertAt=dest.length;
+ if(targetQuestion){const i=dest.findIndex(q=>String(q.id)===String(targetQuestion.id));if(i>=0)insertAt=i}
+ dest.splice(insertAt,0,source);
+ const actions=[];
+ const sourceChanges={Section_Code:newSectionId,Ordre:insertAt+1};if(newPageId&&field(source,["Page_Code"]))sourceChanges.Page_Code=newPageId;
+ actions.push(["UpdateRecord","QUESTIONS",Number(source.id),sourceChanges]);
+ dest.forEach((q,i)=>{if(String(q.id)===String(source.id))return;const order=i+1;if(Number(q.Ordre)!==order)actions.push(["UpdateRecord","QUESTIONS",Number(q.id),{Ordre:order}])});
+ for(const child of questionChildren(source).filter(isMatrixLine)){const ch={Section_Code:newSectionId};if(newPageId&&field(child,["Page_Code"]))ch.Page_Code=newPageId;actions.push(["UpdateRecord","QUESTIONS",Number(child.id),ch])}
+ if(oldSectionId!==newSectionId)actions.push(...normalizeOrderActions("QUESTIONS",orderedMainQuestions(oldSectionId,source.id)));
+ await grist.docApi.applyUserActions(actions);await finishTreeMove("question",source.id,"Question déplacée dans la nouvelle section.");
+}
+async function moveSectionToPage(source,targetPage,targetSection=null){
+ if(!source||!targetPage)throw new Error("Page de destination introuvable.");
+ const oldPageId=Number(codeOf(source.Page_Code)||source.Page_Code),newPageId=Number(targetPage.id),dest=orderedSections(newPageId,source.id);let insertAt=dest.length;
+ if(targetSection){const i=dest.findIndex(s=>String(s.id)===String(targetSection.id));if(i>=0)insertAt=i}
+ dest.splice(insertAt,0,source);
+ const actions=[["UpdateRecord","SECTIONS",Number(source.id),{Page_Code:newPageId,Ordre:insertAt+1}]];
+ dest.forEach((s,i)=>{if(String(s.id)===String(source.id))return;const order=i+1;if(Number(s.Ordre)!==order)actions.push(["UpdateRecord","SECTIONS",Number(s.id),{Ordre:order}])});
+ const sectionCode=codeOf(source.Section_Code);for(const q of S.data.QUESTIONS.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sectionCode)){if(field(q,["Page_Code"]))actions.push(["UpdateRecord","QUESTIONS",Number(q.id),{Page_Code:newPageId}])}
+ if(oldPageId!==newPageId)actions.push(...normalizeOrderActions("SECTIONS",orderedSections(oldPageId,source.id)));
+ await grist.docApi.applyUserActions(actions);await finishTreeMove("section",source.id,"Section déplacée dans la nouvelle page.");
+}
+async function executeTreeDrop(plan){
+ if(!plan)return;
+ if(plan.kind==="reorder")return reorderTreeItem(treeDrag.type,plan.source.id,plan.target.id);
+ if(plan.kind==="move-question")return moveQuestionToSection(plan.source,plan.targetSection,plan.targetQuestion);
+ if(plan.kind==="move-section")return moveSectionToPage(plan.source,plan.targetPage,plan.targetSection);
+}
+
+function stopTreeDragAutoScroll(){
+ treeDragPointerY=null;
+ if(treeDragScrollFrame!==null){cancelAnimationFrame(treeDragScrollFrame);treeDragScrollFrame=null}
+}
+function runTreeDragAutoScroll(){
+ treeDragScrollFrame=null;
+ if(!treeDrag||treeDragPointerY===null)return;
+ const tree=$("#tree"),panel=tree?.closest(".panel");
+ if(!panel)return;
+ const rect=panel.getBoundingClientRect(),edge=Math.min(110,Math.max(65,rect.height*.15));
+ let delta=0;
+ if(treeDragPointerY<rect.top+edge)delta=-Math.max(5,Math.round((rect.top+edge-treeDragPointerY)/edge*18));
+ else if(treeDragPointerY>rect.bottom-edge)delta=Math.max(5,Math.round((treeDragPointerY-(rect.bottom-edge))/edge*18));
+ if(delta)panel.scrollTop+=delta;
+ treeDragScrollFrame=requestAnimationFrame(runTreeDragAutoScroll);
+}
+function autoScrollTreeDuringDrag(e){
+ if(!treeDrag)return;
+ treeDragPointerY=e.clientY;
+ if(treeDragScrollFrame===null)treeDragScrollFrame=requestAnimationFrame(runTreeDragAutoScroll);
+}
+
+function bindTreeDragDrop(){
+ const tree=$("#tree"),panel=tree?.closest(".panel");
+ if(panel)panel.ondragover=autoScrollTreeDuringDrag;
+ document.querySelectorAll('.tree-item[draggable="true"]').forEach(el=>{
+  el.ondragstart=e=>{stopTreeDragAutoScroll();treeDrag={type:el.dataset.type,id:el.dataset.id};treeDragPointerY=e.clientY;el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
+  el.ondragend=()=>{treeDrag=null;stopTreeDragAutoScroll();document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
+  el.ondragover=e=>{autoScrollTreeDuringDrag(e);if(!treeDrag)return;const target=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id)),plan=treeDropPlan(treeDrag,el.dataset.type,target);if(!plan)return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
+  el.ondragleave=()=>el.classList.remove("drag-target");
+  el.ondrop=async e=>{e.preventDefault();el.classList.remove("drag-target");if(!treeDrag)return;const d={...treeDrag},target=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id)),plan=treeDropPlan(d,el.dataset.type,target);try{await executeTreeDrop(plan)}catch(err){status(`Erreur : ${err?.message||err}`,true,true)}};
+ });
+}
+
+function select(t,id){const r=rows(t).find(x=>String(x.id)===String(id));if(!r)return;S.selected={type:t,row:r};renderTree();renderEditor()}
+function input(name,title,value,type="text"){if(type==="textarea")return `<div class="form-field"><label>${esc(title)}<textarea name="${name}">${esc(value??"")}</textarea></label></div>`;return `<div class="form-field"><label>${esc(title)}<input name="${name}" type="${type}" value="${esc(value??"")}"></label></div>`}
+function selectHtml(name,title,value,opts){return `<div class="form-field"><label>${esc(title)}<select name="${name}">${opts.map(([v,l])=>`<option value="${esc(v)}"${String(value)===String(v)?" selected":""}>${esc(l)}</option>`).join("")}</select></label></div>`}
+const TYPES=[["Texte","Texte court"],["Texte long","Texte long"],["Nombre","Nombre"],["Montant","Montant"],["Date","Date"],["Email","Adresse e-mail"],["Radio","Choix unique (boutons radio)"],["Liste déroulante","Liste déroulante"],["Cases à cocher","Choix multiples (cases à cocher)"],["Matrice_radio","Matrice — choix unique"],["Matrice_checkbox","Matrice — choix multiple"],["Matrice_nombre","Matrice — nombres"],["Matrice_texte","Matrice — texte"]];
+function questionType(q){return String(first(q,["Type_question","Type_reponse","Type","Format"],""))}
+function isMatrixQuestion(q){return questionType(q).toLowerCase().startsWith("matrice_")}
+function isMatrixLine(q){return Boolean(q?.Est_ligne_matrice)}
+function matrixLines(q){return sortByOrder((S.data.QUESTIONS||[]).filter(x=>active(x)&&vm(x)&&isMatrixLine(x)&&String(codeOf(x.Question_parente_Code)||"")===String(q.id)))}
+function isMultiChoiceType(v){const t=String(v||"").toLowerCase();return t.includes("case")||t.includes("checkbox")||t==="matrice_checkbox"}
+function choicesFor(q){const qc=codeOf(q.Question_Code);return sortByOrder(S.data.CHOIX_QUESTIONS.filter(c=>ref(c.Question_Code,S.data.QUESTIONS,"Question_Code")===qc&&active(c)))}
+function matrixInputType(q){const t=questionType(q).toLowerCase();return t==="matrice_nombre"?"number":t==="matrice_texte"?"text":"choice"}
+function matrixColumns(q){return sortByOrder((S.data.COLONNES_MATRICE||[]).filter(c=>String(codeOf(c.Question_Code)||"")===String(q.id)&&active(c)))}
+function matrixLineQuestionType(parent){const t=questionType(parent).toLowerCase();if(t==="matrice_checkbox")return "Cases à cocher";if(t==="matrice_nombre")return "Nombre";if(t==="matrice_texte")return "Texte";return "Radio"}
 function renderEditor(){const {type,row}=S.selected;if(type==="fiche"){renderFicheEditor(row);return}$("#canvas").innerHTML=`<div class="preview-card"><span class="badge">${esc(type)}</span><h2>${esc(label(row,type))}</h2><p>${type==="question"?"Configurez la question et ses règles simples.":"Modifiez les propriétés puis enregistrez."}</p>${type==="section"?'<div class="form-actions"><button type="button" class="btn btn-primary" id="add-section-fiche">+ Ajouter une fiche</button></div>':""}</div>`;
  const titleKey=field(row,type==="question"?["Libelle","Libellé","Question","Titre"]:["Titre","Nom","Libelle"]),descKey=field(row,type==="question"?["Aide","Description","Texte_aide"]:["Description","Introduction","Texte"]),orderKey=field(row,["Ordre"]),activeKey=field(row,["Active"]);
  let h='<form id="edit-form" class="form-grid">';if(titleKey)h+=input("title","Libellé / titre",row[titleKey]??"");if(descKey)h+=input("description",type==="question"?"Aide / description":"Description",row[descKey]??"","textarea");
