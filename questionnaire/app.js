@@ -57,18 +57,16 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   }
   let versions=loaded.VERSIONS_QUESTIONNAIRES.filter(active);
   let version=null;
-  // A resume token is the most precise context: response -> version.
-  // Only when no readable resumed response exists do we resolve the version from Acces_.
-  const requestedResume=requestedParam("Reprise_") || requestedParam("Reprise");
-  const resumeResponse=requestedResume
-    ? (loaded.REPONSES ?? []).find(r=>!isTrue(r.Supprime_logiquement) && String(r.Jeton_reprise??"").trim()===requestedResume)
-    : null;
-  const resumeVersion=resumeResponse?.Version_Code;
-  if(resumeVersion!=null && resumeVersion!==""){
-    const c=resolveRefCode(resumeVersion,versions,"Version_Code");
-    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(resumeVersion))) ?? null;
+  // Une reprise désigne une réponse précise : sa version est prioritaire sur tout
+  // contexte de campagne, de session ou de sélection Grist.
+  const resumeToken=requestedResumeToken();
+  const resumeResponse=resumeToken ? findResponseByResumeToken(loaded.REPONSES,resumeToken) : null;
+  if(resumeResponse?.Version_Code!=null && resumeResponse.Version_Code!==""){
+    const c=resolveRefCode(resumeResponse.Version_Code,versions,"Version_Code");
+    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(resumeResponse.Version_Code))) ?? null;
   }
-  // Without a resume response, a personalized access link determines the campaign/version.
+  // Sans reprise, un lien personnalisé est autoritaire : résoudre sa campagne AVANT la version.
+  // This avoids opening an unrelated questionnaire when an OWNER can read several campaigns/versions.
   const requestedAccess=requestedParam("Acces_");
   const accessCampaign=requestedAccess
     ? (loaded.CAMPAGNES ?? []).find(c=>active(c) && String(c.Jeton_acces??"").trim()===requestedAccess)
@@ -878,13 +876,20 @@ async function nextPage(vm,page) {
 
 
 function requestedParam(name){
-  try{return String(new URL(globalThis.location?.href||"http://local/").searchParams.get(name)||"").trim()}catch{return ""}
+  // Dans un widget Grist, les paramètres du lien répondant peuvent être portés
+  // soit par l’URL du widget, soit par l’URL Grist parente (document.referrer).
+  // Lire les deux évite de dépendre des droits de l’utilisateur connecté.
+  for(const raw of [globalThis.location?.href, globalThis.document?.referrer]){
+    if(!raw)continue;
+    try{const value=String(new URL(raw, "http://local/").searchParams.get(name)||"").trim();if(value)return value}catch{}
+  }
+  return "";
 }
+function requestedResumeToken(){return requestedParam("Reprise_")||requestedParam("Reprise")}
 function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
-  // Reprise is authoritative: it identifies one exact existing response.
-  const resume=requestedParam("Reprise_") || requestedParam("Reprise");
-  if(resume){const match=rows.find(r=>String(r.Jeton_reprise??"").trim()===resume);if(match)return match;return null;}
+  const resume=requestedResumeToken();
+  if(resume){const match=findResponseByResumeToken(rows,resume);if(match)return match;}
   const requested=requestedParam("Reponse_");
   if(requested){const match=rows.find(r=>String(r.id)===requested||String(codeOf(r.Reponse_Code))===requested);if(match)return match;}
   const access=requestedParam("Acces_");
@@ -933,7 +938,7 @@ function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.(
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
 async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
-function selectedCampaign(){const cs=state.definition.campaigns??[]; /* Reprise identifies the exact response/campaign; otherwise Acces_ is authoritative. */ const resume=requestedParam("Reprise_")||requestedParam("Reprise");if(resume){const rr=(state.definition.responses??[]).find(r=>String(r.Jeton_reprise??"").trim()===resume);if(rr){const raw=codeOf(rr.Campagne_Code);const c=cs.find(x=>String(x.id)===String(raw)||String(codeOf(x.Campagne_Code))===String(raw));if(c)return c;}}const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
+function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
