@@ -722,6 +722,27 @@ function onMatrixAnswer(e){
   else {answers[qc][rc]??={};answers[qc][rc][cc]=el.value;updateMatrixTotals(el.closest('[data-matrix]')??document);}
 }
 
+function collectPrincipalMatrixAnswers(root=document, answers=state.answers){
+  root.querySelectorAll('[data-matrix-question]:not([data-matrix-fiche="1"])').forEach(el=>{
+    const qc=el.dataset.matrixQuestion, rc=el.dataset.matrixRow, cc=el.dataset.matrixCol;
+    if(!qc||!rc||!cc) return;
+    answers[qc]??={};
+    const q=(state.definition.questions??[]).find(x=>codeOf(x.Question_Code)===qc);
+    const kind=matrixKind(q);
+    if(kind==="radio"){
+      if(el.checked) answers[qc][rc]=cc;
+      else if(answers[qc][rc]===undefined) answers[qc][rc]="";
+    } else if(kind==="checkbox"){
+      const checked=[...root.querySelectorAll(`[data-matrix-question="${CSS.escape(qc)}"][data-matrix-row="${CSS.escape(rc)}"][type="checkbox"]:checked`)].map(x=>x.dataset.matrixCol);
+      answers[qc][rc]=checked;
+    } else {
+      answers[qc][rc]??={};
+      answers[qc][rc][cc]=el.value;
+    }
+  });
+  return answers;
+}
+
 function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
@@ -905,7 +926,28 @@ async function writeAnswers(element,questions,answers){
   if(actions.length)await grist.docApi.applyUserActions(actions);
 }
 async function bumpRevisions(element){const rr=Number(state.response.Revision||0)+1,er=Number(element.Revision||0)+1;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Revision:rr}]]);state.response={...state.response,Revision:rr};element.Revision=er;}
-async function savePrincipal(){try{state.saveError="";assertResponseEditable();state.saving=true;render();await ensureResponse();await checkResponseRevision();const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));await writeAnswers(state.principalElement,qs,state.answers);await bumpRevisions(state.principalElement);await refreshPersistenceRows();state.saving=false;return true;}catch(e){state.saving=false;showSaveError(e);render();return false;}}
+async function savePrincipal(){try{
+  state.saveError="";
+  assertResponseEditable();
+  // Relire les cellules directement dans le DOM juste avant la sauvegarde.
+  // Cela évite de dépendre du timing des événements change/input des matrices.
+  collectPrincipalMatrixAnswers(document,state.answers);
+  state.saving=true;render();
+  await ensureResponse();
+  await checkResponseRevision();
+  const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));
+  await writeAnswers(state.principalElement,qs,state.answers);
+  await bumpRevisions(state.principalElement);
+  await refreshPersistenceRows();
+  // La vérité après Enregistrer est ce qui vient réellement d'être relu depuis Grist.
+  const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
+  state.response=h.response;
+  state.principalElement=h.principalElement;
+  state.answers=h.principalAnswers;
+  state.fiches=h.fiches;
+  state.saving=false;
+  return true;
+}catch(e){state.saving=false;showSaveError(e);render();return false;}}
 async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
   await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
