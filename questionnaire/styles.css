@@ -102,3 +102,6 @@ textarea { min-height:110px; resize:vertical; }
 .matrix-mobile-label{display:none}
 .matrix-empty{padding:12px;border:1px dashed #c9cdd3;border-radius:8px;color:#666}
 @media(max-width:700px){.matrix-wrap{overflow:visible;border:0}.matrix-table{min-width:0}.matrix-table thead{display:none}.matrix-table,.matrix-table tbody,.matrix-table tr,.matrix-table th,.matrix-table td{display:block;width:100%;box-sizing:border-box}.matrix-table tr{margin:0 0 14px;border:1px solid #e3e5e8;border-radius:10px;overflow:hidden}.matrix-table th:first-child{min-width:0}.matrix-table td{text-align:left;border-right:0}.matrix-mobile-label{display:block;font-size:.85em;font-weight:600;margin-bottom:5px}.matrix-table tfoot{display:block}.matrix-table tfoot tr{display:block}}
+
+/* V5.4.0 - personnalisation du questionnaire */
+.questionnaire-logo{margin-bottom:12px}.questionnaire-logo img{display:block;max-width:min(220px,60%);max-height:90px;object-fit:contain}.questionnaire-footer{margin-top:28px;padding-top:14px;border-top:1px solid #e5e2e8;font-size:.82rem;color:#6d6873;white-space:pre-line}
