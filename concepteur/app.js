@@ -21,6 +21,8 @@ function renderTree(){const {pages,sections,questions,fiches}=current();let h=""
 const rows=t=>({page:S.data.PAGES,section:S.data.SECTIONS,question:S.data.QUESTIONS,fiche:S.data.TYPES_FICHES}[t]||[]);
 
 let treeDrag=null;
+let treeDragPointerY=null;
+let treeDragScrollFrame=null;
 function dragSiblings(type,row){
  const {pages,sections,questions}=current();
  if(type==="page")return pages;
@@ -45,23 +47,35 @@ async function reorderTreeItem(type,sourceId,targetId){
  requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${source.id}"]`)?.scrollIntoView({block:"nearest"}));
  status("Ordre mis à jour.");
 }
-function autoScrollTreeDuringDrag(e){
- if(!treeDrag)return;
+function stopTreeDragAutoScroll(){
+ treeDragPointerY=null;
+ if(treeDragScrollFrame!==null){cancelAnimationFrame(treeDragScrollFrame);treeDragScrollFrame=null}
+}
+function runTreeDragAutoScroll(){
+ treeDragScrollFrame=null;
+ if(!treeDrag||treeDragPointerY===null)return;
  const tree=$("#tree"),panel=tree?.closest(".panel");
  if(!panel)return;
- const rect=panel.getBoundingClientRect(),edge=Math.min(90,Math.max(55,rect.height*.12));
+ const rect=panel.getBoundingClientRect(),edge=Math.min(110,Math.max(65,rect.height*.15));
  let delta=0;
- if(e.clientY<rect.top+edge)delta=-Math.max(6,Math.round((rect.top+edge-e.clientY)/edge*24));
- else if(e.clientY>rect.bottom-edge)delta=Math.max(6,Math.round((e.clientY-(rect.bottom-edge))/edge*24));
+ if(treeDragPointerY<rect.top+edge)delta=-Math.max(5,Math.round((rect.top+edge-treeDragPointerY)/edge*18));
+ else if(treeDragPointerY>rect.bottom-edge)delta=Math.max(5,Math.round((treeDragPointerY-(rect.bottom-edge))/edge*18));
  if(delta)panel.scrollTop+=delta;
+ treeDragScrollFrame=requestAnimationFrame(runTreeDragAutoScroll);
 }
+function autoScrollTreeDuringDrag(e){
+ if(!treeDrag)return;
+ treeDragPointerY=e.clientY;
+ if(treeDragScrollFrame===null)treeDragScrollFrame=requestAnimationFrame(runTreeDragAutoScroll);
+}
+
 function bindTreeDragDrop(){
  const tree=$("#tree"),panel=tree?.closest(".panel");
  if(panel)panel.ondragover=autoScrollTreeDuringDrag;
  document.querySelectorAll('.tree-item[draggable="true"]').forEach(el=>{
-  el.ondragstart=e=>{treeDrag={type:el.dataset.type,id:el.dataset.id};el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
-  el.ondragend=()=>{treeDrag=null;document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
-  el.ondragover=e=>{if(!treeDrag||treeDrag.type!==el.dataset.type||treeDrag.id===el.dataset.id)return;const src=rows(treeDrag.type).find(x=>String(x.id)===String(treeDrag.id)),dst=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id));if(!src||!dst||!dragSiblings(treeDrag.type,src).some(x=>String(x.id)===String(dst.id)))return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
+  el.ondragstart=e=>{stopTreeDragAutoScroll();treeDrag={type:el.dataset.type,id:el.dataset.id};treeDragPointerY=e.clientY;el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
+  el.ondragend=()=>{treeDrag=null;stopTreeDragAutoScroll();document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
+  el.ondragover=e=>{autoScrollTreeDuringDrag(e);if(!treeDrag||treeDrag.type!==el.dataset.type||treeDrag.id===el.dataset.id)return;const src=rows(treeDrag.type).find(x=>String(x.id)===String(treeDrag.id)),dst=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id));if(!src||!dst||!dragSiblings(treeDrag.type,src).some(x=>String(x.id)===String(dst.id)))return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
   el.ondragleave=()=>el.classList.remove("drag-target");
   el.ondrop=async e=>{e.preventDefault();el.classList.remove("drag-target");if(!treeDrag)return;const d={...treeDrag};try{await reorderTreeItem(d.type,d.id,el.dataset.id)}catch(err){status(`Erreur : ${err?.message||err}`,true,true)}};
  });
