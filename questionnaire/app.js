@@ -863,6 +863,8 @@ function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
   const requested=requestedParam("Reponse_");
   if(requested){const match=rows.find(r=>String(r.id)===requested||String(codeOf(r.Reponse_Code))===requested);if(match)return match;}
+  const access=requestedParam("Acces_");
+  if(access){const matches=rows.filter(r=>String(r.Jeton_acces_ACL||"").trim()===access).sort((a,b)=>Number(b.Revision||0)-Number(a.Revision||0)||Number(b.id||0)-Number(a.id||0));if(matches.length)return matches[0];}
   return rows.length===1 ? rows[0] : null;
 }
 function resumeNotice(){
