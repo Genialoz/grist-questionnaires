@@ -16,9 +16,45 @@ const vm=r=>!("Version_Code" in r)||ref(r.Version_Code,S.data.VERSIONS_QUESTIONN
 function current(){return {pages:sortByOrder(S.data.PAGES.filter(r=>active(r)&&vm(r))),sections:sortByOrder(S.data.SECTIONS.filter(r=>active(r)&&vm(r))),questions:sortByOrder(S.data.QUESTIONS.filter(r=>active(r)&&vm(r))),fiches:sortByOrder(S.data.TYPES_FICHES.filter(r=>active(r)&&vm(r)))}}
 function ficheParentCode(f){return ref(f?.Parent_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
 function isSubFiche(f){return Boolean(ficheParentCode(f))}
-function item(t,r,txt,cls){const on=S.selected?.type===t&&String(S.selected.row.id)===String(r.id);const badge=t==="fiche"?(isSubFiche(r)?'<span class="badge">Sous-fiche</span>':'<span class="badge">Fiche</span>'):"";return `<button class="tree-item ${cls} ${on?"selected":""}" data-type="${t}" data-id="${r.id}">${esc(txt)}${badge}</button>`}
-function renderTree(){const {pages,sections,questions,fiches}=current();let h="";for(const p of pages){const pc=codeOf(p.Page_Code);h+=item("page",p,label(p,"page"),"tree-page");for(const s of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(s.Section_Code);h+=item("section",s,label(s,"section"),"tree-section");const sq=questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc);for(const q of sq.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")))h+=item("question",q,label(q,"question"),"tree-question");const ft=new Set(sq.map(q=>ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")).filter(Boolean));const parents=fiches.filter(f=>!isSubFiche(f)&&(ft.has(codeOf(f.TypeFiche_Code))||fiches.some(sf=>ficheParentCode(sf)===codeOf(f.TypeFiche_Code)&&ft.has(codeOf(sf.TypeFiche_Code)))));for(const f of parents){h+=item("fiche",f,label(f,"fiche"),"tree-fiche");const fc=codeOf(f.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===fc))h+=item("question",q,label(q,"question"),"tree-question fiche-question");for(const sf of fiches.filter(x=>ficheParentCode(x)===fc)){h+=item("fiche",sf,label(sf,"fiche"),"tree-fiche subfiche");const sfc=codeOf(sf.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===sfc))h+=item("question",q,label(q,"question"),"tree-question fiche-question subfiche-question")}}}}$("#tree").innerHTML=h||'<div class="empty-state">Aucune page.</div>';document.querySelectorAll(".tree-item").forEach(b=>b.onclick=()=>select(b.dataset.type,b.dataset.id))}
+function item(t,r,txt,cls){const on=S.selected?.type===t&&String(S.selected.row.id)===String(r.id);const badge=t==="fiche"?(isSubFiche(r)?'<span class="badge">Sous-fiche</span>':'<span class="badge">Fiche</span>'):"";const draggable=t==="page"||t==="section"||t==="question";return `<button class="tree-item ${cls} ${on?"selected":""}" data-type="${t}" data-id="${r.id}" ${draggable?'draggable="true" title="Glisser-déposer pour réordonner"':""}>${esc(txt)}${badge}</button>`}
+function renderTree(){const {pages,sections,questions,fiches}=current();let h="";for(const p of pages){const pc=codeOf(p.Page_Code);h+=item("page",p,label(p,"page"),"tree-page");for(const s of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(s.Section_Code);h+=item("section",s,label(s,"section"),"tree-section");const sq=questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc);for(const q of sq.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")))h+=item("question",q,label(q,"question"),"tree-question");const ft=new Set(sq.map(q=>ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")).filter(Boolean));const parents=fiches.filter(f=>!isSubFiche(f)&&(ft.has(codeOf(f.TypeFiche_Code))||fiches.some(sf=>ficheParentCode(sf)===codeOf(f.TypeFiche_Code)&&ft.has(codeOf(sf.TypeFiche_Code)))));for(const f of parents){h+=item("fiche",f,label(f,"fiche"),"tree-fiche");const fc=codeOf(f.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===fc))h+=item("question",q,label(q,"question"),"tree-question fiche-question");for(const sf of fiches.filter(x=>ficheParentCode(x)===fc)){h+=item("fiche",sf,label(sf,"fiche"),"tree-fiche subfiche");const sfc=codeOf(sf.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===sfc))h+=item("question",q,label(q,"question"),"tree-question fiche-question subfiche-question")}}}}$("#tree").innerHTML=h||'<div class="empty-state">Aucune page.</div>';document.querySelectorAll(".tree-item").forEach(b=>b.onclick=()=>select(b.dataset.type,b.dataset.id));bindTreeDragDrop()}
 const rows=t=>({page:S.data.PAGES,section:S.data.SECTIONS,question:S.data.QUESTIONS,fiche:S.data.TYPES_FICHES}[t]||[]);
+
+let treeDrag=null;
+function dragSiblings(type,row){
+ const {pages,sections,questions}=current();
+ if(type==="page")return pages;
+ if(type==="section")return sections.filter(x=>String(x.Page_Code)===String(row.Page_Code));
+ if(type==="question")return questions.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")&&String(q.Section_Code)===String(row.Section_Code));
+ return [];
+}
+async function reorderTreeItem(type,sourceId,targetId){
+ const source=rows(type).find(x=>String(x.id)===String(sourceId)),target=rows(type).find(x=>String(x.id)===String(targetId));
+ if(!source||!target||source.id===target.id)return;
+ const siblings=dragSiblings(type,source);
+ if(!siblings.some(x=>String(x.id)===String(target.id)))throw new Error(type==="section"?"Déplacez la section dans sa page actuelle.":type==="question"?"Déplacez la question dans sa section actuelle.":"Déplacement impossible.");
+ const ordered=[...siblings].sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id));
+ const from=ordered.findIndex(x=>String(x.id)===String(source.id)),to=ordered.findIndex(x=>String(x.id)===String(target.id));
+ if(from<0||to<0||from===to)return;
+ const [moved]=ordered.splice(from,1);ordered.splice(to,0,moved);
+ const table=tableFor(type),actions=[];
+ ordered.forEach((r,i)=>{const order=i+1;if(Number(r.Ordre)!==order)actions.push(["UpdateRecord",table,Number(r.id),{Ordre:order}])});
+ if(!actions.length)return;
+ await grist.docApi.applyUserActions(actions);await reload();
+ const fresh=rows(type).find(x=>String(x.id)===String(source.id));if(fresh)S.selected={type,row:fresh};renderTree();renderEditor();
+ requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${source.id}"]`)?.scrollIntoView({block:"nearest"}));
+ status("Ordre mis à jour.");
+}
+function bindTreeDragDrop(){
+ document.querySelectorAll('.tree-item[draggable="true"]').forEach(el=>{
+  el.ondragstart=e=>{treeDrag={type:el.dataset.type,id:el.dataset.id};el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
+  el.ondragend=()=>{treeDrag=null;document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
+  el.ondragover=e=>{if(!treeDrag||treeDrag.type!==el.dataset.type||treeDrag.id===el.dataset.id)return;const src=rows(treeDrag.type).find(x=>String(x.id)===String(treeDrag.id)),dst=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id));if(!src||!dst||!dragSiblings(treeDrag.type,src).some(x=>String(x.id)===String(dst.id)))return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
+  el.ondragleave=()=>el.classList.remove("drag-target");
+  el.ondrop=async e=>{e.preventDefault();el.classList.remove("drag-target");if(!treeDrag)return;const d={...treeDrag};try{await reorderTreeItem(d.type,d.id,el.dataset.id)}catch(err){status(`Erreur : ${err?.message||err}`,true,true)}};
+ });
+}
+
 function select(t,id){const r=rows(t).find(x=>String(x.id)===String(id));if(!r)return;S.selected={type:t,row:r};renderTree();renderEditor()}
 function input(name,title,value,type="text"){if(type==="textarea")return `<div class="form-field"><label>${esc(title)}<textarea name="${name}">${esc(value??"")}</textarea></label></div>`;return `<div class="form-field"><label>${esc(title)}<input name="${name}" type="${type}" value="${esc(value??"")}"></label></div>`}
 function selectHtml(name,title,value,opts){return `<div class="form-field"><label>${esc(title)}<select name="${name}">${opts.map(([v,l])=>`<option value="${esc(v)}"${String(value)===String(v)?" selected":""}>${esc(l)}</option>`).join("")}</select></label></div>`}
