@@ -109,3 +109,12 @@ textarea { min-height:110px; resize:vertical; }
 /* V3.27.1 - taille et alignement du logo */
 .questionnaire-logo.logo-petit img{max-width:min(120px,45%);max-height:55px}.questionnaire-logo.logo-moyen img{max-width:min(220px,60%);max-height:90px}.questionnaire-logo.logo-grand img{max-width:min(360px,85%);max-height:140px}
 .questionnaire-logo.align-gauche{display:flex;justify-content:flex-start}.questionnaire-logo.align-centre{display:flex;justify-content:center}.questionnaire-logo.align-droite{display:flex;justify-content:flex-end}
+
+/* V5.4.1 - sommaire automatique optionnel */
+.questionnaire-toc{margin:18px 0 24px;padding:14px 16px;border:1px solid #e2dfe8;border-radius:10px;background:#faf9fc}
+.questionnaire-toc-title{font-weight:700;margin-bottom:8px;color:#3f3b47}
+.toc-page{margin:3px 0}.toc-page-link,.toc-section-link{display:block;width:100%;border:0;background:transparent;text-align:left;cursor:pointer;color:#5c3b8b;border-radius:6px}
+.toc-page-link{padding:7px 8px;font-weight:650}.toc-page-link:hover,.toc-section-link:hover{background:#f0ebf6}.toc-page.is-current>.toc-page-link{background:#eee9f5;color:#45276d}
+.toc-sections{padding-left:16px}.toc-section-link{padding:5px 8px;font-size:.9rem;color:#696071}
+.section[id]{scroll-margin-top:82px}
+@media(max-width:600px){.questionnaire-toc{padding:12px}.toc-sections{padding-left:10px}}

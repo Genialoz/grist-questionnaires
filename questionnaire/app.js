@@ -541,18 +541,21 @@ function render() {
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
   status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
+  const showToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const locked=responseIsLocked();
+  const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");return Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
+    ${tocHtml}
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
-      return `<section class="section">${sectionTitle?`<h2>${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
+      return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2>${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
       ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
@@ -578,6 +581,17 @@ function render() {
   root.querySelectorAll("[data-fiche-sort]").forEach(el=>el.addEventListener("change",e=>{const code=e.currentTarget.dataset.ficheSort; state.ficheListUi[code]={...(state.ficheListUi[code]??{}),sort:e.currentTarget.value}; render();}));
   root.querySelectorAll("[data-fiche-filter]").forEach(el=>el.addEventListener("change",e=>{const code=e.currentTarget.dataset.ficheFilter,qc=e.currentTarget.dataset.questionCode; const current=state.ficheListUi[code]??{}; state.ficheListUi[code]={...current,filters:{...(current.filters??{}),[qc]:e.currentTarget.value}}; render();}));
   root.querySelectorAll("[data-fiche-reset]").forEach(el=>el.addEventListener("click",e=>{const code=e.currentTarget.dataset.ficheReset; state.ficheListUi[code]={query:"",sort:state.ficheListUi[code]?.sort??"recent",filters:{}}; render();}));
+  root.querySelectorAll("[data-toc-page]").forEach(el=>el.addEventListener("click",async e=>{
+    const targetPage=Number(e.currentTarget.dataset.tocPage);
+    const targetSection=e.currentTarget.dataset.tocSection||"";
+    if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
+    if(targetPage!==state.pageIndex){
+      if(!locked && !(await savePrincipal()))return;
+      state.pageIndex=targetPage; render();
+    }
+    if(targetSection)requestAnimationFrame(()=>document.getElementById(`section-${CSS.escape(targetSection)}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
+    else requestAnimationFrame(()=>root.scrollIntoView({behavior:"smooth",block:"start"}));
+  }));
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
