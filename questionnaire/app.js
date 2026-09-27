@@ -541,7 +541,10 @@ function render() {
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
   status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
-  const showToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
+  const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
+  const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
+  const showToc=tocMode==="toujours"||(tocMode==="accueil"&&state.pageIndex===0);
+  const showReturnToc=tocMode==="accueil"&&state.pageIndex>0;
   const locked=responseIsLocked();
   const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");return Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
@@ -550,6 +553,7 @@ function render() {
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
+    ${showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
@@ -592,6 +596,11 @@ function render() {
     if(targetSection)requestAnimationFrame(()=>document.getElementById(`section-${CSS.escape(targetSection)}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
     else requestAnimationFrame(()=>root.scrollIntoView({behavior:"smooth",block:"start"}));
   }));
+  root.querySelector("[data-return-toc]")?.addEventListener("click",async()=>{
+    if(!locked && !(await savePrincipal()))return;
+    state.pageIndex=0;render();
+    requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
+  });
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));

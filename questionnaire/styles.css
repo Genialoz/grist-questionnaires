@@ -118,3 +118,5 @@ textarea { min-height:110px; resize:vertical; }
 .toc-sections{padding-left:16px}.toc-section-link{padding:5px 8px;font-size:.9rem;color:#696071}
 .section[id]{scroll-margin-top:82px}
 @media(max-width:600px){.questionnaire-toc{padding:12px}.toc-sections{padding-left:10px}}
+
+.return-toc-wrap{margin:0 0 16px}.return-toc{font-weight:650}
