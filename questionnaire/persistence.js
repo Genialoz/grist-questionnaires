@@ -49,7 +49,13 @@ export function hydrateResponse(rows,definition,reponseCode){
     if(s.Structure_Code){const raw=codeOf(s.Structure_Code),row=(definition.structures??[]).find(x=>String(x.id)===raw||codeOf(x.Structure_Code)===raw);return row?codeOf(row.Structure_Code):raw;}
     return "";
   };
-  const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(q){if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);}} return out;};
+  const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(!q)continue;
+    if(isTrue(q.Est_ligne_matrice)){const parentRaw=codeOf(q.Question_parente_Code),parent=questions.find(x=>String(x.id)===parentRaw||codeOf(x.Question_Code)===parentRaw);if(!parent)continue;const pc=codeOf(parent.Question_Code),rc=codeOf(q.Question_Code),pt=qtype(parent);out[pc]??={};
+      if(pt.includes("radio")||pt.includes("checkbox")){const selected=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);out[pc][rc]=pt.includes("checkbox")?selected:(selected[0]??"");}
+      else {const colRaw=codeOf(v.ColonneMatrice_Code),col=(definition.matrixColumns??[]).find(c=>String(c.id)===colRaw||codeOf(c.ColonneMatrice_Code)===colRaw);if(!col)continue;const cc=codeOf(col.ColonneMatrice_Code);out[pc][rc]??={};out[pc][rc][cc]=pt.includes("nombre")||pt.includes("numérique")||pt.includes("numerique")?(v.Valeur_nombre??""):(v.Valeur_texte??"");}
+      continue;}
+    if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);
+  } return out;};
   const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){

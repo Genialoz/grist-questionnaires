@@ -3,7 +3,7 @@ import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse,
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
-  "CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX",
+  "CHOIX_QUESTIONS","COLONNES_MATRICE","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX",
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
@@ -73,6 +73,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     questions:byVersion(loaded.QUESTIONS).filter(active),
     ficheTypes:byVersion(loaded.TYPES_FICHES).filter(active),
     choices:loaded.CHOIX_QUESTIONS.filter(active),
+    matrixColumns:(loaded.COLONNES_MATRICE ?? []).filter(active),
     referentials:loaded.REFERENTIELS.filter(active),
     referentialValues:loaded.VALEURS_REFERENTIELS.filter(active),
     structures:loaded.STRUCTURES.filter(active),
@@ -257,7 +258,7 @@ export function visibleFicheQuestions(type, def, answers={}) {
   ));
   const questions=authoritative.length ? authoritative : (type.questions ?? []);
   return questions
-    .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
+    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
     .map(q=>({...q,options:optionsFor(q,def,answers)}));
 }
 
@@ -270,7 +271,8 @@ export function buildViewModel(def, answers={}) {
         const sc=codeOf(section.Section_Code);
         const questions=sortByOrder(def.questions.filter(q=>
           resolveRefCode(q.Section_Code,def.sections,"Section_Code")===sc &&
-          !resolveRefCode(q.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")
+          !resolveRefCode(q.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code") &&
+          !isTrue(q.Est_ligne_matrice)
         ))
           .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
           .map(q=>({...q, options:optionsFor(q,def,answers)}));
@@ -327,9 +329,62 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
 }
 
 
+function matrixKind(q){
+  const t=String(q?.Type_question ?? q?.Type ?? "").trim().toLowerCase();
+  if(!t.includes("matrice")) return "";
+  if(t.includes("checkbox")) return "checkbox";
+  if(t.includes("radio")) return "radio";
+  if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique")) return "number";
+  if(t.includes("texte")) return "text";
+  return "";
+}
+function matrixRows(q,def){
+  const qc=codeOf(q.Question_Code);
+  return sortByOrder((def.questions??[]).filter(r=>active(r)&&isTrue(r.Est_ligne_matrice)&&resolveRefCode(r.Question_parente_Code,def.questions,"Question_Code")===qc));
+}
+function matrixCols(q,def){
+  const qc=codeOf(q.Question_Code);
+  if(["radio","checkbox"].includes(matrixKind(q))) return sortByOrder((def.choices??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code)),exclusive:isTrue(c.Exclusif)}));
+  return sortByOrder((def.matrixColumns??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.ColonneMatrice_Code),label:first(c,["Libelle","Libellé","ColonneMatrice_Code"],codeOf(c.ColonneMatrice_Code)),required:isTrue(c.Obligatoire),min:c.Minimum,max:c.Maximum,decimals:c.Decimales,maxLength:c.Longueur_max}));
+}
+function matrixValue(answers,qc,rc,cc){return answers?.[qc]?.[rc]?.[cc] ?? "";}
+function renderMatrix(q,answers=state.answers,ficheMode=false){
+  const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition);
+  const ro=isTrue(q.Lecture_seule)||responseIsLocked();
+  if(!rows.length||!cols.length) return `<div class="matrix-empty">Matrice à configurer : ${!rows.length?"aucune ligne":"aucune colonne"}.</div>`;
+  const head=cols.map(c=>`<th scope="col">${escapeHtml(c.label)}</th>`).join("");
+  const body=rows.map(r=>{const rc=codeOf(r.Question_Code); const cells=cols.map(c=>{const v=matrixValue(answers,qc,rc,c.code); const base=`data-matrix-question="${escapeHtml(qc)}" data-matrix-row="${escapeHtml(rc)}" data-matrix-col="${escapeHtml(c.code)}"${ficheMode?' data-matrix-fiche="1"':''}`;
+    if(kind==="radio") return `<td><input type="radio" name="mx_${escapeHtml(qc)}_${escapeHtml(rc)}" ${base} value="${escapeHtml(c.code)}"${String(v)===String(c.code)?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;
+    if(kind==="checkbox"){const arr=Array.isArray(answers?.[qc]?.[rc])?answers[qc][rc]:[];return `<td><input type="checkbox" ${base} value="${escapeHtml(c.code)}" data-exclusive="${c.exclusive?"1":"0"}"${arr.map(String).includes(String(c.code))?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;}
+    const attrs=[c.min!==""&&c.min!=null?`min="${escapeHtml(c.min)}"`:"",c.max!==""&&c.max!=null?`max="${escapeHtml(c.max)}"`:"",kind==="number"&&c.decimals!==""&&c.decimals!=null?`step="${1/(10**Number(c.decimals))}"`:"",kind==="text"&&Number(c.maxLength)>0?`maxlength="${escapeHtml(c.maxLength)}"`:"",ro?"disabled":""].filter(Boolean).join(" ");
+    return `<td><span class="matrix-mobile-label">${escapeHtml(c.label)}</span><input class="matrix-input" type="${kind}" ${base} ${attrs} value="${escapeHtml(v)}"></td>`;
+  }).join("");
+  const total=kind==="number"&&isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-row-total="${escapeHtml(qc)}:${escapeHtml(rc)}">0</td>`:"";
+  return `<tr><th scope="row">${escapeHtml(first(r,["Libelle","Libellé","Titre"],rc))}${isRequiredQuestion(r)?' <span class="required">*</span>':""}</th>${cells}${total}</tr>`;}).join("");
+  const totalHead=kind==="number"&&isTrue(q.Afficher_total_ligne)?'<th scope="col">Total</th>':"";
+  const foot=kind==="number"&&isTrue(q.Afficher_total_colonne)?`<tfoot><tr><th scope="row">Total</th>${cols.map(c=>`<td class="matrix-total" data-matrix-col-total="${escapeHtml(qc)}:${escapeHtml(c.code)}">0</td>`).join("")}${isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-grand-total="${escapeHtml(qc)}">0</td>`:""}</tr></tfoot>`:"";
+  return `<div class="matrix-wrap" data-matrix="${escapeHtml(qc)}"><table class="matrix-table"><thead><tr><th></th>${head}${totalHead}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
+}
+function renderQuestionControl(q,answers=state.answers,ficheMode=false){return matrixKind(q)?renderMatrix(q,answers,ficheMode):renderControl(q,answers,ficheMode);}
+function matrixErrors(q,answers={}){
+  const errors=[]; const qc=codeOf(q.Question_Code), kind=matrixKind(q), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition), data=answers?.[qc]??{};
+  for(const r of rows){const rc=codeOf(r.Question_Code), row=data[rc]??{};
+    if(kind==="radio"||kind==="checkbox"){const empty=kind==="checkbox"?!(Array.isArray(row)&&row.length):!row; if(isRequiredQuestion(r)&&empty)errors.push(`${first(r,["Libelle","Libellé","Titre"],rc)} : réponse obligatoire.`); continue;}
+    for(const c of cols){const v=row?.[c.code]??""; if((isRequiredQuestion(r)||c.required)&&(v===""||v==null))errors.push(`${first(r,["Libelle","Libellé","Titre"],rc)} / ${c.label} : champ obligatoire.`); if(v!==""&&kind==="number"){const n=Number(v);if(!Number.isFinite(n))errors.push(`${c.label} : nombre invalide.`);else{if(c.min!==""&&c.min!=null&&n<Number(c.min))errors.push(`${c.label} : minimum ${c.min}.`);if(c.max!==""&&c.max!=null&&n>Number(c.max))errors.push(`${c.label} : maximum ${c.max}.`);}}}
+  } return errors;
+}
+function updateMatrixTotals(root=document){
+  root.querySelectorAll('[data-matrix]').forEach(w=>{const qc=w.dataset.matrix;const vals=[...w.querySelectorAll('input[data-matrix-question]')].filter(i=>i.type==='number');const n=i=>{const x=Number(i.value);return Number.isFinite(x)?x:0};
+    w.querySelectorAll('[data-matrix-row-total]').forEach(el=>{const rc=el.dataset.matrixRowTotal.split(':').slice(1).join(':');el.textContent=String(vals.filter(i=>i.dataset.matrixRow===rc).reduce((a,i)=>a+n(i),0));});
+    w.querySelectorAll('[data-matrix-col-total]').forEach(el=>{const cc=el.dataset.matrixColTotal.split(':').slice(1).join(':');el.textContent=String(vals.filter(i=>i.dataset.matrixCol===cc).reduce((a,i)=>a+n(i),0));});
+    const g=w.querySelector('[data-matrix-grand-total]');if(g)g.textContent=String(vals.reduce((a,i)=>a+n(i),0));
+  });
+}
+
+
 function renderFicheField(q, answers) {
   const qc=codeOf(q.Question_Code);
-  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
   if(!questionCode)return "";
@@ -390,8 +445,8 @@ export function validateFiche(type,def,answers={},principalAnswers={}) {
   const conditionAnswers={...principalAnswers,...answers};
   for (const q of visibleFicheQuestions(type,def,conditionAnswers)) {
     const code=codeOf(q.Question_Code);
-    const error=validateQuestion(q,answers[code],true);
-    if (error) errors[code]=error;
+    if(matrixKind(q)){const mx=matrixErrors(q,answers);if(mx.length)errors[code]=mx.join(" ");}
+    else {const error=validateQuestion(q,answers[code],true); if (error) errors[code]=error;}
   }
   return errors;
 }
@@ -494,7 +549,7 @@ function render() {
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section">${sectionTitle?`<h2>${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
@@ -507,6 +562,8 @@ function render() {
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
+  root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
+  updateMatrixTotals(root);
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
     const code=e.currentTarget.dataset.clearQuestion;
     state.answers[code]="";
@@ -655,6 +712,16 @@ async function saveCurrentSubFiche() {
   } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
+function onMatrixAnswer(e){
+  const el=e.target,qc=el.dataset.matrixQuestion,rc=el.dataset.matrixRow,cc=el.dataset.matrixCol;if(!qc||!rc||!cc)return;
+  const target=el.dataset.matrixFiche?(el.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor):null;
+  const answers=target?target.answers:state.answers; answers[qc]??={};
+  const kind=matrixKind((state.definition.questions??[]).find(q=>codeOf(q.Question_Code)===qc));
+  if(kind==="radio")answers[qc][rc]=el.checked?cc:"";
+  else if(kind==="checkbox"){let arr=Array.isArray(answers[qc][rc])?[...answers[qc][rc]].map(String):[];if(el.checked){if(el.dataset.exclusive==="1")arr=[cc];else{arr=arr.filter(v=>{const x=el.closest('[data-matrix]')?.querySelector(`[data-matrix-row="${CSS.escape(rc)}"][data-matrix-col="${CSS.escape(v)}"]`);return x?.dataset.exclusive!=="1"});if(!arr.includes(cc))arr.push(cc);}}else arr=arr.filter(v=>v!==cc);answers[qc][rc]=arr; if(el.checked&&el.dataset.exclusive==="1"){el.closest('tr')?.querySelectorAll('input[type="checkbox"]').forEach(x=>{if(x!==el)x.checked=false;});}else if(el.checked){el.closest('tr')?.querySelectorAll('input[type="checkbox"][data-exclusive="1"]').forEach(x=>x.checked=false);}}
+  else {answers[qc][rc]??={};answers[qc][rc][cc]=el.value;updateMatrixTotals(el.closest('[data-matrix]')??document);}
+}
+
 function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
@@ -673,8 +740,8 @@ export function validateVisiblePage(page, answers={}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
     const code=codeOf(q.Question_Code);
-    const error=validateQuestion(q,answers[code],true);
-    if (error) errors[code]=error;
+    if(matrixKind(q)){const mx=matrixErrors(q,answers);if(mx.length)errors[code]=mx.join(" ");}
+    else {const error=validateQuestion(q,answers[code],true); if (error) errors[code]=error;}
   }
   return errors;
 }
@@ -792,10 +859,24 @@ function selectionTarget(q,value){
   if(option.source==="structure")return {Choix_Code:null,ValeurRef_Code:null,Structure_Code:option.rowId};
   return null;
 }
+
+async function writeMatrixAnswer(element,q,answers){
+  const qc=codeOf(q.Question_Code),kind=matrixKind(q),rows=matrixRows(q,state.definition),cols=matrixCols(q,state.definition),data=answers?.[qc]??{};
+  const existing=state.definition.responseValues.filter(v=>String(v.Element_Code)===String(element.id));const actions=[];
+  for(const r of rows){const rc=codeOf(r.Question_Code),rv=data[rc];
+    if(kind==="radio"||kind==="checkbox"){
+      let valueRow=existing.find(v=>String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);if(!valueRow){await grist.docApi.applyUserActions([["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),Element_Code:element.id,Question_Code:r.id,Valeur_texte:null}]]);await refreshPersistenceRows();valueRow=state.definition.responseValues.find(v=>String(v.Element_Code)===String(element.id)&&String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);}if(!valueRow)continue;
+      for(const x of (state.definition.responseSelections??[]).filter(x=>String(x.Valeur_Code)===String(valueRow.id)))actions.push(["RemoveRecord","SELECTIONS_REPONSE",x.id]);
+      const selected=kind==="checkbox"?(Array.isArray(rv)?rv:[]):(rv?[rv]:[]);for(const c of selected){const col=cols.find(x=>String(x.code)===String(c));if(col)actions.push(["AddRecord","SELECTIONS_REPONSE",null,{Selection_Code:uniqueCode("SEL"),Valeur_Code:valueRow.id,Choix_Code:col.id,ValeurRef_Code:null,Structure_Code:null}]);}
+    }else for(const c of cols){const old=existing.find(v=>String(v.Question_Code)===String(r.id)&&String(v.ColonneMatrice_Code)===String(c.id));const val=rv?.[c.code]??"";const fields={Element_Code:element.id,Question_Code:r.id,ColonneMatrice_Code:c.id,Valeur_texte:kind==="text"?(val===""?null:String(val)):null,Valeur_nombre:kind==="number"&&(val!==""&&val!=null)?Number(val):null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(val!==""&&val!=null)actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
+  }
+  if(actions.length)await grist.docApi.applyUserActions(actions);
+}
 async function writeAnswers(element,questions,answers){
   const actions=[]; const existing=state.definition.responseValues.filter(v=>String(v.Element_Code)===String(element.id));
   for(const q of questions){
-    const qc=codeOf(q.Question_Code), old=existing.find(v=>String(v.Question_Code)===String(q.id));
+    const qc=codeOf(q.Question_Code); if(matrixKind(q)){await writeMatrixAnswer(element,q,answers);continue;} if(isTrue(q.Est_ligne_matrice))continue;
+    const old=existing.find(v=>String(v.Question_Code)===String(q.id));
     if(isMultiQuestion(q)){
       let valueRow=old;
       if(!valueRow){

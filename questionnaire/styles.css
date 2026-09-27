@@ -88,3 +88,17 @@ textarea { min-height:110px; resize:vertical; }
 .fiche-summary{margin-top:.55rem;display:grid;gap:.18rem}
 .fiche-summary-item{color:#5f5d69;font-size:.9rem;line-height:1.35}
 .fiche-summary-label{font-weight:600;color:#4f4d58}
+
+/* Matrices */
+.matrix-wrap{overflow-x:auto;margin-top:10px;border:1px solid #e3e5e8;border-radius:10px;background:#fff}
+.matrix-table{width:100%;border-collapse:collapse;min-width:560px}
+.matrix-table th,.matrix-table td{padding:10px 12px;border-bottom:1px solid #eceef1;border-right:1px solid #eceef1;text-align:center;vertical-align:middle}
+.matrix-table th:first-child{text-align:left;min-width:180px;background:#fafafa}
+.matrix-table thead th{background:#f6f7f9;font-weight:600}
+.matrix-table tr:last-child td,.matrix-table tr:last-child th{border-bottom:0}
+.matrix-table th:last-child,.matrix-table td:last-child{border-right:0}
+.matrix-input{width:100%;min-width:90px;box-sizing:border-box}
+.matrix-total{font-weight:700;background:#fafafa;font-variant-numeric:tabular-nums}
+.matrix-mobile-label{display:none}
+.matrix-empty{padding:12px;border:1px dashed #c9cdd3;border-radius:8px;color:#666}
+@media(max-width:700px){.matrix-wrap{overflow:visible;border:0}.matrix-table{min-width:0}.matrix-table thead{display:none}.matrix-table,.matrix-table tbody,.matrix-table tr,.matrix-table th,.matrix-table td{display:block;width:100%;box-sizing:border-box}.matrix-table tr{margin:0 0 14px;border:1px solid #e3e5e8;border-radius:10px;overflow:hidden}.matrix-table th:first-child{min-width:0}.matrix-table td{text-align:left;border-right:0}.matrix-mobile-label{display:block;font-size:.85em;font-weight:600;margin-bottom:5px}.matrix-table tfoot{display:block}.matrix-table tfoot tr{display:block}}
