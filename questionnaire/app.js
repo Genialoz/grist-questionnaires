@@ -565,7 +565,7 @@ function render() {
   const logoAlign=first(vm.version,["Logo_Alignement"],"gauche");
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
   status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
-  const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
+  const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],true));
   const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
   const showToc=tocMode==="toujours"||(tocMode==="accueil"&&state.pageIndex===0);
