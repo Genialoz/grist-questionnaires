@@ -421,10 +421,11 @@ async function testCampaignWrite(){
   }
   let raw;
   try{raw=await grist.docApi.fetchTable("CAMPAGNES")}catch(e){throw new Error(`écriture appelée, mais relecture impossible : ${e?.message||e}`)}
-  const rows=gristRows(raw);
-  const found=rows.find(r=>String(r.Campagne_Code||"")===code);
-  if(!found)throw new Error(`AddRecord a répondu sans erreur, mais la ligne ${code} est absente de CAMPAGNES. Résultat API : ${JSON.stringify(result)}`);
-  status(`Diagnostic CAMPAGNES : ligne retrouvée (id ${found.id}, code ${code}).`,false,true);
+  const ids=Array.isArray(raw?.id)?raw.id:[];
+  const codes=Array.isArray(raw?.Campagne_Code)?raw.Campagne_Code:[];
+  const idx=codes.findIndex(v=>String(v||"")===code);
+  if(idx<0)throw new Error(`AddRecord a répondu sans erreur, mais la ligne ${code} est absente de CAMPAGNES. Résultat API : ${JSON.stringify(result)}`);
+  status(`Diagnostic CAMPAGNES : ligne retrouvée (id ${ids[idx]??"?"}, code ${code}).`,false,true);
 }
 async function updateCampaignGroup(group){const rows=campaignVersionRows().filter(c=>campaignGroupCode(c)===String(group)),name=String($("#campaign-name")?.value||"").trim(),url=String($("#campaign-url")?.value||"").trim();if(!rows.length)throw new Error("Campagne introuvable.");if(!name)throw new Error("Indiquez un nom de campagne.");if(!url)throw new Error("Indiquez l’adresse de la page répondant Grist.");await grist.docApi.applyUserActions(rows.map(c=>["UpdateRecord","CAMPAGNES",Number(c.id),{Nom:name,URL_reprise:url}]));await reload();renderCampaigns(group);status("Campagne enregistrée.",false,true)}
 async function deleteCampaignAccess(id){const c=(S.data.CAMPAGNES||[]).find(x=>String(x.id)===String(id));if(!c)throw new Error("Lien introuvable.");const who=campaignParticipantLabel(c);if(!confirm(`Supprimer le lien de « ${who} » ?\n\nLes réponses déjà enregistrées ne seront pas supprimées.`))return;await grist.docApi.applyUserActions([["RemoveRecord","CAMPAGNES",Number(c.id)]]);await reload();renderCampaigns();status(`Lien de « ${who} » supprimé.`,false,true)}
