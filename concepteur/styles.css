@@ -62,3 +62,12 @@
 
 .preview-toc{margin:18px 0 24px;padding:14px 16px;border:1px solid #e2dfe8;border-radius:10px;background:#faf9fc}.preview-toc-title{font-weight:700;margin-bottom:8px}.preview-toc-page{margin:8px 0}.preview-toc-page>div{display:flex;flex-wrap:wrap;gap:6px 12px;margin:5px 0 0 14px;color:#6f6877;font-size:.88rem}.preview-return-toc{display:inline-block;margin:4px 0 10px;color:#5c3b8b;font-weight:650;font-size:.9rem}
 .data-table-config .form-actions{display:flex;gap:.6rem;flex-wrap:wrap;align-items:center}.data-columns-config{margin-top:1rem}.data-column-row{display:grid;grid-template-columns:120px minmax(160px,1fr) 90px;gap:.5rem;align-items:center;margin:.4rem 0}.data-column-row input{width:100%}
+
+/* V3.30.1 - tableaux de données dans l’aperçu répondant */
+.preview-data-table{overflow:auto;margin-top:10px;border:1px solid #d9dee8;border-radius:8px;background:#fff}
+.preview-data-table table{width:100%;border-collapse:collapse;font-size:14px}
+.preview-data-table th,.preview-data-table td{padding:9px 11px;border-bottom:1px solid #e6e9ef;border-right:1px solid #e6e9ef;text-align:left;vertical-align:top}
+.preview-data-table th{font-weight:700;background:#f5f7fa}
+.preview-data-table th:last-child,.preview-data-table td:last-child{border-right:0}
+.preview-data-table tbody tr:last-child td{border-bottom:0}
+.preview-data-empty{margin-top:10px;padding:12px;border:1px dashed #c9ced8;border-radius:8px;color:#596273;background:#fafbfc}
