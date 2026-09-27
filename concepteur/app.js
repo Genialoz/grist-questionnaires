@@ -30,6 +30,23 @@ function dragSiblings(type,row){
  if(type==="question")return questions.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")&&String(q.Section_Code)===String(row.Section_Code));
  return [];
 }
+function isMainTreeQuestion(row){return Boolean(row)&&!isMatrixLine(row)&&!ref(row.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
+function pageForSection(section){return S.data.PAGES.find(p=>String(p.id)===String(codeOf(section?.Page_Code)||section?.Page_Code))||null}
+function sectionForQuestion(question){return S.data.SECTIONS.find(s=>String(s.id)===String(codeOf(question?.Section_Code)||question?.Section_Code))||null}
+function treeDropPlan(drag,targetType,target){
+ const source=rows(drag.type).find(x=>String(x.id)===String(drag.id));
+ if(!source||!target||String(source.id)===String(target.id)&&drag.type===targetType)return null;
+ if(drag.type==="page"&&targetType==="page")return {kind:"reorder",source,target};
+ if(drag.type==="section"){
+  if(targetType==="page")return {kind:"move-section",source,targetPage:target,targetSection:null};
+  if(targetType==="section")return {kind:String(source.Page_Code)===String(target.Page_Code)?"reorder":"move-section",source,targetPage:pageForSection(target),targetSection:target};
+ }
+ if(drag.type==="question"&&isMainTreeQuestion(source)){
+  if(targetType==="section")return {kind:"move-question",source,targetSection:target,targetQuestion:null};
+  if(targetType==="question"&&isMainTreeQuestion(target))return {kind:String(source.Section_Code)===String(target.Section_Code)?"reorder":"move-question",source,targetSection:sectionForQuestion(target),targetQuestion:target};
+ }
+ return null;
+}
 async function reorderTreeItem(type,sourceId,targetId){
  const source=rows(type).find(x=>String(x.id)===String(sourceId)),target=rows(type).find(x=>String(x.id)===String(targetId));
  if(!source||!target||source.id===target.id)return;
@@ -42,11 +59,47 @@ async function reorderTreeItem(type,sourceId,targetId){
  const table=tableFor(type),actions=[];
  ordered.forEach((r,i)=>{const order=i+1;if(Number(r.Ordre)!==order)actions.push(["UpdateRecord",table,Number(r.id),{Ordre:order}])});
  if(!actions.length)return;
- await grist.docApi.applyUserActions(actions);await reload();
- const fresh=rows(type).find(x=>String(x.id)===String(source.id));if(fresh)S.selected={type,row:fresh};renderTree();renderEditor();
- requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${source.id}"]`)?.scrollIntoView({block:"nearest"}));
- status("Ordre mis à jour.");
+ await grist.docApi.applyUserActions(actions);await finishTreeMove(type,source.id,"Ordre mis à jour.");
 }
+function orderedMainQuestions(sectionId,excludeId=null){return current().questions.filter(q=>isMainTreeQuestion(q)&&String(q.Section_Code)===String(sectionId)&&String(q.id)!==String(excludeId)).sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id))}
+function orderedSections(pageId,excludeId=null){return current().sections.filter(s=>String(s.Page_Code)===String(pageId)&&String(s.id)!==String(excludeId)).sort((a,b)=>(Number(a.Ordre)||0)-(Number(b.Ordre)||0)||Number(a.id)-Number(b.id))}
+function normalizeOrderActions(table,list){const actions=[];list.forEach((r,i)=>{const order=i+1;if(Number(r.Ordre)!==order)actions.push(["UpdateRecord",table,Number(r.id),{Ordre:order}])});return actions}
+async function finishTreeMove(type,id,message){
+ await reload();const fresh=rows(type).find(x=>String(x.id)===String(id));if(fresh)S.selected={type,row:fresh};renderTree();renderEditor();
+ requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${id}"]`)?.scrollIntoView({block:"nearest"}));status(message);
+}
+async function moveQuestionToSection(source,targetSection,targetQuestion=null){
+ if(!source||!targetSection||!isMainTreeQuestion(source))throw new Error("Cette question ne peut pas être déplacée ici.");
+ const oldSectionId=Number(codeOf(source.Section_Code)||source.Section_Code),newSectionId=Number(targetSection.id),newPage=pageForSection(targetSection),newPageId=newPage?Number(newPage.id):null;
+ const dest=orderedMainQuestions(newSectionId,source.id);let insertAt=dest.length;
+ if(targetQuestion){const i=dest.findIndex(q=>String(q.id)===String(targetQuestion.id));if(i>=0)insertAt=i}
+ dest.splice(insertAt,0,source);
+ const actions=[];
+ const sourceChanges={Section_Code:newSectionId,Ordre:insertAt+1};if(newPageId&&field(source,["Page_Code"]))sourceChanges.Page_Code=newPageId;
+ actions.push(["UpdateRecord","QUESTIONS",Number(source.id),sourceChanges]);
+ dest.forEach((q,i)=>{if(String(q.id)===String(source.id))return;const order=i+1;if(Number(q.Ordre)!==order)actions.push(["UpdateRecord","QUESTIONS",Number(q.id),{Ordre:order}])});
+ for(const child of questionChildren(source).filter(isMatrixLine)){const ch={Section_Code:newSectionId};if(newPageId&&field(child,["Page_Code"]))ch.Page_Code=newPageId;actions.push(["UpdateRecord","QUESTIONS",Number(child.id),ch])}
+ if(oldSectionId!==newSectionId)actions.push(...normalizeOrderActions("QUESTIONS",orderedMainQuestions(oldSectionId,source.id)));
+ await grist.docApi.applyUserActions(actions);await finishTreeMove("question",source.id,"Question déplacée dans la nouvelle section.");
+}
+async function moveSectionToPage(source,targetPage,targetSection=null){
+ if(!source||!targetPage)throw new Error("Page de destination introuvable.");
+ const oldPageId=Number(codeOf(source.Page_Code)||source.Page_Code),newPageId=Number(targetPage.id),dest=orderedSections(newPageId,source.id);let insertAt=dest.length;
+ if(targetSection){const i=dest.findIndex(s=>String(s.id)===String(targetSection.id));if(i>=0)insertAt=i}
+ dest.splice(insertAt,0,source);
+ const actions=[["UpdateRecord","SECTIONS",Number(source.id),{Page_Code:newPageId,Ordre:insertAt+1}]];
+ dest.forEach((s,i)=>{if(String(s.id)===String(source.id))return;const order=i+1;if(Number(s.Ordre)!==order)actions.push(["UpdateRecord","SECTIONS",Number(s.id),{Ordre:order}])});
+ const sectionCode=codeOf(source.Section_Code);for(const q of S.data.QUESTIONS.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sectionCode)){if(field(q,["Page_Code"]))actions.push(["UpdateRecord","QUESTIONS",Number(q.id),{Page_Code:newPageId}])}
+ if(oldPageId!==newPageId)actions.push(...normalizeOrderActions("SECTIONS",orderedSections(oldPageId,source.id)));
+ await grist.docApi.applyUserActions(actions);await finishTreeMove("section",source.id,"Section déplacée dans la nouvelle page.");
+}
+async function executeTreeDrop(plan){
+ if(!plan)return;
+ if(plan.kind==="reorder")return reorderTreeItem(treeDrag.type,plan.source.id,plan.target.id);
+ if(plan.kind==="move-question")return moveQuestionToSection(plan.source,plan.targetSection,plan.targetQuestion);
+ if(plan.kind==="move-section")return moveSectionToPage(plan.source,plan.targetPage,plan.targetSection);
+}
+
 function stopTreeDragAutoScroll(){
  treeDragPointerY=null;
  if(treeDragScrollFrame!==null){cancelAnimationFrame(treeDragScrollFrame);treeDragScrollFrame=null}
@@ -75,9 +128,9 @@ function bindTreeDragDrop(){
  document.querySelectorAll('.tree-item[draggable="true"]').forEach(el=>{
   el.ondragstart=e=>{stopTreeDragAutoScroll();treeDrag={type:el.dataset.type,id:el.dataset.id};treeDragPointerY=e.clientY;el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
   el.ondragend=()=>{treeDrag=null;stopTreeDragAutoScroll();document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
-  el.ondragover=e=>{autoScrollTreeDuringDrag(e);if(!treeDrag||treeDrag.type!==el.dataset.type||treeDrag.id===el.dataset.id)return;const src=rows(treeDrag.type).find(x=>String(x.id)===String(treeDrag.id)),dst=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id));if(!src||!dst||!dragSiblings(treeDrag.type,src).some(x=>String(x.id)===String(dst.id)))return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
+  el.ondragover=e=>{autoScrollTreeDuringDrag(e);if(!treeDrag)return;const target=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id)),plan=treeDropPlan(treeDrag,el.dataset.type,target);if(!plan)return;e.preventDefault();e.dataTransfer.dropEffect="move";document.querySelectorAll(".tree-item.drag-target").forEach(x=>x.classList.remove("drag-target"));el.classList.add("drag-target")};
   el.ondragleave=()=>el.classList.remove("drag-target");
-  el.ondrop=async e=>{e.preventDefault();el.classList.remove("drag-target");if(!treeDrag)return;const d={...treeDrag};try{await reorderTreeItem(d.type,d.id,el.dataset.id)}catch(err){status(`Erreur : ${err?.message||err}`,true,true)}};
+  el.ondrop=async e=>{e.preventDefault();el.classList.remove("drag-target");if(!treeDrag)return;const d={...treeDrag},target=rows(el.dataset.type).find(x=>String(x.id)===String(el.dataset.id)),plan=treeDropPlan(d,el.dataset.type,target);try{await executeTreeDrop(plan)}catch(err){status(`Erreur : ${err?.message||err}`,true,true)}};
  });
 }
 
