@@ -403,8 +403,19 @@ function campaignGroupCode(c){return String(c.Groupe_Campagne_Code||c.Campagne_G
 function campaignName(c){return String(c.Nom||c.Libelle||c.Titre||campaignGroupCode(c)||"Campagne")}
 function campaignPersonalizationQuestion(c){const raw=codeOf(c.Question_personnalisation_Code);return (S.data.QUESTIONS||[]).find(q=>String(q.id)===String(raw)||codeOf(q.Question_Code)===String(raw))}
 function campaignLegacyStructure(c){const raw=codeOf(c?.Structure_Code);if(!raw)return null;return (S.data.STRUCTURES||[]).find(x=>String(x.id)===String(raw)||codeOf(x.Structure_Code)===String(raw))||null}
-function campaignParticipantLabel(c){const st=campaignLegacyStructure(c);return String(c.Valeur_personnalisation_Libelle||c.Valeur_personnalisation||st?.Libelle||st?.Nom||st?.Structure_Code||codeOf(c.Structure_Code)||"—")}
-function campaignParticipantValue(c){const st=campaignLegacyStructure(c);return String(c.Valeur_personnalisation||c.Valeur_personnalisation_Libelle||st?.Structure_Code||codeOf(c.Structure_Code)||"—")}
+function campaignPersonalizationDisplay(c){
+ const st=campaignLegacyStructure(c),q=campaignPersonalizationQuestion(c),raw=String(c?.Valeur_personnalisation??"").trim(),storedLabel=String(c?.Valeur_personnalisation_Libelle??"").trim();
+ if(q&&raw){
+  const choices=choicesFor(q),choice=choices.find(x=>String(codeOf(x.Choix_Code))===raw||String(x.id)===raw||String(x.Valeur??"")===raw);
+  if(choice){const value=String(choice.Valeur??choice.Libelle??raw).trim()||raw,label=String(choice.Libelle??choice.Valeur??value).trim()||value;return{label,value}}
+  const modality=conditionModalities(q).find(([value,label])=>String(value)===raw||String(label)===raw);
+  if(modality)return{value:String(modality[0]||raw),label:String(modality[1]||modality[0]||raw)};
+ }
+ const fallback=storedLabel||raw||String(st?.Libelle||st?.Nom||st?.Structure_Code||codeOf(c?.Structure_Code)||"—");
+ return{label:fallback,value:raw&&!raw.startsWith("CHOIX_")?raw:fallback};
+}
+function campaignParticipantLabel(c){return campaignPersonalizationDisplay(c).label}
+function campaignParticipantValue(c){return campaignPersonalizationDisplay(c).value}
 function campaignAccessUrl(c){const base=String(c.URL_reprise||c.URL_page_Grist||"").trim(),token=String(c.Jeton_acces||"").trim();if(!base||!token)return"";try{const u=new URL(base);u.searchParams.set("Acces_",token);u.searchParams.delete("Reprise_");return u.toString()}catch{return""}}
 function campaignQuestionOptions(){return sortByOrder((S.data.QUESTIONS||[]).filter(q=>vm(q)&&!isMatrixLine(q)&&!isDataTableQuestion(q)&&conditionModalities(q).length)).map(q=>[String(q.id),label(q,"question")])}
 function campaignModalities(questionId){const q=(S.data.QUESTIONS||[]).find(x=>String(x.id)===String(questionId));return q?conditionModalities(q):[]}
@@ -418,8 +429,8 @@ async function openCampaigns(){try{await ensureCampaignColumns();await ensureCam
 
 async function ensureResponseTrackingColumns(){let raw;try{raw=await grist.docApi.fetchTable("REPONSES")}catch{throw new Error("La table REPONSES est introuvable.")}const have=new Set(Object.keys(raw||{}));const specs=[["Date_creation","DateTime"],["Date_modification","DateTime"],["Date_validation","DateTime"]];const actions=specs.filter(([n])=>!have.has(n)).map(([n,t])=>["AddColumn","REPONSES",n,{type:t}]);if(actions.length)await grist.docApi.applyUserActions(actions)}
 function responseMatchesCampaign(r,c){if(!r||!c||Boolean(r.Supprime_logiquement))return false;const token=String(c.Jeton_acces||"").trim(),rt=String(r.Jeton_acces_ACL||"").trim();if(token&&rt&&rt===token)return true;const rc=String(codeOf(r.Campagne_Code)||""),cid=String(c.id),cc=String(codeOf(c.Campagne_Code)||"");return Boolean(rc)&&(rc===cid||rc===cc)}
-function responseRank(r){const validated=String(r?.Statut||"").toLowerCase().includes("valid")?1:0;const modified=Number(r?.Date_modification||r?.Modifie_le||r?.Date_validation||r?.Valide_le||r?.Date_creation||r?.Cree_le||0);return [validated,modified,Number(r?.Revision||0),Number(r?.id||0)]}
-function resultResponseForCampaign(c,responses){return (responses||[]).filter(r=>responseMatchesCampaign(r,c)).sort((a,b)=>{const ar=responseRank(a),br=responseRank(b);for(let i=0;i<ar.length;i++){if(br[i]!==ar[i])return br[i]-ar[i]}return 0})[0]||null}
+function responseCollectiveDate(r){return Number(r?.Date_modification??r?.Modifie_le??r?.Date_creation??r?.Cree_le??0)||0}
+function resultResponseForCampaign(c,responses){return (responses||[]).filter(r=>responseMatchesCampaign(r,c)).sort((a,b)=>responseCollectiveDate(b)-responseCollectiveDate(a)||Number(b?.Revision||0)-Number(a?.Revision||0)||Number(b?.id||0)-Number(a?.id||0))[0]||null}
 function resultCampaignForResponse(r,campaigns){return (campaigns||[]).find(c=>responseMatchesCampaign(r,c))||null}
 function resultStatus(r){if(!r)return"not-started";const s=String(r.Statut||"").toLowerCase();return s.includes("valid")||s.includes("termin")?"completed":"in-progress"}
 function resultStatusLabel(st){return st==="completed"?"Terminé":st==="in-progress"?"En cours":"Pas commencé"}
