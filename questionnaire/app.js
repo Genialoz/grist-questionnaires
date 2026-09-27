@@ -856,8 +856,13 @@ async function nextPage(vm,page) {
 }
 
 
+function requestedParam(name){
+  try{return String(new URL(globalThis.location?.href||"http://local/").searchParams.get(name)||"").trim()}catch{return ""}
+}
 function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
+  const requested=requestedParam("Reponse_");
+  if(requested){const match=rows.find(r=>String(r.id)===requested||String(codeOf(r.Reponse_Code))===requested);if(match)return match;}
   return rows.length===1 ? rows[0] : null;
 }
 function resumeNotice(){
@@ -902,7 +907,7 @@ function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.(
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
 async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
-function selectedCampaign(){const cs=state.definition.campaigns??[]; /* Jeton_acces is enforced by Grist ACL for anonymous links. */ const candidate=state.selectedRecord?.Campagne_Code; if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;} if(cs.length===1)return cs[0]; throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
+function selectedCampaign(){const cs=state.definition.campaigns??[]; /* ACL remains authoritative; explicit ids only disambiguate rows already readable by this session. */ const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), code=uniqueCode("REP"), vc=state.definition.version.id;
