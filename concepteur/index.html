@@ -2,7 +2,7 @@
 <title>Concepteur de questionnaires</title><link rel="stylesheet" href="../shared/common.css"><link rel="stylesheet" href="./styles.css">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script></head><body><main id="designer">
 <header class="topbar"><div><h1>Concepteur</h1><p>Construction du questionnaire</p></div><div class="selectors">
-<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
+<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="manage-questionnaires">Mes questionnaires</button><button type="button" class="btn" id="respondent-preview">Aperçu répondant</button><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
 <div id="status"></div>
 <dialog id="new-questionnaire-dialog" class="app-dialog">
 <form id="new-questionnaire-form" class="form-grid">
@@ -21,6 +21,13 @@
 <div class="form-field"><label>Pied de page <textarea name="footer" placeholder="Optionnel"></textarea></label></div><label class="check"><input name="show-toc" type="checkbox"> Afficher un sommaire</label></div>
 <div class="form-actions"><button type="button" class="secondary-btn" id="cancel-general-info-2">Annuler</button><button type="submit" class="btn btn-primary">Enregistrer</button></div>
 </form></dialog>
+
+<dialog id="manage-questionnaires-dialog" class="app-dialog wide-dialog">
+<div class="dialog-shell"><div class="dialog-head"><div><h2>Mes questionnaires</h2><p>Ouvrir, archiver ou supprimer un questionnaire.</p></div><button type="button" class="dialog-close" id="close-manage-questionnaires" aria-label="Fermer">×</button></div><div id="questionnaire-list" class="questionnaire-list"></div></div>
+</dialog>
+<dialog id="respondent-preview-dialog" class="app-dialog preview-dialog">
+<div class="dialog-shell"><div class="dialog-head"><div><h2>Aperçu répondant</h2><p>Aperçu visuel de la version sélectionnée — aucune réponse n’est enregistrée.</p></div><button type="button" class="dialog-close" id="close-respondent-preview" aria-label="Fermer">×</button></div><div id="respondent-preview-content" class="respondent-preview-content"></div></div>
+</dialog>
 <section class="workspace"><aside class="panel"><div class="panel-title">Structure</div>
 <div class="addbar"><button id="add-page">+ Page</button><button id="add-section">+ Section</button><button id="add-question">+ Question</button></div><div id="tree"></div></aside>
 <section class="panel"><div class="panel-title">Construction</div><div id="canvas" class="empty-state">Sélectionnez un élément.</div></section>
