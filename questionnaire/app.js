@@ -66,11 +66,14 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if (!version) throw new Error("Aucune version de questionnaire disponible.");
   const vc=codeOf(version.Version_Code);
   const byVersion = rows => rows.filter(r => !("Version_Code" in r) || resolveRefCode(r.Version_Code, versions, "Version_Code")===vc);
+  const versionQuestions=byVersion(loaded.QUESTIONS).filter(active);
+  const dataTables={};
+  for(const q of versionQuestions){const src=String(q.TD_Table_Source||"").trim();if(!src||dataTables[src])continue;try{dataTables[src]=rowsFromTable(await docApi.fetchTable(src));}catch{dataTables[src]=[]}}
   return {
     version,
     pages:byVersion(loaded.PAGES).filter(active),
     sections:byVersion(loaded.SECTIONS).filter(active),
-    questions:byVersion(loaded.QUESTIONS).filter(active),
+    questions:versionQuestions,
     ficheTypes:byVersion(loaded.TYPES_FICHES).filter(active),
     choices:loaded.CHOIX_QUESTIONS.filter(active),
     matrixColumns:(loaded.COLONNES_MATRICE ?? []).filter(active),
@@ -84,7 +87,8 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     responses:loaded.REPONSES,
     responseElements:loaded.ELEMENTS_REPONSE,
     responseValues:loaded.VALEURS_REPONSE,
-    responseSelections:loaded.SELECTIONS_REPONSE
+    responseSelections:loaded.SELECTIONS_REPONSE,
+    dataTables
   };
 }
 
@@ -365,7 +369,14 @@ function renderMatrix(q,answers=state.answers,ficheMode=false){
   const foot=kind==="number"&&isTrue(q.Afficher_total_colonne)?`<tfoot><tr><th scope="row">Total</th>${cols.map(c=>`<td class="matrix-total" data-matrix-col-total="${escapeHtml(qc)}:${escapeHtml(c.code)}">0</td>`).join("")}${isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-grand-total="${escapeHtml(qc)}">0</td>`:""}</tr></tfoot>`:"";
   return `<div class="matrix-wrap" data-matrix="${escapeHtml(qc)}"><table class="matrix-table"><thead><tr><th></th>${head}${totalHead}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
 }
-function renderQuestionControl(q,answers=state.answers,ficheMode=false){return matrixKind(q)?renderMatrix(q,answers,ficheMode):renderControl(q,answers,ficheMode);}
+
+function isDataTableQuestion(q){return String(q?.Type_question??q?.Type??"").toLowerCase()==="tableau_donnees"}
+function dataTableColumns(q){try{return JSON.parse(q?.TD_Columns_Config||"[]").filter(c=>c.show!==false).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0))}catch{return []}}
+function dataContextValue(q,answers){if(String(q.TD_Mode||"all")!=="personalized")return "";if(String(q.TD_Context_Source||"campaign")==="question")return answers?.[String(q.TD_Context_Question||"")]??"";const rec=state.selectedRecord||{};return codeOf(rec.Structure_Code??rec.Structure??rec.Contexte_Code??rec.Unite_Code??"")}
+function structureMatchSet(value,mode){const start=String(codeOf(value)||"");if(!start)return new Set();if(mode==="exact")return new Set([start]);const rows=state.definition?.structures||[],codeCol=rows[0]&&("Structure_Code" in rows[0]?"Structure_Code":"Code"),parentCol=rows[0]&&(["Parent_Code","Structure_parente_Code","Parent"].find(k=>k in rows[0]));if(!codeCol||!parentCol)return new Set([start]);const children=new Map();for(const r of rows){const c=String(codeOf(r[codeCol])||""),p=String(resolveRefCode(r[parentCol],rows,codeCol)||"");if(p){const a=children.get(p)||[];a.push(c);children.set(p,a)}}const out=new Set([start]),direct=children.get(start)||[];direct.forEach(x=>out.add(x));if(mode==="value_descendants"){const stack=[...direct];while(stack.length){const x=stack.pop();for(const c of children.get(x)||[])if(!out.has(c)){out.add(c);stack.push(c)}}}return out}
+function renderDataTable(q,answers){const src=String(q.TD_Table_Source||""),all=state.definition?.dataTables?.[src]||[],cols=dataTableColumns(q);if(!src||!cols.length)return `<div class="data-table-empty">Tableau de données non configuré.</div>`;let rows=all;if(String(q.TD_Mode||"all")==="personalized"){const value=dataContextValue(q,answers),allowed=structureMatchSet(value,String(q.TD_Hierarchy_Mode||"exact")),key=String(q.TD_Key_Column||"");rows=value&&key?all.filter(r=>allowed.has(String(codeOf(r[key])??r[key]??""))):[]}if(!rows.length)return `<div class="data-table-empty">${escapeHtml(q.TD_NoData_Message||"Aucune donnée à afficher.")}</div>`;return `<div class="readonly-data-table"><table><thead><tr>${cols.map(c=>`<th>${escapeHtml(c.label||c.id)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${escapeHtml(r[c.id]??"")}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`}
+
+function renderQuestionControl(q,answers=state.answers,ficheMode=false){return isDataTableQuestion(q)?renderDataTable(q,answers):matrixKind(q)?renderMatrix(q,answers,ficheMode):renderControl(q,answers,ficheMode);}
 function matrixErrors(q,answers={}){
   const errors=[]; const qc=codeOf(q.Question_Code), kind=matrixKind(q), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition), data=answers?.[qc]??{};
   for(const r of rows){const rc=codeOf(r.Question_Code), row=data[rc]??{};

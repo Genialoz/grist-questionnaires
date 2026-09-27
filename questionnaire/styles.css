@@ -120,3 +120,4 @@ textarea { min-height:110px; resize:vertical; }
 @media(max-width:600px){.questionnaire-toc{padding:12px}.toc-sections{padding-left:10px}}
 
 .return-toc-wrap{margin:0 0 16px}.return-toc{font-weight:650}
+.readonly-data-table{overflow:auto;margin:.5rem 0 1rem}.readonly-data-table table{width:100%;border-collapse:collapse;background:#fff}.readonly-data-table th,.readonly-data-table td{padding:.65rem .75rem;border:1px solid #d9dee7;text-align:left;vertical-align:top}.readonly-data-table th{background:#f4f6f9;font-weight:700}.data-table-empty{padding:.85rem 1rem;border:1px dashed #c8ced8;border-radius:8px;background:#fafbfc;color:#596273}
