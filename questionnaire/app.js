@@ -923,8 +923,17 @@ function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
 function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
-  const campaign=selectedCampaign(), code=uniqueCode("REP"), vc=state.definition.version.id;
+  const campaign=selectedCampaign(), vc=state.definition.version.id;
+  /* Re-read persistence immediately before creation. With a personalized access link,
+     the access token is the collective response key: reuse an existing readable
+     response instead of creating another one. ACLs remain authoritative. */
   if(!state.response){
+    await refreshPersistenceRows();
+    const existing=accessibleResponse(state.definition);
+    if(existing) state.response=existing;
+  }
+  if(!state.response){
+    const code=uniqueCode("REP");
     const now=Date.now()/1000,fields={Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces,Date_creation:now,Date_modification:now};
     await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,fields]]);
     await refreshPersistenceRows();
