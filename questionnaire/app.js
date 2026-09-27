@@ -535,7 +535,9 @@ function render() {
   const page=vm.pages[state.pageIndex];
   const title=first(vm.version,["Titre","Titre_affiche","Nom"],"Questionnaire");
   const intro=first(vm.version,["Introduction","Texte_introduction"],"");
-  const logo=first(vm.version,["Logo_URL","Logo","Url_logo"],"");
+  const logo=first(vm.version,["Logo_Data","Logo_URL","Logo","Url_logo"],"");
+  const logoSize=first(vm.version,["Logo_Taille"],"moyen");
+  const logoAlign=first(vm.version,["Logo_Alignement"],"gauche");
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
   status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],false));
@@ -543,7 +545,7 @@ function render() {
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
-    <header class="header">${logo?`<div class="questionnaire-logo"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
+    <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>{

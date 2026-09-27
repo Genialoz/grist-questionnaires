@@ -105,3 +105,7 @@ textarea { min-height:110px; resize:vertical; }
 
 /* V5.4.0 - personnalisation du questionnaire */
 .questionnaire-logo{margin-bottom:12px}.questionnaire-logo img{display:block;max-width:min(220px,60%);max-height:90px;object-fit:contain}.questionnaire-footer{margin-top:28px;padding-top:14px;border-top:1px solid #e5e2e8;font-size:.82rem;color:#6d6873;white-space:pre-line}
+
+/* V3.27.1 - taille et alignement du logo */
+.questionnaire-logo.logo-petit img{max-width:min(120px,45%);max-height:55px}.questionnaire-logo.logo-moyen img{max-width:min(220px,60%);max-height:90px}.questionnaire-logo.logo-grand img{max-width:min(360px,85%);max-height:140px}
+.questionnaire-logo.align-gauche{display:flex;justify-content:flex-start}.questionnaire-logo.align-centre{display:flex;justify-content:center}.questionnaire-logo.align-droite{display:flex;justify-content:flex-end}
