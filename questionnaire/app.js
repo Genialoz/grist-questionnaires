@@ -867,7 +867,12 @@ async function writeMatrixAnswer(element,q,answers){
     if(kind==="radio"||kind==="checkbox"){
       let valueRow=existing.find(v=>String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);if(!valueRow){await grist.docApi.applyUserActions([["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),Element_Code:element.id,Question_Code:r.id,Valeur_texte:null}]]);await refreshPersistenceRows();valueRow=state.definition.responseValues.find(v=>String(v.Element_Code)===String(element.id)&&String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);}if(!valueRow)continue;
       for(const x of (state.definition.responseSelections??[]).filter(x=>String(x.Valeur_Code)===String(valueRow.id)))actions.push(["RemoveRecord","SELECTIONS_REPONSE",x.id]);
-      const selected=kind==="checkbox"?(Array.isArray(rv)?rv:[]):(rv?[rv]:[]);for(const c of selected){const col=cols.find(x=>String(x.code)===String(c));if(col)actions.push(["AddRecord","SELECTIONS_REPONSE",null,{Selection_Code:uniqueCode("SEL"),Valeur_Code:valueRow.id,Choix_Code:col.id,ValeurRef_Code:null,Structure_Code:null}]);}
+      const selected=kind==="checkbox"?(Array.isArray(rv)?rv:[]):(rv?[rv]:[]);
+      // Pour une matrice radio, conserver aussi le code technique dans VALEURS_REPONSE.
+      // SELECTIONS_REPONSE reste la représentation relationnelle principale ; Valeur_texte
+      // permet une réhydratation fiable après sauvegarde et reste vide pour les checkbox.
+      actions.push(["UpdateRecord","VALEURS_REPONSE",valueRow.id,{Valeur_texte:kind==="radio"?(selected[0]??null):null}]);
+      for(const c of selected){const col=cols.find(x=>String(x.code)===String(c));if(col)actions.push(["AddRecord","SELECTIONS_REPONSE",null,{Selection_Code:uniqueCode("SEL"),Valeur_Code:valueRow.id,Choix_Code:col.id,ValeurRef_Code:null,Structure_Code:null}]);}
     }else for(const c of cols){const old=existing.find(v=>String(v.Question_Code)===String(r.id)&&String(v.ColonneMatrice_Code)===String(c.id));const val=rv?.[c.code]??"";const fields={Element_Code:element.id,Question_Code:r.id,ColonneMatrice_Code:c.id,Valeur_texte:kind==="text"?(val===""?null:String(val)):null,Valeur_nombre:kind==="number"&&(val!==""&&val!=null)?Number(val):null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(val!==""&&val!=null)actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
   }
   if(actions.length)await grist.docApi.applyUserActions(actions);

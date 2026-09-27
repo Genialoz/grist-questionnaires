@@ -51,7 +51,7 @@ export function hydrateResponse(rows,definition,reponseCode){
   };
   const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(!q)continue;
     if(isTrue(q.Est_ligne_matrice)){const parentRaw=codeOf(q.Question_parente_Code),parent=questions.find(x=>String(x.id)===parentRaw||codeOf(x.Question_Code)===parentRaw);if(!parent)continue;const pc=codeOf(parent.Question_Code),rc=codeOf(q.Question_Code),pt=qtype(parent);out[pc]??={};
-      if(pt.includes("radio")||pt.includes("checkbox")){const selected=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);out[pc][rc]=pt.includes("checkbox")?selected:(selected[0]??"");}
+      if(pt.includes("radio")||pt.includes("checkbox")){const selected=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);out[pc][rc]=pt.includes("checkbox")?selected:(selected[0]??v.Valeur_texte??"");}
       else {const colRaw=codeOf(v.ColonneMatrice_Code),col=(definition.matrixColumns??[]).find(c=>String(c.id)===colRaw||codeOf(c.ColonneMatrice_Code)===colRaw);if(!col)continue;const cc=codeOf(col.ColonneMatrice_Code);out[pc][rc]??={};out[pc][rc][cc]=pt.includes("nombre")||pt.includes("numérique")||pt.includes("numerique")?(v.Valeur_nombre??""):(v.Valeur_texte??"");}
       continue;}
     if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);
