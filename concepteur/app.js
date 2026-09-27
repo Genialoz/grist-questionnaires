@@ -45,7 +45,19 @@ async function reorderTreeItem(type,sourceId,targetId){
  requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="${type}"][data-id="${source.id}"]`)?.scrollIntoView({block:"nearest"}));
  status("Ordre mis à jour.");
 }
+function autoScrollTreeDuringDrag(e){
+ if(!treeDrag)return;
+ const tree=$("#tree"),panel=tree?.closest(".panel");
+ if(!panel)return;
+ const rect=panel.getBoundingClientRect(),edge=Math.min(90,Math.max(55,rect.height*.12));
+ let delta=0;
+ if(e.clientY<rect.top+edge)delta=-Math.max(6,Math.round((rect.top+edge-e.clientY)/edge*24));
+ else if(e.clientY>rect.bottom-edge)delta=Math.max(6,Math.round((e.clientY-(rect.bottom-edge))/edge*24));
+ if(delta)panel.scrollTop+=delta;
+}
 function bindTreeDragDrop(){
+ const tree=$("#tree"),panel=tree?.closest(".panel");
+ if(panel)panel.ondragover=autoScrollTreeDuringDrag;
  document.querySelectorAll('.tree-item[draggable="true"]').forEach(el=>{
   el.ondragstart=e=>{treeDrag={type:el.dataset.type,id:el.dataset.id};el.classList.add("dragging");e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",`${treeDrag.type}:${treeDrag.id}`)};
   el.ondragend=()=>{treeDrag=null;document.querySelectorAll(".tree-item").forEach(x=>x.classList.remove("dragging","drag-target"))};
