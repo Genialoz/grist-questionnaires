@@ -372,26 +372,7 @@ function renderMatrix(q,answers=state.answers,ficheMode=false){
 
 function isDataTableQuestion(q){return String(q?.Type_question??q?.Type??"").toLowerCase()==="tableau_donnees"}
 function dataTableColumns(q){try{return JSON.parse(q?.TD_Columns_Config||"[]").filter(c=>c.show!==false).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0))}catch{return []}}
-function dataContextValue(q,answers){
-  if(String(q.TD_Mode||"all")!=="personalized")return "";
-  if(String(q.TD_Context_Source||"campaign")==="question"){
-    const sourceCode=String(q.TD_Context_Question||"");
-    const raw=answers?.[sourceCode]??"";
-    if(raw===""||raw==null)return "";
-    const sourceQuestion=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===sourceCode||String(x.id)===sourceCode);
-    if(sourceQuestion){
-      const option=optionsFor(sourceQuestion,state.definition,answers).find(o=>String(o.value)===String(raw));
-      if(option?.source==="choice"){
-        const choice=(state.definition?.choices||[]).find(c=>String(c.id)===String(option.rowId)||codeOf(c.Choix_Code)===String(raw));
-        const businessValue=choice?.Valeur;
-        if(businessValue!==undefined&&businessValue!==null&&String(businessValue).trim()!=="")return String(businessValue).trim();
-      }
-    }
-    return codeOf(raw)||String(raw);
-  }
-  const rec=state.selectedRecord||{};
-  return codeOf(rec.Structure_Code??rec.Structure??rec.Contexte_Code??rec.Unite_Code??"");
-}
+function dataContextValue(q,answers){if(String(q.TD_Mode||"all")!=="personalized")return "";if(String(q.TD_Context_Source||"campaign")==="question"){const questionCode=String(q.TD_Context_Question||""),raw=answers?.[questionCode]??"";if(raw===""||raw==null)return "";const choice=(state.definition?.choices||[]).find(c=>resolveRefCode(c.Question_Code,state.definition?.questions||[],"Question_Code")===questionCode&&String(codeOf(c.Choix_Code))===String(codeOf(raw)));if(choice){const business=first(choice,["Valeur"],"");if(String(business??"").trim())return String(business).trim()}return codeOf(raw)||String(raw)}const rec=state.selectedRecord||{};return codeOf(rec.Structure_Code??rec.Structure??rec.Contexte_Code??rec.Unite_Code??"")}
 function structureMatchSet(value,mode){const start=String(codeOf(value)||"");if(!start)return new Set();if(mode==="exact")return new Set([start]);const rows=state.definition?.structures||[],codeCol=rows[0]&&("Structure_Code" in rows[0]?"Structure_Code":"Code"),parentCol=rows[0]&&(["Parent_Code","Structure_parente_Code","Parent"].find(k=>k in rows[0]));if(!codeCol||!parentCol)return new Set([start]);const children=new Map();for(const r of rows){const c=String(codeOf(r[codeCol])||""),p=String(resolveRefCode(r[parentCol],rows,codeCol)||"");if(p){const a=children.get(p)||[];a.push(c);children.set(p,a)}}const out=new Set([start]),direct=children.get(start)||[];direct.forEach(x=>out.add(x));if(mode==="value_descendants"){const stack=[...direct];while(stack.length){const x=stack.pop();for(const c of children.get(x)||[])if(!out.has(c)){out.add(c);stack.push(c)}}}return out}
 function dataTotalColumns(q){try{const v=JSON.parse(q?.TD_Total_Columns||"[]");return Array.isArray(v)?v:[]}catch{return []}}
 function parseDataNumber(v){if(typeof v==="number")return Number.isFinite(v)?v:null;let x=String(v??"").trim().replace(/\s/g,"").replace(/€/g,"");if(!x)return null;if(x.includes(",")&&x.includes(".")){if(x.lastIndexOf(",")>x.lastIndexOf("."))x=x.replace(/\./g,"").replace(",",".");else x=x.replace(/,/g,"")}else x=x.replace(",",".");const n=Number(x);return Number.isFinite(n)?n:null}
@@ -814,7 +795,8 @@ function onAnswer(e) {
   } else state.answers[code]=e.target.value;
   sanitizeDependentAnswers(state.definition,state.answers);
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
+  const drivesDataTable=(state.definition.questions ?? []).some(q=>isDataTableQuestion(q)&&String(q.TD_Mode||"all")==="personalized"&&String(q.TD_Context_Source||"campaign")==="question"&&String(q.TD_Context_Question||"")===String(code));
+  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
 export function validateVisiblePage(page, answers={}) {
