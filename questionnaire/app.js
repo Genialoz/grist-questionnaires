@@ -315,31 +315,20 @@ export function controlKind(question) {
   return "text";
 }
 
-function campaignPersonalization(){
-  if(!state.definition)return null;
-  let campaign=null;
-  try{campaign=selectedCampaign()}catch{return null}
-  const questionCode=resolveRefCode(campaign?.Question_personnalisation_Code,state.definition.questions,"Question_Code");
-  const value=String(campaign?.Valeur_personnalisation??"");
-  return questionCode&&value!==""?{campaign,questionCode,value}:null;
-}
-function applyCampaignPersonalization(){const p=campaignPersonalization();if(p)state.answers[p.questionCode]=p.value;return p}
-function campaignLocksQuestion(q){const p=campaignPersonalization();return Boolean(p&&p.questionCode===codeOf(q.Question_Code))}
-
 function renderControl(q, answers=state.answers, ficheMode=false) {
-  const code=codeOf(q.Question_Code), kind=controlKind(q), value=answers[code] ?? "", locked=!ficheMode&&campaignLocksQuestion(q), readOnly=isTrue(q.Lecture_seule)||locked;
+  const code=codeOf(q.Question_Code), kind=controlKind(q), value=answers[code] ?? "";
   const attrs=[
     `data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}"`,
     q.Valeur_min!==""&&q.Valeur_min!=null?`min="${escapeHtml(q.Valeur_min)}"`:"",
     q.Valeur_max!==""&&q.Valeur_max!=null?`max="${escapeHtml(q.Valeur_max)}"`:"",
     q.Longueur_min!==""&&q.Longueur_min!=null?`minlength="${escapeHtml(q.Longueur_min)}"`:"",
     q.Longueur_max!==""&&q.Longueur_max!=null&&Number(q.Longueur_max)>0?`maxlength="${escapeHtml(q.Longueur_max)}"`:"",
-    readOnly?"disabled":""
+    isTrue(q.Lecture_seule)?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
-  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
-  if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${selected.size===0?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
+  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${isTrue(q.Lecture_seule)?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!isTrue(q.Lecture_seule)?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${selected.size===0?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -383,7 +372,7 @@ function renderMatrix(q,answers=state.answers,ficheMode=false){
 
 function isDataTableQuestion(q){return String(q?.Type_question??q?.Type??"").toLowerCase()==="tableau_donnees"}
 function dataTableColumns(q){try{return JSON.parse(q?.TD_Columns_Config||"[]").filter(c=>c.show!==false).sort((a,b)=>(Number(a.order)||0)-(Number(b.order)||0))}catch{return []}}
-function dataContextValue(q,answers){if(String(q.TD_Mode||"all")!=="personalized")return "";if(String(q.TD_Context_Source||"campaign")==="question"){const questionCode=String(q.TD_Context_Question||""),raw=answers?.[questionCode]??"";if(raw===""||raw==null)return "";const choice=(state.definition?.choices||[]).find(c=>resolveRefCode(c.Question_Code,state.definition?.questions||[],"Question_Code")===questionCode&&String(codeOf(c.Choix_Code))===String(codeOf(raw)));if(choice){const business=first(choice,["Valeur"],"");if(String(business??"").trim())return String(business).trim()}return codeOf(raw)||String(raw)}const rec=state.selectedRecord||{},campaign=(state.definition?.campaigns||[]).length===1?(state.definition.campaigns||[])[0]:null;return codeOf(rec.Valeur_personnalisation??campaign?.Valeur_personnalisation??rec.Structure_Code??rec.Structure??rec.Contexte_Code??rec.Unite_Code??campaign?.Structure_Code??"")}
+function dataContextValue(q,answers){if(String(q.TD_Mode||"all")!=="personalized")return "";if(String(q.TD_Context_Source||"campaign")==="question"){const questionCode=String(q.TD_Context_Question||""),raw=answers?.[questionCode]??"";if(raw===""||raw==null)return "";const choice=(state.definition?.choices||[]).find(c=>resolveRefCode(c.Question_Code,state.definition?.questions||[],"Question_Code")===questionCode&&String(codeOf(c.Choix_Code))===String(codeOf(raw)));if(choice){const business=first(choice,["Valeur"],"");if(String(business??"").trim())return String(business).trim()}return codeOf(raw)||String(raw)}const rec=state.selectedRecord||{},campaign=(state.definition?.campaigns||[]).length===1?(state.definition.campaigns||[])[0]:null;return codeOf(rec.Structure_Code??rec.Structure??rec.Contexte_Code??rec.Unite_Code??campaign?.Structure_Code??"")}
 function structureMatchSet(value,mode){const start=String(codeOf(value)||"");if(!start)return new Set();if(mode==="exact")return new Set([start]);const rows=state.definition?.structures||[],codeCol=rows[0]&&("Structure_Code" in rows[0]?"Structure_Code":"Code"),parentCol=rows[0]&&(["Parent_Code","Structure_parente_Code","Parent"].find(k=>k in rows[0]));if(!codeCol||!parentCol)return new Set([start]);const children=new Map();for(const r of rows){const c=String(codeOf(r[codeCol])||""),p=String(resolveRefCode(r[parentCol],rows,codeCol)||"");if(p){const a=children.get(p)||[];a.push(c);children.set(p,a)}}const out=new Set([start]),direct=children.get(start)||[];direct.forEach(x=>out.add(x));if(mode==="value_descendants"){const stack=[...direct];while(stack.length){const x=stack.pop();for(const c of children.get(x)||[])if(!out.has(c)){out.add(c);stack.push(c)}}}return out}
 function dataTotalColumns(q){try{const v=JSON.parse(q?.TD_Total_Columns||"[]");return Array.isArray(v)?v:[]}catch{return []}}
 function parseDataNumber(v){if(typeof v==="number")return Number.isFinite(v)?v:null;let x=String(v??"").trim().replace(/\s/g,"").replace(/€/g,"");if(!x)return null;if(x.includes(",")&&x.includes(".")){if(x.lastIndexOf(",")>x.lastIndexOf("."))x=x.replace(/\./g,"").replace(",",".");else x=x.replace(/,/g,"")}else x=x.replace(",",".");const n=Number(x);return Number.isFinite(n)?n:null}
@@ -522,7 +511,6 @@ function scrollToEditor(selector){
 }
 
 function render() {
-  applyCampaignPersonalization();
   const root=document.querySelector("#form-root"), nav=document.querySelector("#navigation"), status=document.querySelector("#status");
   const vm=buildViewModel(state.definition,state.answers); state.diagnostics=vm.diagnostics;
   if (!vm.pages.length) {
@@ -1019,7 +1007,6 @@ async function boot() {
     const resumed=accessibleResponse(state.definition);
     const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
-    applyCampaignPersonalization();
     render();
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
