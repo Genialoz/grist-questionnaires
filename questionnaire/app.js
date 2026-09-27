@@ -892,8 +892,27 @@ function accessibleResponse(def){
   if(resume){const match=findResponseByResumeToken(rows,resume);if(match)return match;}
   const requested=requestedParam("Reponse_");
   if(requested){const match=rows.find(r=>String(r.id)===requested||String(codeOf(r.Reponse_Code))===requested);if(match)return match;}
-  const access=requestedParam("Acces_");
-  if(access){const matches=rows.filter(r=>String(r.Jeton_acces_ACL||"").trim()===access).sort((a,b)=>Number(b.Revision||0)-Number(a.Revision||0)||Number(b.id||0)-Number(a.id||0));if(matches.length)return matches[0];}
+  // Acces_ n’est pas toujours exposé à l’iframe du widget Grist (notamment
+  // lorsqu’un OWNER est connecté). Les ACL de CAMPAGNES filtrent alors déjà
+  // la définition à la campagne autorisée : son Jeton_acces devient la clé
+  // collective de reprise.
+  let access=requestedParam("Acces_");
+  let campaign=null;
+  if(access) campaign=(def.campaigns??[]).find(c=>String(c.Jeton_acces??"").trim()===access)??null;
+  if(!campaign && (def.campaigns??[]).length===1) campaign=def.campaigns[0];
+  if(!access && campaign) access=String(campaign.Jeton_acces??"").trim();
+  if(access){
+    const matches=rows.filter(r=>{
+      if(String(r.Jeton_acces_ACL||"").trim()!==access)return false;
+      if(!campaign)return true;
+      const raw=codeOf(r.Campagne_Code);
+      return String(raw)===String(campaign.id)||String(raw)===String(codeOf(campaign.Campagne_Code));
+    }).sort((a,b)=>{
+      const date=r=>Number(r.Date_modification??r.Modifie_le??r.Date_creation??r.Cree_le??0)||0;
+      return date(b)-date(a)||Number(b.Revision||0)-Number(a.Revision||0)||Number(b.id||0)-Number(a.id||0);
+    });
+    if(matches.length)return matches[0];
+  }
   return rows.length===1 ? rows[0] : null;
 }
 function resumeNotice(){
