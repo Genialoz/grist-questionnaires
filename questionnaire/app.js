@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{} };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{}, previewMode:false };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -49,6 +49,13 @@ export function normalizeRules(loaded) {
   }));
 }
 
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function requestedPreviewVersion(){
+  if(hasRealResponseContext())return "";
+  const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
+  if(explicit)return explicit;
+  try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
+}
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
   for (const name of TABLES) {
@@ -75,6 +82,10 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if(!version && accessVersion!=null && accessVersion!==""){
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
+  }
+  const previewVersion=requestedPreviewVersion();
+  if(!version && previewVersion){
+    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
   const candidate = selectedRecord && (selectedRecord.Version_Code ?? selectedRecord.version_Code ?? selectedRecord.id);
   if (!version && candidate != null) {
@@ -541,7 +552,7 @@ function scrollToEditor(selector){
 }
 
 function render() {
-  applyCampaignPersonalization();
+  if(!state.previewMode)applyCampaignPersonalization();
   const root=document.querySelector("#form-root"), nav=document.querySelector("#navigation"), status=document.querySelector("#status");
   const vm=buildViewModel(state.definition,state.answers); state.diagnostics=vm.diagnostics;
   if (!vm.pages.length) {
@@ -583,7 +594,7 @@ function render() {
   const logoSize=first(vm.version,["Logo_Taille"],"moyen");
   const logoAlign=first(vm.version,["Logo_Alignement"],"gauche");
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
-  status.innerHTML=(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+resumeNotice();
+  status.innerHTML=(state.previewMode?`<div class="status-info">Mode aperçu — aucune réponse ne sera enregistrée.</div>`:"")+(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+(state.previewMode?"":resumeNotice());
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],true));
   const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
@@ -593,7 +604,7 @@ function render() {
   const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");return Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   root.innerHTML=`<div class="card">
-    <div class="respondent-toolbar"><div class="respondent-toolbar-status"><span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="respondent-toolbar-actions">${state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
@@ -634,14 +645,14 @@ function render() {
     const targetSection=e.currentTarget.dataset.tocSection||"";
     if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
     if(targetPage!==state.pageIndex){
-      if(!locked && !(await savePrincipal()))return;
+      if(!locked && !state.previewMode && !(await savePrincipal()))return;
       state.pageIndex=targetPage; render();
     }
     if(targetSection)requestAnimationFrame(()=>document.getElementById(`section-${CSS.escape(targetSection)}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
     else requestAnimationFrame(()=>root.scrollIntoView({behavior:"smooth",block:"start"}));
   }));
   root.querySelector("[data-return-toc]")?.addEventListener("click",async()=>{
-    if(!locked && !(await savePrincipal()))return;
+    if(!locked && !state.previewMode && !(await savePrincipal()))return;
     state.pageIndex=0;render();
     requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
   });
@@ -672,7 +683,7 @@ function render() {
   root.querySelector("[data-save-subfiche]")?.addEventListener("click",()=>saveCurrentSubFiche());
   status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
-  document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
+  document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked||state.previewMode){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){state.pageIndex++;render();}return;}nextPage(vm,page)});
 
 }
@@ -752,6 +763,7 @@ async function saveCurrentFiche() {
     if(node) node.textContent=msg;
   }
   if (Object.keys(errors).length) return;
+  if(state.previewMode){saveDraftFiche(state);render();return;}
   try {
     state.saving=true; render();
     await persistFiche(type,state.ficheEditor);
@@ -777,6 +789,13 @@ async function saveCurrentSubFiche() {
     const node=root?.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`); if(node) node.textContent=msg;
   }
   if (Object.keys(errors).length) return;
+  if(state.previewMode){
+    const list=state.fiches[editor.typeCode]??=[];
+    const scoped=list.filter(f=>String(f.parentElementId??"")===String(editor.parentElementId??""));
+    const saved={answers:{...editor.answers},parentElementId:editor.parentElementId,elementId:`preview-sub-${Date.now()}`};
+    if(editor.index==null)list.push(saved);else{const old=scoped[editor.index],idx=list.indexOf(old);if(idx>=0)list[idx]=saved;}
+    state.subFicheEditor=null;render();return;
+  }
   try {
     state.saving=true; render();
     await persistFiche(type,editor);
@@ -866,10 +885,11 @@ async function nextPage(vm,page) {
     firstInvalid?.scrollIntoView?.({behavior:"smooth",block:"center"});
     return;
   }
-  if (!await savePrincipal()) return;
+  if (!state.previewMode && !await savePrincipal()) return;
   if (state.pageIndex < vm.pages.length-1) { state.pageIndex++; render(); return; }
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
+  if(state.previewMode){state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
   try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
   catch(e){state.saving=false;showSaveError(e);render();}
 }
@@ -1069,8 +1089,8 @@ async function savePrincipal(){try{
 async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
   await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
-async function cancelCurrentFiche(typeCode,index){assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
-async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;if(state.previewMode){const all=state.fiches[typeCode]??[];const pos=all.indexOf(fiche);if(pos>=0)all.splice(pos,1);state.subFicheEditor=null;render();return;}try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
 async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
@@ -1079,11 +1099,12 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
+    state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    const resumed=accessibleResponse(state.definition);
-    const rc=resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code;
+    const resumed=state.previewMode?null:accessibleResponse(state.definition);
+    const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
-    applyCampaignPersonalization();
+    if(!state.previewMode)applyCampaignPersonalization();
     render();
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
