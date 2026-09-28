@@ -319,7 +319,7 @@ export function buildRepeatableTypes(def, pageCode) {
       labelPlural:first(type,["Libelle_pluriel","Libellé_pluriel"],"Fiches"),
       counterLabel:first(type,["Libelle_compteur"],""),
       emptyMessage:first(type,["Message_aucune_fiche"],""),
-      filterThreshold:(type.Seuil_affichage_filtres==="" || type.Seuil_affichage_filtres==null) ? 5 : Math.max(0,Number(type.Seuil_affichage_filtres)||0),
+      filterThreshold:(()=>{const n=Number(type.Seuil_affichage_filtres);return !Number.isFinite(n)||n<=0?5:Math.floor(n)})(),
       filterConfigDefined:(def.ficheFilters ?? []).some(f=>resolveRefCode(f.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")===code),
       filterRows:sortByOrder((def.ficheFilters ?? []).filter(f=>active(f)&&resolveRefCode(f.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")===code)),
       minimum:Number(type.Minimum || 0),
@@ -592,11 +592,26 @@ function ficheFilterQuestions(type,def) {
   if (explicit.length) return explicit;
   return (type.questions ?? []).filter(q=>["select","radio"].includes(controlKind(q)));
 }
-function ficheFilterTools(type,ui,def) {
+function ficheFilterTools(type,ui,def,list=[]) {
   return ficheFilterQuestions(type,def).map(q=>{
     const qc=codeOf(q.Question_Code), current=ui.filters?.[qc] ?? "";
     const label=first(q,["Libelle","Libellé","Titre"],qc);
-    const opts=optionsFor(q,def);
+    // A list filter must reflect values that actually exist in saved fiches.
+    // Using optionsFor(q,def) without fiche answers can yield no options for
+    // dynamically-filtered questions (e.g. a child referential).
+    const values=new Map();
+    for(const fiche of list){
+      const raw=fiche.answers?.[qc];
+      const raws=Array.isArray(raw)?raw:[raw];
+      for(const value of raws){
+        if(value==null||value==="")continue;
+        const key=String(value);
+        if(values.has(key))continue;
+        const readable=displayFicheAnswer(type,def,{answers:{...(fiche.answers??{}),[qc]:value}},qc);
+        values.set(key,readable||key);
+      }
+    }
+    const opts=[...values.entries()].map(([value,label])=>({value,label})).sort((a,b)=>String(a.label).localeCompare(String(b.label),"fr",{sensitivity:"base"}));
     if(!opts.length) return "";
     return `<label class="fiche-filter"><span>${escapeHtml(label)}</span><select data-fiche-filter="${escapeHtml(type.code)}" data-question-code="${escapeHtml(qc)}"><option value="">Tous</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(current)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select></label>`;
   }).join("");
@@ -644,7 +659,7 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const visibleRows=filterAndSortFiches(list,ui);
   const hasActiveFilters=Object.values(ui.filters ?? {}).some(v=>v!=="" && v!=null);
   const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
-  const filters=ficheFilterTools(type,ui,def);
+  const filters=ficheFilterTools(type,ui,def,list);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
   const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
