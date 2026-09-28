@@ -2,7 +2,7 @@ import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequire
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 
 export const TABLES = [
-  "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES",
+  "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","FILTRES_TYPES_FICHES",
   "CHOIX_QUESTIONS","COLONNES_MATRICE","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX",
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
@@ -171,6 +171,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     sections:byVersion(loaded.SECTIONS).filter(active),
     questions:versionQuestions,
     ficheTypes:byVersion(loaded.TYPES_FICHES).filter(active),
+    ficheFilters:(loaded.FILTRES_TYPES_FICHES ?? []),
     choices:loaded.CHOIX_QUESTIONS.filter(active),
     matrixColumns:(loaded.COLONNES_MATRICE ?? []).filter(active),
     referentials:loaded.REFERENTIELS.filter(active),
@@ -316,6 +317,11 @@ export function buildRepeatableTypes(def, pageCode) {
       code,parentCode,
       labelSingular:first(type,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],"Fiche"),
       labelPlural:first(type,["Libelle_pluriel","Libellé_pluriel"],"Fiches"),
+      counterLabel:first(type,["Libelle_compteur"],""),
+      emptyMessage:first(type,["Message_aucune_fiche"],""),
+      filterThreshold:(type.Seuil_affichage_filtres==="" || type.Seuil_affichage_filtres==null) ? 5 : Math.max(0,Number(type.Seuil_affichage_filtres)||0),
+      filterConfigDefined:(def.ficheFilters ?? []).some(f=>resolveRefCode(f.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")===code),
+      filterRows:sortByOrder((def.ficheFilters ?? []).filter(f=>active(f)&&resolveRefCode(f.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code")===code)),
       minimum:Number(type.Minimum || 0),
       maximum:type.Maximum==="" || type.Maximum==null || Number(type.Maximum)<=0 ? null : Number(type.Maximum),
       allowAdd:type.Autoriser_ajout===undefined ? true : isTrue(type.Autoriser_ajout),
@@ -340,7 +346,7 @@ function renderSubFiches(parentType,parentFiche,readOnly=false){
     const canAdd=!readOnly&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
     const ed=state.subFicheEditor?.typeCode===type.code&&String(state.subFicheEditor.parentElementId)===String(parentFiche.elementId)?state.subFicheEditor:null;
     const editorHtml=ed?`<div class="fiche-editor subfiche-editor" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers)).join("")}<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div><div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>Annuler</button><button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button></div></div>`:"";
-    return `<section class="repeatable subfiche-group" data-subfiche-group="${escapeHtml(type.code)}"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}</span></div>${cards||`<p class="empty-fiches">Aucun ${escapeHtml(type.labelSingular.toLowerCase())} saisi.</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
+    return `<section class="repeatable subfiche-group" data-subfiche-group="${escapeHtml(type.code)}"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:""}</span></div>${cards||`<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
   }).join("")}</div>`;
 }
 
@@ -574,15 +580,20 @@ export function filterAndSortFiches(list=[], ui={}) {
   return rows;
 }
 
-function ficheFilterQuestions(type) {
+function ficheFilterQuestions(type,def) {
+  const configured=sortByOrder(type.filterRows ?? []);
+  if(type.filterConfigDefined){
+    const wanted=configured.map(f=>resolveRefCode(f.Question_Code,def.questions,"Question_Code"));
+    return wanted.map(qc=>(type.questions ?? []).find(q=>codeOf(q.Question_Code)===qc)).filter(Boolean);
+  }
+  // Backward compatibility: questionnaires created before FILTRES_TYPES_FICHES
+  // keep the former automatic categorical filters until an explicit selection exists.
   const explicit=(type.questions ?? []).filter(q=>isTrue(first(q,["Filtre_fiche","Utiliser_filtre_fiche","Afficher_filtre_fiche"],false)));
   if (explicit.length) return explicit;
-  // Until the Concepteur exposes the setting, categorical fiche questions are
-  // safe generic defaults. An explicit configuration will take priority later.
   return (type.questions ?? []).filter(q=>["select","radio"].includes(controlKind(q)));
 }
 function ficheFilterTools(type,ui,def) {
-  return ficheFilterQuestions(type).map(q=>{
+  return ficheFilterQuestions(type,def).map(q=>{
     const qc=codeOf(q.Question_Code), current=ui.filters?.[qc] ?? "";
     const label=first(q,["Libelle","Libellé","Titre"],qc);
     const opts=optionsFor(q,def);
@@ -632,17 +643,17 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const ui=targetState.ficheListUi?.[type.code] ?? {query:"",sort:"recent"};
   const visibleRows=filterAndSortFiches(list,ui);
   const hasActiveFilters=Object.values(ui.filters ?? {}).some(v=>v!=="" && v!=null);
-  const showTools=list.length>=5 || Boolean(ui.query) || hasActiveFilters;
+  const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
   const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
-  const empty=list.length===0 ? `<p class="empty-fiches">Aucune ${escapeHtml(type.labelSingular.toLowerCase())} saisie.</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
+  const empty=list.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],readOnly) : (type.children?.length ? `<p class="help">Enregistrez d’abord cette fiche pour pouvoir ajouter ses sous-fiches.</p>` : "")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
   const canShowAdd=!readOnly && !editor && type.allowAdd;
   const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
   const floatingAdd=canShowAdd && list.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-floating="${escapeHtml(type.code)}" aria-label="${addLabel}">+ Ajouter</button>` : "";
-  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length} ${list.length>1?"fiches":"fiche"}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
+  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:` ${list.length>1?"fiches":"fiche"}`}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
 }
 
 function scrollToEditor(selector){
