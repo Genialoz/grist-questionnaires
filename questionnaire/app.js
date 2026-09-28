@@ -599,7 +599,7 @@ function render() {
   const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
   const showToc=tocMode==="toujours"||(tocMode==="accueil"&&state.pageIndex===0);
-  const showReturnToc=tocMode==="accueil"&&state.pageIndex>0;
+  const showReturnToc=tocMode==="accueil"&&state.pageIndex>0&&isTrue(page.Afficher_retour_sommaire);
   const locked=responseIsLocked();
   const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");return Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
