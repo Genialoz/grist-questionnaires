@@ -1171,7 +1171,13 @@ function requestedParam(name){
   }
   return "";
 }
-function requestedResumeToken(){return requestedParam("Reprise_")||requestedParam("Reprise")}
+function pendingUniqueResumeToken(){
+  try{return String(sessionStorage.getItem("gristionnaire.pendingUniqueResume")||"").trim()}catch{return ""}
+}
+function setPendingUniqueResumeToken(token){
+  try{if(token)sessionStorage.setItem("gristionnaire.pendingUniqueResume",String(token));else sessionStorage.removeItem("gristionnaire.pendingUniqueResume")}catch{}
+}
+function requestedResumeToken(){return requestedParam("Reprise_")||requestedParam("Reprise")||pendingUniqueResumeToken()}
 function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
   const resume=requestedResumeToken();
@@ -1264,6 +1270,7 @@ async function ensureResponse(){
     await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,fields]]);
     await refreshPersistenceRows();
     state.response=state.definition.responses.find(r=>codeOf(r.Reponse_Code)===codeOf(code))??null;
+    if(state.response && isUniqueLinkCampaign(campaign))setPendingUniqueResumeToken("");
   }
   if(!state.response)throw new Error("La réponse a été créée mais n’est pas relisible dans cette session Grist.");
   let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement));
@@ -1368,8 +1375,9 @@ function ensureUniqueLinkPrivateResume(){
   let campaign;try{campaign=selectedCampaign()}catch{return false}
   if(!isUniqueLinkCampaign(campaign)||requestedResumeToken())return false;
   const token=generateResumeToken();
+  setPendingUniqueResumeToken(token);
   const url=buildResumeUrl(campaignResumeBaseUrl(campaign,document.referrer),campaign.Jeton_acces,token);
-  try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{return false}
+  try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{setPendingUniqueResumeToken("");return false}
 }
 
 async function boot() {
