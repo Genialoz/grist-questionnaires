@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{}, previewMode:false };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{}, previewMode:false, debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -30,6 +30,36 @@ function alignCss(v){const a=String(v||"").trim().toLowerCase();return a==="gauc
 function titleStyle(row,themeColor=""){const c=cssColor(row?.Couleur_titre)||cssColor(themeColor),parts=[],align=alignCss(row?.Alignement_titre);if(align)parts.push(`text-align:${align}`);if(c)parts.push(`color:${c}`);if(row?.Titre_gras)parts.push("font-weight:700");if(row?.Titre_souligne)parts.push("text-decoration:underline");const kind=String(row?.Style_titre||"").toLowerCase();if(kind==="encadre")parts.push("border:1px solid currentColor","padding:10px 14px","border-radius:8px");if(kind==="bandeau")parts.push("padding:10px 14px","border-radius:8px","background:color-mix(in srgb, currentColor 12%, transparent)");return parts.join(";")}
 function labelStyle(q){const parts=[],c=cssColor(q?.Couleur_libelle),align=alignCss(q?.Alignement_libelle);if(align)parts.push(`text-align:${align}`,"display:block");if(c)parts.push(`color:${c}`);if(q?.Libelle_gras)parts.push("font-weight:700");if(q?.Libelle_italique)parts.push("font-style:italic");if(q?.Libelle_souligne)parts.push("text-decoration:underline");return parts.join(";")}
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function debugPush(type,data={}){
+  state.debugEvents.push({heure:new Date().toLocaleTimeString(),type,...data});
+  if(state.debugEvents.length>12)state.debugEvents=state.debugEvents.slice(-12);
+}
+function debugParamSource(name){
+  const out={widget:"",parent:""};
+  try{out.widget=String(new URL(globalThis.location?.href||"", "http://local/").searchParams.get(name)||"").trim()}catch{}
+  try{out.parent=String(new URL(globalThis.document?.referrer||"", "http://local/").searchParams.get(name)||"").trim()}catch{}
+  return out;
+}
+function debugSnapshot(){
+  let campaign=null, personalization=null;
+  try{campaign=selectedCampaign()}catch(e){campaign={erreur:String(e?.message||e)}}
+  try{personalization=campaignPersonalization()}catch(e){personalization={erreur:String(e?.message||e)}}
+  const qc=personalization?.questionCode||"";
+  const q=qc?(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(qc)):null;
+  const currentOptions=q?(q.options||[]).map(o=>({value:String(o.value??""),label:String(o.label??"")})):[];
+  return {
+    acces:debugParamSource("Acces_"),
+    campagnes_visibles:(state.definition?.campaigns||[]).map(c=>({id:c.id,code:codeOf(c.Campagne_Code),jeton:String(c.Jeton_acces||""),question:codeOf(c.Question_personnalisation_Code),valeur:String(c.Valeur_personnalisation??""),libelle:String(c.Valeur_personnalisation_Libelle??"")})),
+    campagne_selectionnee:campaign?{id:campaign.id,code:codeOf(campaign.Campagne_Code),jeton:String(campaign.Jeton_acces||""),question:codeOf(campaign.Question_personnalisation_Code),valeur:String(campaign.Valeur_personnalisation??""),libelle:String(campaign.Valeur_personnalisation_Libelle??"")}:null,
+    personnalisation:personalization?{questionCode:qc,value:String(personalization.value??""),label:String(personalization.label??"")}:null,
+    question_personnalisee:q?{code:codeOf(q.Question_Code),libelle:first(q,["Libelle","Libellé","Titre"],""),type:String(q.Type_question??q.Type??""),valeur_etat:state.answers[qc]??null,options:currentOptions}:null,
+    derniers_evenements:state.debugEvents
+  };
+}
+function debugPanelHtml(){
+  const data=debugSnapshot();
+  return `<details class="card" style="margin-top:16px;border:2px dashed #999"><summary style="cursor:pointer;font-weight:700">Diagnostic temporaire</summary><p class="help">Ouvrez ce bloc après avoir reproduit le problème, puis copiez tout son contenu.</p><textarea readonly style="width:100%;min-height:320px;font-family:monospace;font-size:12px">${escapeHtml(JSON.stringify(data,null,2))}</textarea></details>`;
+}
 
 export function buildResumeUrl(gristPageUrl, accessToken, resumeToken) {
   const access=String(accessToken??"").trim(), resume=String(resumeToken??"").trim();
@@ -663,7 +693,7 @@ function render() {
     ${footer?`<footer class="questionnaire-footer">${escapeHtml(footer)}</footer>`:""}
     ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
-  </div>`;
+  </div>` + debugPanelHtml();
   const customNextLabel=String(page.Libelle_bouton_suivant||"").trim();
   const navModeForLabel=String(page.Navigation_apres||"").trim();
   let automaticNextLabel="Suivant";
@@ -780,9 +810,11 @@ function clearRenderedAnswer(scope,attr,code){
 }
 function clearPrincipalAnswer(code){
   if(!code)return;
+  const before=state.answers[code];
   clearRenderedAnswer(document,"data-question",code);
   state.answers[code]=emptyAnswerForQuestion(code);
   sanitizeDependentAnswers(state.definition,state.answers);
+  debugPush("effacement_question_normale",{question:code,avant:before,apres:state.answers[code]});
   render();
 }
 
@@ -795,6 +827,7 @@ function clearFicheAnswer(editor,code){
   // Fiches and sub-fiches keep their answers in a draft editor, separate from
   // state.answers. Clear both the rendered control and that draft before the
   // dependency pass so a full render cannot restore the previous selection.
+  const before=editor.answers[code];
   clearRenderedAnswer(scope,"data-fiche-question",code);
   editor.answers[code]=emptyAnswerForQuestion(code);
 
@@ -806,13 +839,18 @@ function clearFicheAnswer(editor,code){
   // The cleared question is authoritative even when the same Question_Code is
   // present in another draft context.
   editor.answers[code]=emptyAnswerForQuestion(code);
+  debugPush(isSub?"effacement_sous_fiche":"effacement_fiche",{question:code,avant:before,apres:editor.answers[code],typeEditeur:editor.typeCode||""});
 
   render();
   // Re-apply the empty value to the newly rendered editor. This is harmless
   // for radio/checkbox and makes select clearing deterministic after rerender.
   requestAnimationFrame(()=>{
     const freshScope=document.querySelector(scopeSelector);
-    if(freshScope)clearRenderedAnswer(freshScope,"data-fiche-question",code);
+    if(freshScope){
+      clearRenderedAnswer(freshScope,"data-fiche-question",code);
+      const control=freshScope.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);
+      debugPush(isSub?"apres_rendu_sous_fiche":"apres_rendu_fiche",{question:code,valeurEtat:editor.answers[code],valeurDOM:control?.value??null,typeDOM:control?.type??control?.tagName??null});
+    }
   });
 }
 
