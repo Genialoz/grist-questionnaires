@@ -623,9 +623,20 @@ function render() {
     ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
   </div>`;
+  const customNextLabel=String(page.Libelle_bouton_suivant||"").trim();
+  const navModeForLabel=String(page.Navigation_apres||"").trim();
+  let automaticNextLabel="Suivant";
+  if(navModeForLabel==="validation_finale" || state.pageIndex===vm.pages.length-1) automaticNextLabel="Valider le questionnaire";
+  else if(navModeForLabel==="retour_page"){
+    const targetRaw=codeOf(page.Page_cible_Code);
+    const targetPage=vm.pages.find(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw));
+    const targetLabel=targetPage?first(targetPage,["Titre","Libelle","Libellé","Nom"],codeOf(targetPage.Page_Code)):"";
+    automaticNextLabel=targetLabel?`Retour à ${targetLabel}`:"Retour";
+  }
+  const nextButtonLabel=customNextLabel||automaticNextLabel;
   nav.innerHTML=locked
     ? `<div class="readonly-nav"><div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
-    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${String(page.Navigation_apres||"").trim()==="validation_finale"||state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
+    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
