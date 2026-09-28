@@ -90,6 +90,7 @@ export function buildResumeUrl(gristPageUrl, accessToken, resumeToken) {
   try { url=new URL(String(gristPageUrl??"")); } catch { throw new Error("Adresse de la page Grist indisponible pour générer le lien de reprise."); }
   if(!/^https?:$/.test(url.protocol) || !/(?:\/o\/docs\/|\/doc\/)/.test(url.pathname)) throw new Error("Adresse Grist invalide pour générer le lien de reprise.");
   url.search=""; url.hash="";
+  url.searchParams.set("style","singlePage");
   url.searchParams.set("Acces_",access);
   url.searchParams.set("Reprise_",resume);
   return url.toString();
@@ -120,7 +121,7 @@ function hasAclPersonalizedCampaignContext(def){
   const campaigns=(def?.campaigns??[]).filter(active);
   if(campaigns.length!==1)return false;
   const c=campaigns[0];
-  return Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
+  return isUniqueLinkCampaign(c) || Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
 }
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
@@ -148,6 +149,13 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if(!version && accessVersion!=null && accessVersion!==""){
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
+  }
+  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
+  // active campaign, its version is authoritative over stale preview context.
+  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
+  if(!version && aclCampaigns.length===1){
+    const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
+    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
   }
   const previewVersion=requestedPreviewVersion();
   if(!version && previewVersion){
@@ -420,6 +428,8 @@ export function controlKind(question) {
 function displayBlockKind(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return t==="description"?"description":t==="sommaire"?"toc":"";}
 function isDisplayBlock(q){return Boolean(displayBlockKind(q));}
 
+function campaignMode(c){return String(c?.Mode_diffusion||"PERSONNALISE").trim().toUpperCase()||"PERSONNALISE";}
+function isUniqueLinkCampaign(c){return campaignMode(c)==="LIEN_UNIQUE";}
 function campaignPersonalization(){
   if(!state.definition)return null;
   let campaign=null;
@@ -1177,7 +1187,7 @@ function accessibleResponse(def){
   if(access) campaign=(def.campaigns??[]).find(c=>String(c.Jeton_acces??"").trim()===access)??null;
   if(!campaign && (def.campaigns??[]).length===1) campaign=def.campaigns[0];
   if(!access && campaign) access=String(campaign.Jeton_acces??"").trim();
-  if(access){
+  if(access && !isUniqueLinkCampaign(campaign)){
     const matches=rows.filter(r=>{
       if(String(r.Jeton_acces_ACL||"").trim()!==access)return false;
       if(!campaign)return true;
@@ -1189,6 +1199,9 @@ function accessibleResponse(def){
     });
     if(matches.length)return matches[0];
   }
+  // A public LIEN_UNIQUE must never adopt another response merely because it is
+  // the only row visible to an OWNER. Only Reprise_/Reponse_ may resume it.
+  if(isUniqueLinkCampaign(campaign))return null;
   return rows.length===1 ? rows[0] : null;
 }
 function resumeNotice(){
@@ -1247,7 +1260,7 @@ async function ensureResponse(){
   }
   if(!state.response){
     const code=uniqueCode("REP");
-    const now=Date.now()/1000,fields={Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces,Date_creation:now,Date_modification:now};
+    const now=Date.now()/1000,fields={Reponse_Code:code,Campagne_Code:campaign.id,Version_Code:vc,Statut:"Brouillon",Revision:1,Supprime_logiquement:false,Jeton_reprise:(isUniqueLinkCampaign(campaign)?requestedResumeToken():"")||generateResumeToken(),Jeton_acces_ACL:campaign.Jeton_acces,Date_creation:now,Date_modification:now};
     await grist.docApi.applyUserActions([["AddRecord","REPONSES",null,fields]]);
     await refreshPersistenceRows();
     state.response=state.definition.responses.find(r=>codeOf(r.Reponse_Code)===codeOf(code))??null;
@@ -1351,6 +1364,14 @@ async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=
 async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
+function ensureUniqueLinkPrivateResume(){
+  let campaign;try{campaign=selectedCampaign()}catch{return false}
+  if(!isUniqueLinkCampaign(campaign)||requestedResumeToken())return false;
+  const token=generateResumeToken();
+  const url=buildResumeUrl(campaignResumeBaseUrl(campaign,document.referrer),campaign.Jeton_acces,token);
+  try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{return false}
+}
+
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
@@ -1361,6 +1382,9 @@ async function boot() {
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
+    // For a public unique link, mint the respondent-private Reprise_ before any
+    // answer is entered. The reload gives ACLs an individual key from the start.
+    if(!state.previewMode && ensureUniqueLinkPrivateResume())return;
     const resumed=state.previewMode?null:accessibleResponse(state.definition);
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
