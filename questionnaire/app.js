@@ -357,19 +357,37 @@ function campaignPersonalization(){
   const raw=String(campaign?.Valeur_personnalisation??"").trim();
   if(!questionCode||raw==="")return null;
   const q=(state.definition.questions??[]).find(x=>String(codeOf(x.Question_Code))===String(questionCode));
-  let value=raw;
+  const storedLabel=String(campaign?.Valeur_personnalisation_Libelle??"").trim();
+  let value=raw, label=storedLabel||raw;
   if(q){
-    const options=optionsFor(q,state.definition,state.answers);
-    const storedLabel=String(campaign?.Valeur_personnalisation_Libelle??"").trim();
+    // Resolve the campaign business value to the canonical value stored by the
+    // control BEFORE applying dynamic choice filters. A personalized value must
+    // remain representable even when another browser has stale/filtering state.
     const choice=(state.definition.choices??[]).find(c=>
       resolveRefCode(c.Question_Code,state.definition.questions,"Question_Code")===questionCode &&
       [codeOf(c.Choix_Code),String(c.Valeur??""),String(c.Libelle??c["Libellé"]??"")].some(v=>String(v)===raw || (storedLabel&&String(v)===storedLabel))
     );
-    const candidates=[raw,storedLabel,choice?codeOf(choice.Choix_Code):"",choice?String(choice.Valeur??""):"",choice?String(choice.Libelle??choice["Libellé"]??""):""].filter(Boolean);
-    const match=options.find(o=>candidates.some(v=>String(o.value)===String(v)||String(o.label)===String(v)));
-    if(match)value=String(match.value);
+    if(choice){
+      value=String(codeOf(choice.Choix_Code));
+      label=String(choice.Libelle??choice["Libellé"]??choice.Valeur??storedLabel??raw);
+    } else {
+      const rc=resolveRefCode(q.Referentiel_Code,state.definition.referentials,"Referentiel_Code");
+      const ref=(state.definition.referentials??[]).find(r=>codeOf(r.Referentiel_Code)===rc);
+      const source=String(ref?.Type_source??"VALEURS_REFERENTIELS").trim().toUpperCase();
+      const rows=source==="STRUCTURES" ? (state.definition.structures??[]) : (state.definition.referentialValues??[]).filter(v=>resolveRefCode(v.Referentiel_Code,state.definition.referentials,"Referentiel_Code")===rc);
+      const codeCol=source==="STRUCTURES"?"Structure_Code":"ValeurRef_Code";
+      const row=rows.find(r=>[codeOf(r[codeCol]),String(r.Valeur??""),String(r.Nom??""),String(r.Libelle??r["Libellé"]??"")].some(v=>String(v)===raw || (storedLabel&&String(v)===storedLabel)));
+      if(row){
+        value=String(codeOf(row[codeCol]));
+        label=String(first(row,["Nom","Libelle","Libellé","Valeur",codeCol],storedLabel||raw));
+      } else {
+        const options=optionsFor(q,state.definition,state.answers);
+        const match=options.find(o=>[raw,storedLabel].filter(Boolean).some(v=>String(o.value)===String(v)||String(o.label)===String(v)));
+        if(match){value=String(match.value);label=String(match.label??storedLabel??raw);}
+      }
+    }
   }
-  return {campaign,questionCode,value};
+  return {campaign,questionCode,value,label};
 }
 function applyCampaignPersonalization(){const p=campaignPersonalization();if(p)state.answers[p.questionCode]=p.value;return p}
 function campaignLocksQuestion(q){const p=campaignPersonalization();return Boolean(p&&p.questionCode===codeOf(q.Question_Code))}
@@ -385,7 +403,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     readOnly?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${q.options.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
+  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
   if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
   if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${selected.size===0?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
@@ -770,13 +788,32 @@ function clearPrincipalAnswer(code){
 
 function clearFicheAnswer(editor,code){
   if(!editor||!code)return;
-  const scope=document.querySelector(editor===state.subFicheEditor?"[data-subfiche-editor]":"[data-fiche-editor]")??document;
+  const isSub=editor===state.subFicheEditor;
+  const scopeSelector=isSub?"[data-subfiche-editor]":"[data-fiche-editor]";
+  const scope=document.querySelector(scopeSelector)??document;
+
+  // Fiches and sub-fiches keep their answers in a draft editor, separate from
+  // state.answers. Clear both the rendered control and that draft before the
+  // dependency pass so a full render cannot restore the previous selection.
   clearRenderedAnswer(scope,"data-fiche-question",code);
   editor.answers[code]=emptyAnswerForQuestion(code);
+
   const combined={...state.answers,...(state.ficheEditor?.answers??{}),...editor.answers};
   sanitizeDependentAnswers(state.definition,combined);
-  for(const key of Object.keys(editor.answers))editor.answers[key]=combined[key] ?? emptyAnswerForQuestion(key);
+  for(const key of Object.keys(editor.answers)){
+    editor.answers[key]=combined[key] ?? emptyAnswerForQuestion(key);
+  }
+  // The cleared question is authoritative even when the same Question_Code is
+  // present in another draft context.
+  editor.answers[code]=emptyAnswerForQuestion(code);
+
   render();
+  // Re-apply the empty value to the newly rendered editor. This is harmless
+  // for radio/checkbox and makes select clearing deterministic after rerender.
+  requestAnimationFrame(()=>{
+    const freshScope=document.querySelector(scopeSelector);
+    if(freshScope)clearRenderedAnswer(freshScope,"data-fiche-question",code);
+  });
 }
 
 function onFicheAnswer(e) {
