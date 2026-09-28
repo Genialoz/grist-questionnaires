@@ -65,7 +65,7 @@ function dragSiblings(type,row){
  const {pages,sections,questions}=current();
  if(type==="page")return pages;
  if(type==="section")return sections.filter(x=>String(x.Page_Code)===String(row.Page_Code));
- if(type==="question")return questions.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")&&String(q.Section_Code)===String(row.Section_Code));
+ if(type==="question"){const fiche=ref(row.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")||"";return questions.filter(q=>!isMatrixLine(q)&&String(q.Section_Code)===String(row.Section_Code)&&String(ref(q.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")||"")===String(fiche))}
  return [];
 }
 function isMainTreeQuestion(row){return Boolean(row)&&!isMatrixLine(row)&&!ref(row.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
@@ -79,7 +79,13 @@ function treeDropPlan(drag,targetType,target){
   if(targetType==="page")return {kind:"move-section",source,targetPage:target,targetSection:null};
   if(targetType==="section")return String(source.Page_Code)===String(target.Page_Code)?{kind:"reorder",type:"section",source,target}:{kind:"move-section",source,targetPage:pageForSection(target),targetSection:target};
  }
- if(drag.type==="question"&&isMainTreeQuestion(source)){
+ if(drag.type==="question"){
+  const sourceFiche=ref(source.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")||"";
+  if(sourceFiche){
+   if(targetType!=="question")return null;
+   const targetFiche=ref(target.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")||"";
+   return sourceFiche===targetFiche&&String(source.Section_Code)===String(target.Section_Code)?{kind:"reorder",type:"question",source,target}:null;
+  }
   if(targetType==="section")return {kind:"move-question",source,targetSection:target,targetQuestion:null};
   if(targetType==="question"&&isMainTreeQuestion(target))return String(source.Section_Code)===String(target.Section_Code)?{kind:"reorder",type:"question",source,target}:{kind:"move-question",source,targetSection:sectionForQuestion(target),targetQuestion:target};
  }
