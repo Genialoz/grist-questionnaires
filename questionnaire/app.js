@@ -112,6 +112,16 @@ function requestedPreviewVersion(){
   if(explicit)return explicit;
   try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
 }
+function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
+function hasAclPersonalizedCampaignContext(def){
+  // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
+  // When ACLs leave exactly one personalized campaign visible, that campaign is
+  // authoritative over a stale localStorage preview left by the Concepteur.
+  const campaigns=(def?.campaigns??[]).filter(active);
+  if(campaigns.length!==1)return false;
+  const c=campaigns[0];
+  return Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
+}
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
   for (const name of TABLES) {
@@ -455,9 +465,9 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     readOnly?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
-  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${value===""?" disabled":""}>Effacer la réponse</button>`:""}</div>`;
-  if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}"${selected.size===0?" disabled":""}>Effacer la réponse</button>`:""}</div>`;}
+  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
+  if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
+  if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
 }
 
@@ -715,7 +725,7 @@ function render() {
     ${footer?`<footer class="questionnaire-footer">${escapeHtml(footer)}</footer>`:""}
     ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
-  </div>` + debugPanelHtml();
+  </div>`;
   const customNextLabel=String(page.Libelle_bouton_suivant||"").trim();
   const navModeForLabel=String(page.Navigation_apres||"").trim();
   let automaticNextLabel="Suivant";
@@ -1313,6 +1323,9 @@ async function boot() {
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
+    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+      state.previewMode=false;
+    }
     const resumed=state.previewMode?null:accessibleResponse(state.definition);
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
