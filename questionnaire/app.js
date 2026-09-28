@@ -354,8 +354,22 @@ function campaignPersonalization(){
   let campaign=null;
   try{campaign=selectedCampaign()}catch{return null}
   const questionCode=resolveRefCode(campaign?.Question_personnalisation_Code,state.definition.questions,"Question_Code");
-  const value=String(campaign?.Valeur_personnalisation??"");
-  return questionCode&&value!==""?{campaign,questionCode,value}:null;
+  const raw=String(campaign?.Valeur_personnalisation??"").trim();
+  if(!questionCode||raw==="")return null;
+  const q=(state.definition.questions??[]).find(x=>String(codeOf(x.Question_Code))===String(questionCode));
+  let value=raw;
+  if(q){
+    const options=optionsFor(q,state.definition,state.answers);
+    const storedLabel=String(campaign?.Valeur_personnalisation_Libelle??"").trim();
+    const choice=(state.definition.choices??[]).find(c=>
+      resolveRefCode(c.Question_Code,state.definition.questions,"Question_Code")===questionCode &&
+      [codeOf(c.Choix_Code),String(c.Valeur??""),String(c.Libelle??c["Libellé"]??"")].some(v=>String(v)===raw || (storedLabel&&String(v)===storedLabel))
+    );
+    const candidates=[raw,storedLabel,choice?codeOf(choice.Choix_Code):"",choice?String(choice.Valeur??""):"",choice?String(choice.Libelle??choice["Libellé"]??""):""].filter(Boolean);
+    const match=options.find(o=>candidates.some(v=>String(o.value)===String(v)||String(o.label)===String(v)));
+    if(match)value=String(match.value);
+  }
+  return {campaign,questionCode,value};
 }
 function applyCampaignPersonalization(){const p=campaignPersonalization();if(p)state.answers[p.questionCode]=p.value;return p}
 function campaignLocksQuestion(q){const p=campaignPersonalization();return Boolean(p&&p.questionCode===codeOf(q.Question_Code))}
@@ -652,9 +666,9 @@ function render() {
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   updateMatrixTotals(root);
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
-    const code=e.currentTarget.dataset.clearQuestion;
-    state.answers[code]="";
-    render();
+    e.preventDefault();
+    e.stopPropagation();
+    clearPrincipalAnswer(e.currentTarget.dataset.clearQuestion);
   }));
   root.querySelectorAll("[data-fiche-search]").forEach(el=>el.addEventListener("input",e=>{const code=e.currentTarget.dataset.ficheSearch; state.ficheListUi[code]={...(state.ficheListUi[code]??{}),query:e.currentTarget.value}; render(); const next=root.querySelector(`[data-fiche-search="${CSS.escape(code)}"]`); next?.focus(); if(next) next.setSelectionRange(next.value.length,next.value.length);}));
   root.querySelectorAll("[data-fiche-sort]").forEach(el=>el.addEventListener("change",e=>{const code=e.currentTarget.dataset.ficheSort; state.ficheListUi[code]={...(state.ficheListUi[code]??{}),sort:e.currentTarget.value}; render();}));
@@ -697,7 +711,12 @@ function render() {
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
   root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
-  root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{const ed=e.currentTarget.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor;if(ed){ed.answers[e.currentTarget.dataset.clearFicheQuestion]="";render()}}));
+  root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    const ed=e.currentTarget.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor;
+    if(ed) clearFicheAnswer(ed,e.currentTarget.dataset.clearFicheQuestion);
+  }));
   root.querySelector("[data-cancel-fiche]")?.addEventListener("click",()=>{state.ficheEditor=null;state.subFicheEditor=null;render()});
   root.querySelector("[data-save-fiche]")?.addEventListener("click",()=>saveCurrentFiche());
   root.querySelector("[data-cancel-subfiche]")?.addEventListener("click",()=>{state.subFicheEditor=null;render();scrollToEditor("[data-fiche-editor]")});
@@ -727,6 +746,37 @@ function renderPreservingInputFocus(target) {
   if (start!==null && typeof next.setSelectionRange==="function") {
     try { next.setSelectionRange(start,end ?? start); } catch (_) {}
   }
+}
+
+function emptyAnswerForQuestion(code){
+  const q=(state.definition?.questions??[]).find(x=>String(codeOf(x.Question_Code))===String(code));
+  return controlKind(q)==="checkbox" ? [] : "";
+}
+
+function clearRenderedAnswer(scope,attr,code){
+  const controls=[...(scope??document).querySelectorAll(`[${attr}="${CSS.escape(code)}"]`)];
+  for(const el of controls){
+    if(el.type==="checkbox"||el.type==="radio")el.checked=false;
+    else el.value="";
+  }
+}
+function clearPrincipalAnswer(code){
+  if(!code)return;
+  clearRenderedAnswer(document,"data-question",code);
+  state.answers[code]=emptyAnswerForQuestion(code);
+  sanitizeDependentAnswers(state.definition,state.answers);
+  render();
+}
+
+function clearFicheAnswer(editor,code){
+  if(!editor||!code)return;
+  const scope=document.querySelector(editor===state.subFicheEditor?"[data-subfiche-editor]":"[data-fiche-editor]")??document;
+  clearRenderedAnswer(scope,"data-fiche-question",code);
+  editor.answers[code]=emptyAnswerForQuestion(code);
+  const combined={...state.answers,...(state.ficheEditor?.answers??{}),...editor.answers};
+  sanitizeDependentAnswers(state.definition,combined);
+  for(const key of Object.keys(editor.answers))editor.answers[key]=combined[key] ?? emptyAnswerForQuestion(key);
+  render();
 }
 
 function onFicheAnswer(e) {
@@ -783,7 +833,14 @@ async function saveCurrentFiche() {
     const node=document.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`);
     if(node) node.textContent=msg;
   }
-  if (Object.keys(errors).length) return;
+  if (Object.keys(errors).length) {
+    const summary=document.querySelector("[data-fiche-validation-summary]");
+    if(summary){const count=Object.keys(errors).length;summary.textContent=count===1?"1 réponse obligatoire ou invalide est à corriger dans cette fiche.":`${count} réponses obligatoires ou invalides sont à corriger dans cette fiche.`;summary.hidden=false;}
+    const firstInvalid=document.querySelector("[data-fiche-editor] .field.invalid, [data-fiche-editor] [data-fiche-field].invalid");
+    firstInvalid?.scrollIntoView?.({behavior:"smooth",block:"center"});
+    firstInvalid?.querySelector?.("input,select,textarea")?.focus?.({preventScroll:true});
+    return;
+  }
   if(state.previewMode){saveDraftFiche(state);render();return;}
   try {
     state.saving=true; render();
@@ -809,7 +866,14 @@ async function saveCurrentSubFiche() {
     root?.querySelector(`[data-fiche-field="${CSS.escape(code)}"]`)?.classList.add("invalid");
     const node=root?.querySelector(`[data-fiche-error="${CSS.escape(code)}"]`); if(node) node.textContent=msg;
   }
-  if (Object.keys(errors).length) return;
+  if (Object.keys(errors).length) {
+    const summary=root?.querySelector("[data-subfiche-validation-summary]");
+    if(summary){const count=Object.keys(errors).length;summary.textContent=count===1?"1 réponse obligatoire ou invalide est à corriger dans cette sous-fiche.":`${count} réponses obligatoires ou invalides sont à corriger dans cette sous-fiche.`;summary.hidden=false;}
+    const firstInvalid=root?.querySelector(".field.invalid, [data-fiche-field].invalid");
+    firstInvalid?.scrollIntoView?.({behavior:"smooth",block:"center"});
+    firstInvalid?.querySelector?.("input,select,textarea")?.focus?.({preventScroll:true});
+    return;
+  }
   if(state.previewMode){
     const list=state.fiches[editor.typeCode]??=[];
     const scoped=list.filter(f=>String(f.parentElementId??"")===String(editor.parentElementId??""));
