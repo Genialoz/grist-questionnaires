@@ -72,7 +72,7 @@ export function hydrateResponse(rows,definition,reponseCode){
 export function assertRevision(expected,actual){if(Number(expected??0)!==Number(actual??0)){const e=new Error("Une version plus récente de cette réponse existe. Rechargez le questionnaire avant de continuer.");e.code="revision_conflict";throw e;} return true;}
 export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions){
   const errors={principal:{},fiches:{}};
-  for(const p of viewModel.pages) for(const s of p.sections) for(const q of s.questions){const c=codeOf(q.Question_Code),m=validateQuestion(q,answers[c],true);if(m)errors.principal[c]=m;}
+  for(const p of viewModel.pages) for(const s of p.sections) for(const q of s.questions){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();if(t==="description"||t==="sommaire")continue;const c=codeOf(q.Question_Code),m=validateQuestion(q,answers[c],true);if(m)errors.principal[c]=m;}
   for(const p of viewModel.pages) for(const t of p.repeatableTypes??[]){const list=fiches[t.code]??[]; if(list.length<t.minimum)errors.fiches[t.code]=`Vous devez saisir au moins ${t.minimum} ${t.minimum>1?t.labelPlural.toLowerCase():t.labelSingular.toLowerCase()}.`; else if(t.maximum!=null && list.length>t.maximum)errors.fiches[t.code]=`Vous ne pouvez pas saisir plus de ${t.maximum} ${t.maximum>1?t.labelPlural.toLowerCase():t.labelSingular.toLowerCase()}.`; list.forEach((f,i)=>{for(const q of visibleFicheQuestions(t,definition,{...answers,...f.answers})){const c=codeOf(q.Question_Code),m=validateQuestion(q,f.answers[c],true);if(m)(errors.fiches[`${t.code}:${i}`]??={})[c]=m;}});}
   return errors;
 }

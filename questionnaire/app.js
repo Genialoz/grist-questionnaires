@@ -364,7 +364,7 @@ export function visibleFicheQuestions(type, def, answers={}) {
   ));
   const questions=authoritative.length ? authoritative : (type.questions ?? []);
   return questions
-    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
+    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && !isDisplayBlock(q) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
     .map(q=>({...q,options:optionsFor(q,def,answers)}));
 }
 
@@ -416,6 +416,9 @@ export function controlKind(question) {
   if (t.includes("liste") || t.includes("déroul") || t.includes("deroul")) return "select";
   return "text";
 }
+
+function displayBlockKind(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return t==="description"?"description":t==="sommaire"?"toc":"";}
+function isDisplayBlock(q){return Boolean(displayBlockKind(q));}
 
 function campaignPersonalization(){
   if(!state.definition)return null;
@@ -722,11 +725,15 @@ function render() {
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],true));
   const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
-  const showToc=tocMode==="toujours"||(tocMode==="accueil"&&state.pageIndex===0);
-  const showReturnToc=tocMode==="accueil"&&state.pageIndex>0&&isTrue(page.Afficher_retour_sommaire);
-  const showValidationToc=showToc&&isTrue(vm.version.Afficher_validation_sommaire);
+  const positionedTocPages=vm.pages.map((p,pi)=>({pi,has:(p.sections??[]).some(s=>(s.questions??[]).some(q=>displayBlockKind(q)==="toc"))})).filter(x=>x.has);
+  const hasPositionedToc=positionedTocPages.length>0;
+  const positionedTocPage=positionedTocPages[0]?.pi??0;
+  const showToc=!hasPositionedToc&&(tocMode==="toujours"||(tocMode==="accueil"&&state.pageIndex===0));
+  const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
+  const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>Valider le questionnaire</button></div>`:""}</nav>`:"";
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>Valider le questionnaire</button></div>`:""}</nav>`;
+  const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
@@ -744,7 +751,7 @@ function render() {
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],"Sommaire"))}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=first(q,["Aide","Description","Texte_aide"],"");return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${escapeHtml(title)}</div>`:""}${text?`<div class="content-description-text">${escapeHtml(text).replace(/\n/g,"<br>")}</div>`:""}</div>`;}return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
@@ -794,7 +801,7 @@ function render() {
   root.querySelector("[data-validate-toc]")?.addEventListener("click",()=>{if(!locked)finalizeFromToc(vm);});
   root.querySelector("[data-return-toc]")?.addEventListener("click",async()=>{
     if(!locked && !state.previewMode && !(await savePrincipal()))return;
-    state.pageIndex=0;render();
+    state.pageIndex=positionedTocPage;render();
     requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
   });
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
@@ -1081,6 +1088,7 @@ function onAnswer(e) {
 export function validateVisiblePage(page, answers={}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
+    if(isDisplayBlock(q)) continue;
     const code=codeOf(q.Question_Code);
     if(matrixKind(q)){const mx=matrixErrors(q,answers);if(mx.length)errors[code]=mx.join(" ");}
     else {const error=validateQuestion(q,answers[code],true); if (error) errors[code]=error;}
@@ -1287,6 +1295,7 @@ async function writeMatrixAnswer(element,q,answers){
 async function writeAnswers(element,questions,answers){
   const actions=[]; const existing=state.definition.responseValues.filter(v=>String(v.Element_Code)===String(element.id));
   for(const q of questions){
+    if(isDisplayBlock(q))continue;
     const qc=codeOf(q.Question_Code); if(matrixKind(q)){await writeMatrixAnswer(element,q,answers);continue;} if(isTrue(q.Est_ligne_matrice))continue;
     const old=existing.find(v=>String(v.Question_Code)===String(q.id));
     if(isMultiQuestion(q)){
