@@ -625,7 +625,7 @@ function render() {
   </div>`;
   nav.innerHTML=locked
     ? `<div class="readonly-nav"><div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
-    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
+    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${String(page.Navigation_apres||"").trim()==="validation_finale"||state.pageIndex===vm.pages.length-1?"Valider le questionnaire":"Suivant"}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
@@ -859,24 +859,6 @@ export function validateVisiblePage(page, answers={}) {
   return errors;
 }
 
-function pageNavigationMode(page){
-  const raw=String(page?.Navigation_apres??"").trim().toLowerCase();
-  if(raw==="page"||raw==="retour"||raw==="revenir")return "page";
-  if(raw==="validation"||raw==="validation_finale")return "validation";
-  return "suivante";
-}
-function pageTargetIndex(vm,page){
-  const raw=codeOf(page?.Page_cible_Code);
-  if(!raw)return -1;
-  return vm.pages.findIndex(p=>String(p.id)===String(raw)||String(codeOf(p.Page_Code))===String(raw));
-}
-async function finalizeFromNavigation(vm){
-  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
-  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
-  if(state.previewMode){state.saveError="";state.statusMessage="Validation de l’aperçu réussie — aucune réponse n’a été enregistrée.";render();return;}
-  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
-  catch(e){state.saving=false;showSaveError(e);render();}
-}
 async function nextPage(vm,page) {
   state.statusMessage="";
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
@@ -904,16 +886,22 @@ async function nextPage(vm,page) {
     return;
   }
   if (!state.previewMode && !await savePrincipal()) return;
-  const mode=pageNavigationMode(page);
-  if(mode==="page"){
-    const target=pageTargetIndex(vm,page);
-    if(target<0){showSaveError(new Error("La page cible configurée n’est pas disponible dans le parcours actuel."));return;}
-    state.pageIndex=target;render();return;
+  const navMode=String(page.Navigation_apres||"").trim();
+  if(navMode==="retour_page"){
+    const targetRaw=codeOf(page.Page_cible_Code);
+    const targetIndex=vm.pages.findIndex(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw));
+    if(targetIndex<0){showSaveError(new Error("La page cible configurée n’est pas visible actuellement."));return;}
+    state.pageIndex=targetIndex;state.saveError="";render();return;
   }
-  if(mode==="validation"){await finalizeFromNavigation(vm);return;}
-  if (state.pageIndex < vm.pages.length-1) { state.pageIndex++; render(); return; }
-  await finalizeFromNavigation(vm);
+  const mustFinalize=navMode==="validation_finale" || state.pageIndex>=vm.pages.length-1;
+  if(!mustFinalize){state.pageIndex++;render();return;}
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
+  if(state.previewMode){state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
+  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
+  catch(e){state.saving=false;showSaveError(e);render();}
 }
+
 
 function requestedParam(name){
   // Dans un widget Grist, les paramètres du lien répondant peuvent être portés
