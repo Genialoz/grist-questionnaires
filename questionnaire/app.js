@@ -32,13 +32,33 @@ function labelStyle(q){const parts=[],c=cssColor(q?.Couleur_libelle),align=align
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function debugPush(type,data={}){
   state.debugEvents.push({heure:new Date().toLocaleTimeString(),type,...data});
-  if(state.debugEvents.length>12)state.debugEvents=state.debugEvents.slice(-12);
+  if(state.debugEvents.length>30)state.debugEvents=state.debugEvents.slice(-30);
+  // Keep the diagnostic textarea live even when the event happens after render().
+  try{
+    const area=document.querySelector("[data-debug-output]");
+    if(area) area.value=JSON.stringify(debugSnapshot(),null,2);
+  }catch{}
 }
 function debugParamSource(name){
   const out={widget:"",parent:""};
   try{out.widget=String(new URL(globalThis.location?.href||"", "http://local/").searchParams.get(name)||"").trim()}catch{}
   try{out.parent=String(new URL(globalThis.document?.referrer||"", "http://local/").searchParams.get(name)||"").trim()}catch{}
   return out;
+}
+function debugQuestionSnapshot(editor){
+  if(!editor)return null;
+  const type=findRepeatableType(buildRepeatableTypes(state.definition||{}),editor.typeCode);
+  const combined={...state.answers,...(state.ficheEditor?.answers??{}),...editor.answers};
+  const questions=type?visibleFicheQuestions(type,state.definition,combined):[];
+  return {
+    typeCode:editor.typeCode||"", index:editor.index??null, parentElementId:editor.parentElementId??null,
+    answers:{...(editor.answers||{})},
+    questions:questions.map(q=>({
+      code:codeOf(q.Question_Code), libelle:first(q,["Libelle","Libellé","Titre"],""),
+      type:String(q.Type_question??q.Type??""), valeur:editor.answers?.[codeOf(q.Question_Code)]??null,
+      options:(q.options||[]).map(o=>({value:String(o.value??""),label:String(o.label??"") }))
+    }))
+  };
 }
 function debugSnapshot(){
   let campaign=null, personalization=null;
@@ -53,12 +73,14 @@ function debugSnapshot(){
     campagne_selectionnee:campaign?{id:campaign.id,code:codeOf(campaign.Campagne_Code),jeton:String(campaign.Jeton_acces||""),question:codeOf(campaign.Question_personnalisation_Code),valeur:String(campaign.Valeur_personnalisation??""),libelle:String(campaign.Valeur_personnalisation_Libelle??"")}:null,
     personnalisation:personalization?{questionCode:qc,value:String(personalization.value??""),label:String(personalization.label??"")}:null,
     question_personnalisee:q?{code:codeOf(q.Question_Code),libelle:first(q,["Libelle","Libellé","Titre"],""),type:String(q.Type_question??q.Type??""),valeur_etat:state.answers[qc]??null,options:currentOptions}:null,
+    editeur_fiche:debugQuestionSnapshot(state.ficheEditor),
+    editeur_sous_fiche:debugQuestionSnapshot(state.subFicheEditor),
     derniers_evenements:state.debugEvents
   };
 }
 function debugPanelHtml(){
   const data=debugSnapshot();
-  return `<details class="card" style="margin-top:16px;border:2px dashed #999"><summary style="cursor:pointer;font-weight:700">Diagnostic temporaire</summary><p class="help">Ouvrez ce bloc après avoir reproduit le problème, puis copiez tout son contenu.</p><textarea readonly style="width:100%;min-height:320px;font-family:monospace;font-size:12px">${escapeHtml(JSON.stringify(data,null,2))}</textarea></details>`;
+  return `<details class="card" style="margin-top:16px;border:2px dashed #999"><summary style="cursor:pointer;font-weight:700">Diagnostic temporaire</summary><p class="help">Ouvrez ce bloc après avoir reproduit le problème, puis copiez tout son contenu.</p><textarea readonly data-debug-output style="width:100%;min-height:420px;font-family:monospace;font-size:12px">${escapeHtml(JSON.stringify(data,null,2))}</textarea></details>`;
 }
 
 export function buildResumeUrl(gristPageUrl, accessToken, resumeToken) {
@@ -759,6 +781,17 @@ function render() {
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
   root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
+  root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("pointerdown",e=>{
+    const btn=e.currentTarget, isSub=!!btn.closest("[data-subfiche-editor]");
+    const ed=isSub?state.subFicheEditor:state.ficheEditor, code=btn.dataset.clearFicheQuestion||"";
+    const scope=btn.closest(isSub?"[data-subfiche-editor]":"[data-fiche-editor]");
+    const control=scope?.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);
+    debugPush(isSub?"clic_effacer_sous_fiche":"clic_effacer_fiche",{
+      question:code,typeEditeur:ed?.typeCode||"",valeurEtatAvant:ed?.answers?.[code]??null,
+      valeurDOMAvant:control?.value??null,typeDOM:control?.type??control?.tagName??null,
+      optionsDOM:control?.tagName==="SELECT"?[...control.options].map(o=>({value:o.value,label:o.text,selected:o.selected})):[]
+    });
+  },true));
   root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("click",e=>{
     e.preventDefault();
     e.stopPropagation();
