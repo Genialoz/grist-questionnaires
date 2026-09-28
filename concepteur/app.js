@@ -4,6 +4,7 @@ const TABLES=["QUESTIONNAIRES","VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUE
 const S={data:{},questionnaire:null,version:null,selected:null,showInactive:false,resultsExportData:null};
 function rememberRespondentPreview(){try{if(S.version)localStorage.setItem("gristionnaire.previewVersion",String(S.version));else localStorage.removeItem("gristionnaire.previewVersion");if(S.questionnaire)localStorage.setItem("gristionnaire.previewQuestionnaire",String(S.questionnaire));}catch{}}
 const $=s=>document.querySelector(s);
+const isTrue=v=>v===true||v===1||String(v??"").toLowerCase()==="true";
 const esc=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const active=r=>{const v=Object.prototype.hasOwnProperty.call(r||{},"Actif")?r.Actif:r?.Active;return v===undefined||v===null||v===""||v===true||v===1||String(v).toLowerCase()==="true"};
 const first=(r,n,f="")=>{for(const k of n)if(r?.[k]!=null&&r[k]!=="")return r[k];return f};
