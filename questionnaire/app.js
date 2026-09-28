@@ -473,18 +473,14 @@ function campaignPersonalization(){
   const storedLabel=String(campaign?.Valeur_personnalisation_Libelle??"").trim();
   let value=raw, label=storedLabel||raw;
   if(q){
-    // Resolve the campaign business value to the canonical value stored by the
-    // control BEFORE applying dynamic choice filters. A personalized value must
-    // remain representable even when another browser has stale/filtering state.
-    const choice=(state.definition.choices??[]).find(c=>
-      resolveRefCode(c.Question_Code,state.definition.questions,"Question_Code")===questionCode &&
-      [codeOf(c.Choix_Code),String(c.Valeur??""),String(c.Libelle??c["Libellé"]??"")].some(v=>String(v)===raw || (storedLabel&&String(v)===storedLabel))
-    );
-    if(choice){
-      value=String(codeOf(choice.Choix_Code));
-      label=String(choice.Libelle??choice["Libellé"]??choice.Valeur??storedLabel??raw);
-    } else {
-      const rc=resolveRefCode(q.Referentiel_Code,state.definition.referentials,"Referentiel_Code");
+    // A question backed by a referential must resolve campaign personalization
+    // against the CURRENT referential first. Old CHOIX_QUESTIONS rows may still
+    // exist after a question is migrated to a referential; letting those win
+    // would inject a Choix_Code (e.g. an old A1 choice id) instead of the
+    // Structure_Code/ValueRef_Code expected by hierarchical descendant filters.
+    const rc=resolveRefCode(q.Referentiel_Code,state.definition.referentials,"Referentiel_Code");
+    let resolved=false;
+    if(rc){
       const ref=(state.definition.referentials??[]).find(r=>codeOf(r.Referentiel_Code)===rc);
       const source=String(ref?.Type_source??"VALEURS_REFERENTIELS").trim().toUpperCase();
       const rows=source==="STRUCTURES" ? (state.definition.structures??[]) : (state.definition.referentialValues??[]).filter(v=>resolveRefCode(v.Referentiel_Code,state.definition.referentials,"Referentiel_Code")===rc);
@@ -493,6 +489,17 @@ function campaignPersonalization(){
       if(row){
         value=String(codeOf(row[codeCol]));
         label=String(first(row,["Nom","Libelle","Libellé","Valeur",codeCol],storedLabel||raw));
+        resolved=true;
+      }
+    }
+    if(!resolved){
+      const choice=(state.definition.choices??[]).find(c=>
+        resolveRefCode(c.Question_Code,state.definition.questions,"Question_Code")===questionCode &&
+        [codeOf(c.Choix_Code),String(c.Valeur??""),String(c.Libelle??c["Libellé"]??"")].some(v=>String(v)===raw || (storedLabel&&String(v)===storedLabel))
+      );
+      if(choice){
+        value=String(codeOf(choice.Choix_Code));
+        label=String(choice.Libelle??choice["Libellé"]??choice.Valeur??storedLabel??raw);
       } else {
         const options=optionsFor(q,state.definition,state.answers);
         const match=options.find(o=>[raw,storedLabel].filter(Boolean).some(v=>String(o.value)===String(v)||String(o.label)===String(v)));
