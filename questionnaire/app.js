@@ -7,7 +7,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -371,12 +371,14 @@ export function visibleFicheQuestions(type, def, answers={}) {
     active(q) && resolveRefCode(q.TypeFiche_Code,def.ficheTypes ?? [],"TypeFiche_Code")===typeCode
   ));
   const questions=authoritative.length ? authoritative : (type.questions ?? []);
+  applySingleChoiceAutomation(def,answers);
   return questions
-    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && !isDisplayBlock(q) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
+    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && !isDisplayBlock(q) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
     .map(q=>({...q,options:optionsFor(q,def,answers)}));
 }
 
 export function buildViewModel(def, answers={}) {
+  applySingleChoiceAutomation(def,answers);
   const diagnostics=[];
   const pages=sortByOrder(def.pages).filter(p=>conditionVisible(p.Condition_Code,def,answers,diagnostics)).map(page=>{
     const pc=codeOf(page.Page_Code);
@@ -388,7 +390,7 @@ export function buildViewModel(def, answers={}) {
           !resolveRefCode(q.TypeFiche_Code,def.ficheTypes,"TypeFiche_Code") &&
           !isTrue(q.Est_ligne_matrice)
         ))
-          .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics))
+          .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
           .map(q=>({...q, options:optionsFor(q,def,answers)}));
         return {...section,questions};
       });
@@ -423,6 +425,36 @@ export function controlKind(question) {
   if (t.includes("case")) return "checkbox";
   if (t.includes("liste") || t.includes("déroul") || t.includes("deroul")) return "select";
   return "text";
+}
+
+function shouldAutoHideSingleChoice(q,def,answers={}) {
+  if(!isTrue(q?.Masquer_si_choix_unique) || controlKind(q)!=="select" || !choiceFiltersForQuestion(q,def).length) return false;
+  return optionsFor(q,def,answers).length===1;
+}
+function applySingleChoiceAutomation(def,answers={}) {
+  let changed=true,passes=0;
+  while(changed && passes++<10){
+    changed=false;
+    for(const q of def.questions??[]){
+      if(!active(q)||isTrue(q.Est_ligne_matrice)||isDisplayBlock(q)||!isTrue(q.Masquer_si_choix_unique)||controlKind(q)!=="select"||!choiceFiltersForQuestion(q,def).length)continue;
+      const opts=optionsFor(q,def,answers),qc=codeOf(q.Question_Code);
+      if(opts.length===1 && String(answers[qc]??"")!==String(opts[0].value)){answers[qc]=opts[0].value;changed=true;}
+      else if(opts.length!==1 && answers[qc]!=null && answers[qc]!==""){
+        const allowed=new Set(opts.map(o=>String(o.value)));
+        if(!allowed.has(String(answers[qc]))){answers[qc]="";changed=true;}
+      }
+    }
+  }
+  return answers;
+}
+function finalValidationLabel(version={}){return String(version.Libelle_bouton_validation||"").trim()||"Valider le questionnaire";}
+function finalValidationMessage(version={}){return String(version.Message_validation||"").trim()||"Votre questionnaire a bien été validé.";}
+function showValidationFeedback(){
+  document.querySelector("[data-validation-toast]")?.remove();
+  const el=document.createElement("div");el.dataset.validationToast="1";el.setAttribute("role","status");
+  el.textContent=`✓ ${finalValidationMessage(state.definition?.version)}`;
+  Object.assign(el.style,{position:"fixed",left:"50%",bottom:"28px",transform:"translateX(-50%)",zIndex:"9999",maxWidth:"min(680px,calc(100vw - 32px))",padding:"14px 18px",borderRadius:"10px",background:"#fff",border:"1px solid #b8c5b8",boxShadow:"0 6px 24px rgba(0,0,0,.18)",fontWeight:"600",textAlign:"center"});
+  document.body.appendChild(el);setTimeout(()=>el.remove(),5000);
 }
 
 function displayBlockKind(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return t==="description"?"description":t==="sommaire"?"toc":"";}
@@ -742,7 +774,7 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>Valider le questionnaire</button></div>`:""}</nav>`;
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
@@ -772,7 +804,7 @@ function render() {
   const customNextLabel=String(page.Libelle_bouton_suivant||"").trim();
   const navModeForLabel=String(page.Navigation_apres||"").trim();
   let automaticNextLabel="Suivant";
-  if(navModeForLabel==="validation_finale" || state.pageIndex===vm.pages.length-1) automaticNextLabel="Valider le questionnaire";
+  if(navModeForLabel==="validation_finale" || state.pageIndex===vm.pages.length-1) automaticNextLabel=finalValidationLabel(vm.version);
   else if(navModeForLabel==="retour_page"){
     const targetRaw=codeOf(page.Page_cible_Code);
     const targetPage=vm.pages.find(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw));
@@ -781,7 +813,7 @@ function render() {
   }
   const nextButtonLabel=customNextLabel||automaticNextLabel;
   nav.innerHTML=locked
-    ? `<div class="readonly-nav"><div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
+    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
     : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
@@ -1113,7 +1145,7 @@ async function finalizeFromToc(vm) {
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){state.saveError="";state.statusMessage="Aperçu : le questionnaire peut être validé — aucune réponse n’a été enregistrée.";render();return;}
-  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
+  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
   catch(e){state.saving=false;showSaveError(e);render();}
 }
 
@@ -1156,7 +1188,7 @@ async function nextPage(vm,page) {
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
-  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.statusMessage="Questionnaire validé et enregistré."; render(); }
+  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
   catch(e){state.saving=false;showSaveError(e);render();}
 }
 
