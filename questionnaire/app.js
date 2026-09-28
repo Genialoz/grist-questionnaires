@@ -1410,9 +1410,21 @@ async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=
 async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
+function uniqueLinkAclVisibleResponse(){
+  let campaign;try{campaign=selectedCampaign()}catch{return null}
+  if(!isUniqueLinkCampaign(campaign))return null;
+  const rows=(state.definition?.responses??[]).filter(r=>{
+    if(isTrue(r.Supprime_logiquement))return false;
+    const raw=codeOf(r.Campagne_Code);
+    return String(raw)===String(campaign.id)||String(raw)===String(codeOf(campaign.Campagne_Code));
+  });
+  // With the LIEN_UNIQUE ACLs, a Reprise_ link exposes only its own response.
+  // A bare public Acces_ link must expose none (including to OWNER; see ACL rule).
+  return rows.length===1?rows[0]:null;
+}
 function ensureUniqueLinkPrivateResume(){
   let campaign;try{campaign=selectedCampaign()}catch{return false}
-  if(!isUniqueLinkCampaign(campaign)||requestedResumeToken())return false;
+  if(!isUniqueLinkCampaign(campaign)||requestedResumeToken()||uniqueLinkAclVisibleResponse())return false;
   const token=generateResumeToken();
   setPendingUniqueResumeToken(token);
   const url=buildResumeUrl(campaignResumeBaseUrl(campaign,document.referrer),campaign.Jeton_acces,token);
@@ -1432,7 +1444,7 @@ async function boot() {
     // For a public unique link, mint the respondent-private Reprise_ before any
     // answer is entered. The reload gives ACLs an individual key from the start.
     if(!state.previewMode && ensureUniqueLinkPrivateResume())return;
-    const resumed=state.previewMode?null:accessibleResponse(state.definition);
+    const resumed=state.previewMode?null:(accessibleResponse(state.definition)||uniqueLinkAclVisibleResponse());
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
