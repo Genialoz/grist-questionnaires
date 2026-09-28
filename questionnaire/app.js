@@ -25,6 +25,10 @@ function resolveRefCodes(value, rows, codeColumn) {
   return rawValues.map(v=>resolveRefCode(v,rows,codeColumn)).filter(Boolean);
 }
 function first(row, names, fallback="") { for (const n of names) if (row?.[n] != null && row[n] !== "") return row[n]; return fallback; }
+function cssColor(value){const v=String(value||"").trim();return /^#[0-9a-f]{3,8}$/i.test(v)||/^(rgb|hsl)a?\(/i.test(v)?v:""}
+function alignCss(v){const a=String(v||"").trim().toLowerCase();return a==="gauche"||a==="left"?"left":a==="centre"||a==="center"||a==="centré"?"center":a==="droite"||a==="right"?"right":""}
+function titleStyle(row,themeColor=""){const c=cssColor(row?.Couleur_titre)||cssColor(themeColor),parts=[],align=alignCss(row?.Alignement_titre);if(align)parts.push(`text-align:${align}`);if(c)parts.push(`color:${c}`);if(row?.Titre_gras)parts.push("font-weight:700");if(row?.Titre_souligne)parts.push("text-decoration:underline");const kind=String(row?.Style_titre||"").toLowerCase();if(kind==="encadre")parts.push("border:1px solid currentColor","padding:10px 14px","border-radius:8px");if(kind==="bandeau")parts.push("padding:10px 14px","border-radius:8px","background:color-mix(in srgb, currentColor 12%, transparent)");return parts.join(";")}
+function labelStyle(q){const parts=[],c=cssColor(q?.Couleur_libelle),align=alignCss(q?.Alignement_libelle);if(align)parts.push(`text-align:${align}`,"display:block");if(c)parts.push(`color:${c}`);if(q?.Libelle_gras)parts.push("font-weight:700");if(q?.Libelle_italique)parts.push("font-style:italic");if(q?.Libelle_souligne)parts.push("text-decoration:underline");return parts.join(";")}
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 export function buildResumeUrl(gristPageUrl, accessToken, resumeToken) {
@@ -438,7 +442,7 @@ function updateMatrixTotals(root=document){
 
 function renderFicheField(q, answers) {
   const qc=codeOf(q.Question_Code);
-  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true)}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
   if(!questionCode)return "";
@@ -603,19 +607,22 @@ function render() {
   const locked=responseIsLocked();
   const tocHtml=showToc?`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">Sommaire</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");return Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}</nav>`:"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
-  root.innerHTML=`<div class="card">
+  const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
+  root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
+  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${themeTitles?`.questionnaire-title-row h1{color:${themeTitles}}`:""}${alignCss(state.definition.version?.Alignement_titre)?`.questionnaire-title-row{text-align:${alignCss(state.definition.version?.Alignement_titre)}}`:""}</style>`;
+  root.innerHTML=themeCss+`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
     ${showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
-    <h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
+    <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
-      return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2>${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label>${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
