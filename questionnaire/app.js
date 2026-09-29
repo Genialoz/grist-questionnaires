@@ -1,5 +1,6 @@
 import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion} from "../shared/grist-common.js";
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
+import {writeWorkbook} from "./xlsx-lite.js";
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","FILTRES_TYPES_FICHES",
@@ -404,6 +405,57 @@ export function allowsPostValidationEdit(version={}) {
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
 
+function exportHasValue(value){return !(value==null||value===""||(Array.isArray(value)&&!value.length));}
+function exportAnswerLabel(q,value,answers={}){
+  if(!exportHasValue(value))return "";
+  const labels=new Map(optionsFor(q,state.definition,answers).map(o=>[String(o.value),String(o.label)]));
+  if(Array.isArray(value))return value.map(v=>labels.get(String(v))??String(v)).join(", ");
+  return labels.get(String(value))??String(value);
+}
+function exportMatrixModel(q,answers={}){
+  const qc=codeOf(q.Question_Code),kind=matrixKind(q),rows=matrixRows(q,state.definition),cols=matrixCols(q,state.definition),data=answers?.[qc]??{};
+  if(kind==="radio"||kind==="checkbox"){
+    const headers=["Ligne",...cols.map(c=>c.label)];
+    const body=rows.map(r=>{const rc=codeOf(r.Question_Code),rv=data?.[rc],selected=kind==="checkbox"?(Array.isArray(rv)?rv.map(String):[]):[String(rv??"")];return [first(r,["Libelle","Libellé","Titre"],rc),...cols.map(c=>selected.includes(String(c.code))?"✓":"")];});
+    return {headers,body};
+  }
+  return {headers:["Ligne",...cols.map(c=>c.label)],body:rows.map(r=>{const rc=codeOf(r.Question_Code),rv=data?.[rc]??{};return [first(r,["Libelle","Libellé","Titre"],rc),...cols.map(c=>rv?.[c.code]??"")];})};
+}
+function exportQuestionHtml(q,answers={}){
+  if(isDisplayBlock(q)||isDataTableQuestion(q))return "";
+  const qc=codeOf(q.Question_Code),label=first(q,["Libelle","Libellé","Titre"],qc);
+  if(matrixKind(q)){
+    const model=exportMatrixModel(q,answers),has=model.body.some(r=>r.slice(1).some(exportHasValue));if(!has)return "";
+    return `<div class="q"><div class="ql">${escapeHtml(label)}</div><table><thead><tr>${model.headers.map(h=>`<th>${escapeHtml(h)}</th>`).join("")}</tr></thead><tbody>${model.body.map(r=>`<tr>${r.map((v,i)=>`<${i?"td":"th"}>${escapeHtml(v)}</${i?"td":"th"}>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+  }
+  const value=answers?.[qc];if(!exportHasValue(value))return "";
+  return `<div class="q"><div class="ql">${escapeHtml(label)}</div><div class="qa">${escapeHtml(exportAnswerLabel(q,value,answers)).replace(/\n/g,"<br>")}</div></div>`;
+}
+function exportFicheHtml(type,fiche,index){
+  const combined={...state.answers,...(fiche.answers??{})},questions=visibleFicheQuestions(type,state.definition,combined),content=questions.map(q=>exportQuestionHtml(q,fiche.answers??{})).join("");
+  const children=(type.children??[]).map(child=>{const list=childFiches(child,fiche);if(!list.length)return "";return `<div class="sub"><h5>${escapeHtml(child.labelPlural)}</h5>${list.map((f,i)=>exportFicheHtml(child,f,i)).join("")}</div>`}).join("");
+  const card=ficheCardText(type,state.definition,fiche,index);return `<article class="fiche"><h4>${escapeHtml(card.identifier)} — ${escapeHtml(card.title)}</h4>${content||'<div class="empty">Aucune réponse renseignée.</div>'}${children}</article>`;
+}
+function individualExportModel(){
+  if(!state.response)throw new Error("Aucune réponse n’est chargée.");
+  const vm=buildViewModel(state.definition,state.answers),campaign=(()=>{try{return selectedCampaign()}catch{return null}})(),version=state.definition.version||{};
+  return {vm,campaign,title:first(version,["Titre","Titre_affiche","Nom"],"Questionnaire"),campaignTitle:first(campaign,["Libelle","Libellé","Nom","Titre"],codeOf(campaign?.Campagne_Code)||""),responseCode:codeOf(state.response.Reponse_Code)||String(state.response.id||""),status:String(state.response.Statut||""),created:state.response.Date_creation||state.response.Cree_le||"",modified:state.response.Date_modification||state.response.Modifie_le||"",validated:state.response.Date_validation||state.response.Valide_le||""};
+}
+function exportDate(v){if(v==null||v==="")return "";const n=Number(v),d=Number.isFinite(n)?new Date(n<1e12?n*1000:n):new Date(v);return isNaN(d)?String(v):d.toLocaleString("fr-FR");}
+function individualPrintHtml(){
+  const m=individualExportModel(),pages=m.vm.pages.map(page=>{const sections=page.sections.map(sec=>{const qs=sec.questions.map(q=>exportQuestionHtml(q,state.answers)).join("");const st=first(sec,["Titre","Libelle","Libellé","Nom"],"");return (qs?`<section>${st?`<h3>${escapeHtml(st)}</h3>`:""}${qs}</section>`:"")}).join("");const fiches=(page.repeatableTypes??[]).map(type=>{const list=(state.fiches[type.code]??[]).filter(f=>!f.parentElementId);if(!list.length)return "";return `<section><h3>${escapeHtml(type.labelPlural)}</h3>${list.map((f,i)=>exportFicheHtml(type,f,i)).join("")}</section>`}).join("");if(!sections&&!fiches)return "";return `<div class="page"><h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>${sections}${fiches}</div>`}).join("");
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(m.title)}</title><style>@page{size:A4;margin:15mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#222;line-height:1.35}h1{font-size:22pt;margin:0 0 4mm}h2{font-size:16pt;border-bottom:2px solid #444;padding-bottom:2mm;margin-top:9mm}h3{font-size:13pt;margin:6mm 0 3mm}h4{font-size:11.5pt;margin:0 0 3mm}.meta{background:#f3f4f6;padding:4mm;border-radius:2mm;margin:0 0 7mm}.q{break-inside:avoid;margin:0 0 4mm}.ql{font-weight:700;margin-bottom:1mm}.qa{padding:2.5mm 3mm;background:#f7f7f7;border-left:3px solid #777;white-space:normal}.fiche{break-inside:avoid;border:1px solid #bbb;border-radius:2mm;padding:4mm;margin:0 0 5mm}.sub{margin:4mm 0 0 5mm;border-left:2px solid #bbb;padding-left:4mm}table{width:100%;border-collapse:collapse;margin-top:2mm;font-size:9.5pt}th,td{border:1px solid #bbb;padding:2mm;text-align:left;vertical-align:top}thead th{background:#eee}.empty{font-style:italic;color:#666}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(m.title)}</h1><div class="meta">${m.campaignTitle?`<div><strong>Campagne :</strong> ${escapeHtml(m.campaignTitle)}</div>`:""}<div><strong>Réponse :</strong> ${escapeHtml(m.responseCode)}</div><div><strong>Statut :</strong> ${escapeHtml(m.status)}</div>${m.validated?`<div><strong>Validation :</strong> ${escapeHtml(exportDate(m.validated))}</div>`:""}${m.modified?`<div><strong>Dernière modification :</strong> ${escapeHtml(exportDate(m.modified))}</div>`:""}</div>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));<\/script></body></html>`;
+}
+function exportMyPdf(){try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
+function individualWorkbook(){
+  const m=individualExportModel(),main=[["Questionnaire",m.title],["Campagne",m.campaignTitle],["Réponse",m.responseCode],["Statut",m.status],["Création",exportDate(m.created)],["Dernière modification",exportDate(m.modified)],["Validation",exportDate(m.validated)],[],["Page","Section","Question","Réponse"]],fiches=[["Type","N°","Parent","Question","Réponse"]],matrices=[["Contexte","Matrice","Ligne","Colonne","Valeur"]];
+  for(const page of m.vm.pages)for(const sec of page.sections)for(const q of sec.questions){if(isDisplayBlock(q)||isDataTableQuestion(q))continue;const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,state.answers);mx.body.forEach(r=>r.slice(1).forEach((v,i)=>{if(exportHasValue(v))matrices.push(["Principal",first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[i+1],v])}));}else if(exportHasValue(state.answers[qc]))main.push([first(page,["Titre","Libelle","Libellé","Nom"],""),first(sec,["Titre","Libelle","Libellé","Nom"],""),first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,state.answers[qc],state.answers)]);}
+  const roots=m.vm.pages.flatMap(p=>p.repeatableTypes??[]);const walk=(type,parent="")=>{const list=(state.fiches[type.code]??[]).filter(f=>parent?String(f.parentElementId)===String(parent.elementId):!f.parentElementId);list.forEach((f,i)=>{const combined={...state.answers,...f.answers};for(const q of visibleFicheQuestions(type,state.definition,combined)){const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,f.answers);mx.body.forEach(r=>r.slice(1).forEach((v,j)=>{if(exportHasValue(v))matrices.push([`${type.labelSingular} ${i+1}`,first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[j+1],v])}));}else if(exportHasValue(f.answers?.[qc]))fiches.push([type.labelSingular,i+1,parent?codeOf(parent.elementId):"",first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,f.answers[qc],f.answers)]);}for(const child of type.children??[])walk(child,f);});};roots.forEach(t=>walk(t));return [{name:"REPONSE",rows:main},{name:"FICHES",rows:fiches},{name:"MATRICES",rows:matrices}];
+}
+function downloadExportBlob(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);}
+function exportMyExcel(){try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
+function respondentExportButtons(){return !state.previewMode&&state.response?`<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`:"";}
+
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
   const errors=validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions);
@@ -789,7 +841,7 @@ function render() {
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
   const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}</style>`;
   root.innerHTML=themeCss+`<div class="card">
-    <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
@@ -820,7 +872,7 @@ function render() {
   }
   const nextButtonLabel=customNextLabel||automaticNextLabel;
   nav.innerHTML=locked
-    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
+    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
     : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
@@ -854,6 +906,8 @@ function render() {
     requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
   });
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
+  root.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
+  root.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{createDraftFiche(state,e.currentTarget.dataset.addFiche);render()}));
   root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{state.subFicheEditor={typeCode:e.currentTarget.dataset.addSubfiche,index:null,parentElementId:Number(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor("[data-subfiche-editor]")}));
@@ -896,6 +950,8 @@ function render() {
   root.querySelector("[data-save-subfiche]")?.addEventListener("click",()=>saveCurrentSubFiche());
   status.querySelector("[data-copy-resume]")?.addEventListener("click",()=>copyResumeLink(false));
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
+  nav.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
+  nav.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked||state.previewMode){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
   document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){state.pageIndex++;render();}return;}nextPage(vm,page)});
 
