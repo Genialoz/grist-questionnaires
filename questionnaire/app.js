@@ -107,7 +107,7 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -117,13 +117,12 @@ function requestedPreviewVersion(){
 function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
-  // Only an ACL-filtered personalized campaign may override a stale Concepteur
-  // preview. A LIEN_UNIQUE campaign must not disable the internal p/38 preview:
-  // its respondent flow is handled separately by ensureUniqueLinkPrivateResume().
+  // When ACLs leave exactly one personalized campaign visible, that campaign is
+  // authoritative over a stale localStorage preview left by the Concepteur.
   const campaigns=(def?.campaigns??[]).filter(active);
   if(campaigns.length!==1)return false;
   const c=campaigns[0];
-  return !isUniqueLinkCampaign(c) && Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
+  return isUniqueLinkCampaign(c) || Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
 }
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
@@ -1508,6 +1507,7 @@ async function boot() {
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
+    if(state.previewMode)setPendingUniqueResumeToken("");
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
