@@ -151,16 +151,22 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
-  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
-  // active campaign, its version is authoritative over stale preview context.
+  const previewVersion=requestedPreviewVersion();
+  // Navigation interne Grist (ex. Concepteur -> page Questionnaire) : la version
+  // mémorisée par le Concepteur est autoritaire tant qu'aucun vrai lien répondant
+  // (Acces_/Reprise_/Campagne_/Reponse_) n'est présent. Elle doit être résolue
+  // AVANT le fallback ACL, sinon une campagne visible peut forcer un ancien
+  // questionnaire (par exemple FDP) sur la page Questionnaire.
+  if(!version && previewVersion){
+    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
+  }
+  // LinkKey Acces_ may be hidden from widget JS. Sur un vrai contexte répondant,
+  // si les ACL n'exposent qu'une campagne active, sa version reste le fallback
+  // autoritaire. requestedPreviewVersion() renvoie déjà vide dans ce contexte.
   const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
   if(!version && aclCampaigns.length===1){
     const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
-  }
-  const previewVersion=requestedPreviewVersion();
-  if(!version && previewVersion){
-    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
   const candidate = selectedRecord && (selectedRecord.Version_Code ?? selectedRecord.version_Code ?? selectedRecord.id);
   if (!version && candidate != null) {
