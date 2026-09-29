@@ -151,13 +151,6 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
-  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
-  // active campaign, its version is authoritative over stale preview context.
-  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
-  if(!version && aclCampaigns.length===1){
-    const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
-    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
-  }
   const previewVersion=requestedPreviewVersion();
   if(!version && previewVersion){
     version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
@@ -1501,38 +1494,11 @@ function ensureUniqueLinkPrivateResume(){
   try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{setPendingUniqueResumeToken("");return false}
 }
 
-
-let gristSelectionReloading=false;
-function selectedVersionCandidate(record){
-  if(!record)return "";
-  return String(codeOf(record.Version_Code ?? record.version_Code ?? record.id) ?? "").trim();
-}
-async function reloadFromGristSelection(record){
-  if(hasRealResponseContext() || gristSelectionReloading || !record)return;
-  const candidate=selectedVersionCandidate(record);
-  if(!candidate)return;
-  const current=String(codeOf(state.definition?.version?.Version_Code ?? "") ?? "").trim();
-  const currentId=String(state.definition?.version?.id ?? "").trim();
-  if(candidate===current || candidate===currentId)return;
-  gristSelectionReloading=true;
-  try{
-    state.selectedRecord=record;
-    state.previewMode=true;
-    state.response=null; state.principalElement=null; state.answers={}; state.fiches={};
-    state.ficheEditor=null; state.subFicheEditor=null; state.pageIndex=0;
-    state.definition=await loadDefinition(grist.docApi,record);
-    render();
-  }catch(e){
-    const status=document.querySelector("#status");
-    if(status)status.innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
-  }finally{gristSelectionReloading=false;}
-}
-
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{ state.selectedRecord=record; reloadFromGristSelection(record); });
+    grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
