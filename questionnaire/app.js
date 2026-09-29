@@ -151,12 +151,14 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
+  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
+  // active campaign, its version is authoritative over stale preview context.
+  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
+  if(!version && aclCampaigns.length===1){
+    const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
+    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
+  }
   const previewVersion=requestedPreviewVersion();
-  // Navigation interne Grist (ex. Concepteur -> page Questionnaire) : la version
-  // mémorisée par le Concepteur est autoritaire tant qu'aucun vrai lien répondant
-  // (Acces_/Reprise_/Campagne_/Reponse_) n'est présent. Elle doit être résolue
-  // AVANT le fallback ACL, sinon une campagne visible peut forcer un ancien
-  // questionnaire (par exemple FDP) sur la page Questionnaire.
   if(!version && previewVersion){
     version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
@@ -831,17 +833,13 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const showTocStatus=tocStatusEnabled(vm.version);
-  const tocPageStates=showTocStatus?vm.pages.map(p=>tocPageStatus(p,state.definition,state.answers,state.fiches)):[];
-  const trackedTocStates=tocPageStates.filter(Boolean);
-  const tocProgressHtml=showTocStatus&&trackedTocStates.length?`<div class="toc-completion-summary">${trackedTocStates.filter(x=>x.complete).length} partie${trackedTocStates.filter(x=>x.complete).length>1?"s":""} complétée${trackedTocStates.filter(x=>x.complete).length>1?"s":""} sur ${trackedTocStates.length}</div>`:"";
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${tocProgressHtml}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const pageStatus=showTocStatus?tocPageStates[pi]:null;const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span>${escapeHtml(pt)}</span>${showTocStatus?tocBadgeHtml(pageStatus):""}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const sectionStatus=showTocStatus?tocSectionStatus(sec,state.definition,state.answers):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span>${escapeHtml(st)}</span>${showTocStatus?tocBadgeHtml(sectionStatus):""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
-  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}.toc-page-link,.toc-section-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}.toc-status{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:2px 8px;font-size:.78rem;font-weight:700;border:1px solid currentColor}.toc-status-complete{opacity:.9}.toc-status-pending{opacity:.72}.toc-completion-summary{margin:6px 0 10px;font-size:.9rem;font-weight:600}</style>`;
+  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}</style>`;
   root.innerHTML=themeCss+`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
@@ -1195,49 +1193,6 @@ function onAnswer(e) {
   if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
-function tocStatusEnabled(version={}) {
-  return isTrue(first(version,["Afficher_statut_sommaire"],false));
-}
-
-function tocQuestionExpected(q,def) {
-  if(isDisplayBlock(q)) return false;
-  if(isRequiredQuestion(q)) return true;
-  if(matrixKind(q)) return matrixRows(q,def).some(r=>isRequiredQuestion(r));
-  return false;
-}
-
-function tocSectionStatus(section,def,answers={}) {
-  const expected=(section.questions??[]).filter(q=>tocQuestionExpected(q,def));
-  if(!expected.length) return null;
-  const errors={};
-  for(const q of expected){
-    const code=codeOf(q.Question_Code);
-    if(matrixKind(q)){
-      const mx=matrixErrors(q,answers);
-      if(mx.length)errors[code]=mx.join(" ");
-    }else{
-      const error=validateQuestion(q,answers[code],true);
-      if(error)errors[code]=error;
-    }
-  }
-  return Object.keys(errors).length ? {complete:false,label:"En attente"} : {complete:true,label:"Complété"};
-}
-
-function tocPageStatus(page,def,answers={},fiches={}) {
-  const sectionStates=(page.sections??[]).map(s=>tocSectionStatus(s,def,answers)).filter(Boolean);
-  const repeatable=(page.repeatableTypes??[]).filter(t=>Number(t.minimum||0)>0);
-  if(!sectionStates.length && !repeatable.length)return null;
-  const ficheErrors=validateFicheCounts(repeatable,fiches);
-  const complete=sectionStates.every(x=>x.complete) && Object.keys(ficheErrors).length===0;
-  return {complete,label:complete?"Complété":"En attente"};
-}
-
-function tocBadgeHtml(status){
-  if(!status)return "";
-  const cls=status.complete?"toc-status-complete":"toc-status-pending";
-  return `<span class="toc-status ${cls}">${escapeHtml(status.label)}</span>`;
-}
-
 export function validateVisiblePage(page, answers={}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
@@ -1551,11 +1506,11 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
-    // Page Questionnaire interne (p/38) : sans contexte répondant explicite,
-    // le widget est toujours un aperçu du questionnaire sélectionné dans le Concepteur.
-    // Il ne doit jamais déduire une campagne à partir des lignes visibles.
-    state.previewMode=!hasRealResponseContext();
+    state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
+    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+      state.previewMode=false;
+    }
     // For a public unique link, mint the respondent-private Reprise_ before any
     // answer is entered. The reload gives ACLs an individual key from the start.
     if(!state.previewMode && ensureUniqueLinkPrivateResume())return;
