@@ -1538,7 +1538,10 @@ async function boot() {
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     state.previewVersionLoaded=codeOf(state.definition?.version?.Version_Code ?? state.definition?.version?.id ?? "");
-    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)) state.previewMode=false;
+    // Page Grist interne / aperçu : sans contexte répondant explicite, ne jamais
+    // transformer l’aperçu en session répondant à cause des campagnes visibles.
+    // Cela évite selectedCampaign()/ensureResponse() sur p/38 lorsqu’il existe
+    // plusieurs campagnes pour la version sélectionnée.
     if(!state.previewMode && ensureUniqueLinkPrivateResume())return;
     const resumed=state.previewMode?null:(accessibleResponse(state.definition)||uniqueLinkAclVisibleResponse());
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
