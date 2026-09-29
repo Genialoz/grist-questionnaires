@@ -117,12 +117,13 @@ function requestedPreviewVersion(){
 function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
-  // When ACLs leave exactly one personalized campaign visible, that campaign is
-  // authoritative over a stale localStorage preview left by the Concepteur.
+  // Only an ACL-filtered personalized campaign may override a stale Concepteur
+  // preview. A LIEN_UNIQUE campaign must not disable the internal p/38 preview:
+  // its respondent flow is handled separately by ensureUniqueLinkPrivateResume().
   const campaigns=(def?.campaigns??[]).filter(active);
   if(campaigns.length!==1)return false;
   const c=campaigns[0];
-  return isUniqueLinkCampaign(c) || Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
+  return !isUniqueLinkCampaign(c) && Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
 }
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
@@ -1276,12 +1277,6 @@ function setPendingUniqueResumeToken(token){
   try{if(token)sessionStorage.setItem("gristionnaire.pendingUniqueResume",String(token));else sessionStorage.removeItem("gristionnaire.pendingUniqueResume")}catch{}
 }
 function requestedResumeToken(){return requestedParam("Reprise_")||requestedParam("Reprise")||pendingUniqueResumeToken()}
-function hasExplicitResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
-function rememberedPreviewVersion(){
-  const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
-  if(explicit)return explicit;
-  try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
-}
 function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
   const resume=requestedResumeToken();
@@ -1512,11 +1507,6 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
-    // A pending LIEN_UNIQUE resume token is only a technical bridge between two
-    // loads. If p/38 is opened normally from the Concepteur, a remembered
-    // preview version must not inherit that stale bridge from an earlier visit.
-    // Explicit respondent parameters remain authoritative and are never cleared.
-    if(rememberedPreviewVersion() && !hasExplicitResponseContext()) setPendingUniqueResumeToken("");
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
