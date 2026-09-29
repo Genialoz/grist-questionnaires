@@ -8,7 +8,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, previewRefreshBusy:false, previewVersionLoaded:"", debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -839,17 +839,13 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const showTocStatus=tocStatusEnabled(vm.version);
-  const tocPageStates=showTocStatus?vm.pages.map(p=>tocPageStatus(p,state.definition,state.answers,state.fiches)):[];
-  const trackedTocStates=tocPageStates.filter(Boolean);
-  const tocProgressHtml=showTocStatus&&trackedTocStates.length?`<div class="toc-completion-summary">${trackedTocStates.filter(x=>x.complete).length} partie${trackedTocStates.filter(x=>x.complete).length>1?"s":""} complétée${trackedTocStates.filter(x=>x.complete).length>1?"s":""} sur ${trackedTocStates.length}</div>`:"";
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${tocProgressHtml}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const pageStatus=showTocStatus?tocPageStates[pi]:null;const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span>${escapeHtml(pt)}</span>${showTocStatus?tocBadgeHtml(pageStatus):""}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const sectionStatus=showTocStatus?tocSectionStatus(sec,state.definition,state.answers):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span>${escapeHtml(st)}</span>${showTocStatus?tocBadgeHtml(sectionStatus):""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span>${escapeHtml(pt)}</span></button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span>${escapeHtml(st)}</span></button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
-  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}.toc-page-link,.toc-section-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}.toc-status{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:2px 8px;font-size:.78rem;font-weight:700;border:1px solid currentColor}.toc-status-complete{opacity:.9}.toc-status-pending{opacity:.72}.toc-completion-summary{margin:6px 0 10px;font-size:.9rem;font-weight:600}</style>`;
+  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}.toc-page-link,.toc-section-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}</style>`;
   root.innerHTML=themeCss+`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
@@ -1203,49 +1199,6 @@ function onAnswer(e) {
   if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
-function tocStatusEnabled(version={}) {
-  return isTrue(first(version,["Afficher_statut_sommaire"],false));
-}
-
-function tocQuestionExpected(q,def) {
-  if(isDisplayBlock(q)) return false;
-  if(isRequiredQuestion(q)) return true;
-  if(matrixKind(q)) return matrixRows(q,def).some(r=>isRequiredQuestion(r));
-  return false;
-}
-
-function tocSectionStatus(section,def,answers={}) {
-  const expected=(section.questions??[]).filter(q=>tocQuestionExpected(q,def));
-  if(!expected.length) return null;
-  const errors={};
-  for(const q of expected){
-    const code=codeOf(q.Question_Code);
-    if(matrixKind(q)){
-      const mx=matrixErrors(q,answers);
-      if(mx.length)errors[code]=mx.join(" ");
-    }else{
-      const error=validateQuestion(q,answers[code],true);
-      if(error)errors[code]=error;
-    }
-  }
-  return Object.keys(errors).length ? {complete:false,label:"En attente"} : {complete:true,label:"Complété"};
-}
-
-function tocPageStatus(page,def,answers={},fiches={}) {
-  const sectionStates=(page.sections??[]).map(s=>tocSectionStatus(s,def,answers)).filter(Boolean);
-  const repeatable=(page.repeatableTypes??[]).filter(t=>Number(t.minimum||0)>0);
-  if(!sectionStates.length && !repeatable.length)return null;
-  const ficheErrors=validateFicheCounts(repeatable,fiches);
-  const complete=sectionStates.every(x=>x.complete) && Object.keys(ficheErrors).length===0;
-  return {complete,label:complete?"Complété":"En attente"};
-}
-
-function tocBadgeHtml(status){
-  if(!status)return "";
-  const cls=status.complete?"toc-status-complete":"toc-status-pending";
-  return `<span class="toc-status ${cls}">${escapeHtml(status.label)}</span>`;
-}
-
 export function validateVisiblePage(page, answers={}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
@@ -1554,24 +1507,50 @@ function ensureUniqueLinkPrivateResume(){
   try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{setPendingUniqueResumeToken("");return false}
 }
 
+async function reloadInternalPreviewIfChanged(force=false){
+  if(hasRealResponseContext()||state.previewRefreshBusy)return;
+  const wanted=requestedPreviewVersion();
+  if(!wanted)return;
+  const current=codeOf(state.definition?.version?.Version_Code ?? state.definition?.version?.id ?? "");
+  if(!force && current===codeOf(wanted))return;
+  state.previewRefreshBusy=true;
+  try{
+    state.previewMode=true;
+    state.response=null; state.principalElement=null; state.answers={}; state.fiches={};
+    state.ficheEditor=null; state.subFicheEditor=null; state.pageIndex=0; state.principalDirty=false;
+    state.saveError=""; state.statusMessage="";
+    state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
+    state.previewVersionLoaded=codeOf(state.definition?.version?.Version_Code ?? state.definition?.version?.id ?? "");
+    render();
+  }catch(e){
+    document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
+  }finally{state.previewRefreshBusy=false;}
+}
+
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{ state.selectedRecord=record; });
+    grist.onRecord(record=>{
+      state.selectedRecord=record;
+      if(!hasRealResponseContext()) reloadInternalPreviewIfChanged(false);
+    });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
-      state.previewMode=false;
-    }
-    // For a public unique link, mint the respondent-private Reprise_ before any
-    // answer is entered. The reload gives ACLs an individual key from the start.
+    state.previewVersionLoaded=codeOf(state.definition?.version?.Version_Code ?? state.definition?.version?.id ?? "");
+    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)) state.previewMode=false;
     if(!state.previewMode && ensureUniqueLinkPrivateResume())return;
     const resumed=state.previewMode?null:(accessibleResponse(state.definition)||uniqueLinkAclVisibleResponse());
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
     render();
+    if(!hasRealResponseContext()){
+      window.addEventListener("storage",e=>{if(e.key==="gristionnaire.previewVersion")reloadInternalPreviewIfChanged(false)});
+      window.addEventListener("focus",()=>reloadInternalPreviewIfChanged(false));
+      document.addEventListener("visibilitychange",()=>{if(!document.hidden)reloadInternalPreviewIfChanged(false)});
+      setInterval(()=>reloadInternalPreviewIfChanged(false),1000);
+    }
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
