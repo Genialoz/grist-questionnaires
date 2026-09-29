@@ -8,7 +8,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, resolvedCampaignId:null, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -404,40 +404,6 @@ export function allowsPostValidationEdit(version={}) {
   return isTrue(first(version,["Autoriser_modification_apres_validation","Modification_apres_validation","Modifiable_apres_validation"],false));
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
-
-function tocSectionCompletion(section,page){
-  const sectionCode=codeOf(section.Section_Code);
-  let expected=false, complete=true;
-  for(const q of section.questions??[]){
-    if(isDisplayBlock(q)||isDataTableQuestion(q)||!isRequiredQuestion(q))continue;
-    expected=true;
-    const qc=codeOf(q.Question_Code);
-    const invalid=matrixKind(q)?matrixErrors(q,state.answers).length>0:Boolean(validateQuestion(q,state.answers[qc],true));
-    if(invalid)complete=false;
-  }
-  const allTypes=[];
-  const walk=types=>{for(const t of types??[]){allTypes.push(t);walk(t.children)}};
-  walk(page.repeatableTypes??[]);
-  for(const type of allTypes){
-    const qs=visibleFicheQuestions(type,state.definition,state.answers).filter(q=>resolveRefCode(q.Section_Code,state.definition.sections,"Section_Code")===sectionCode);
-    const relevantRequired=qs.some(q=>isRequiredQuestion(q));
-    if(!relevantRequired && !(type.minimum>0))continue;
-    expected=true;
-    const list=(state.fiches[type.code]??[]).filter(f=>type.parentCode?Boolean(f.parentElementId):!f.parentElementId);
-    if(type.minimum>0 && list.length<type.minimum){complete=false;continue;}
-    for(const fiche of list){
-      const combined={...state.answers,...(fiche.answers??{})};
-      for(const q of visibleFicheQuestions(type,state.definition,combined).filter(q=>resolveRefCode(q.Section_Code,state.definition.sections,"Section_Code")===sectionCode)){
-        if(!isRequiredQuestion(q))continue;
-        const qc=codeOf(q.Question_Code);
-        const invalid=matrixKind(q)?matrixErrors(q,fiche.answers??{}).length>0:Boolean(validateQuestion(q,fiche.answers?.[qc],true));
-        if(invalid){complete=false;break;}
-      }
-      if(!complete)break;
-    }
-  }
-  return expected?{expected:true,complete,label:complete?"Complété":"En attente"}:{expected:false,complete:true,label:""};
-}
 
 function exportHasValue(value){return !(value==null||value===""||(Array.isArray(value)&&!value.length));}
 function exportAnswerLabel(q,value,answers={}){
@@ -867,16 +833,17 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const showTocStatus=isTrue(vm.version.Afficher_statut_sommaire);
-  const tocStatuses=showTocStatus?vm.pages.flatMap(p=>(p.sections??[]).map(sec=>tocSectionCompletion(sec,p))).filter(x=>x.expected):[];
-  const tocCompleted=tocStatuses.filter(x=>x.complete).length;
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${showTocStatus&&tocStatuses.length?`<div class="toc-progress-summary"><strong>${tocCompleted}</strong> partie${tocStatuses.length>1?"s":""} complétée${tocCompleted>1?"s":""} sur <strong>${tocStatuses.length}</strong></div>`:""}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});const pageStatuses=showTocStatus?visibleSections.map(sec=>tocSectionCompletion(sec,p)).filter(x=>x.expected):[];const pageStatus=pageStatuses.length?{expected:true,complete:pageStatuses.every(x=>x.complete),label:pageStatuses.every(x=>x.complete)?"Complété":"En attente"}:null;return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span class="toc-page-label">${escapeHtml(pt)}</span>${pageStatus?.expected?`<span class="toc-status toc-status-${pageStatus.complete?"complete":"pending"}">${escapeHtml(pageStatus.label)}</span>`:""}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const status=showTocStatus?tocSectionCompletion(sec,p):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-section-label">${escapeHtml(st)}</span>${status?.expected?`<span class="toc-status toc-status-${status.complete?"complete":"pending"}">${escapeHtml(status.label)}</span>`:""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const showTocStatus=tocStatusEnabled(vm.version);
+  const tocPageStates=showTocStatus?vm.pages.map(p=>tocPageStatus(p,state.definition,state.answers,state.fiches)):[];
+  const trackedTocStates=tocPageStates.filter(Boolean);
+  const tocProgressHtml=showTocStatus&&trackedTocStates.length?`<div class="toc-completion-summary">${trackedTocStates.filter(x=>x.complete).length} partie${trackedTocStates.filter(x=>x.complete).length>1?"s":""} complétée${trackedTocStates.filter(x=>x.complete).length>1?"s":""} sur ${trackedTocStates.length}</div>`:"";
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${tocProgressHtml}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const pageStatus=showTocStatus?tocPageStates[pi]:null;const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span>${escapeHtml(pt)}</span>${showTocStatus?tocBadgeHtml(pageStatus):""}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const sectionStatus=showTocStatus?tocSectionStatus(sec,state.definition,state.answers):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span>${escapeHtml(st)}</span>${showTocStatus?tocBadgeHtml(sectionStatus):""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
-  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}</style>`;
+  const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}.toc-page-link,.toc-section-link{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%}.toc-status{display:inline-flex;align-items:center;white-space:nowrap;border-radius:999px;padding:2px 8px;font-size:.78rem;font-weight:700;border:1px solid currentColor}.toc-status-complete{opacity:.9}.toc-status-pending{opacity:.72}.toc-completion-summary{margin:6px 0 10px;font-size:.9rem;font-weight:600}</style>`;
   root.innerHTML=themeCss+`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
@@ -1230,6 +1197,49 @@ function onAnswer(e) {
   if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
+function tocStatusEnabled(version={}) {
+  return isTrue(first(version,["Afficher_statut_sommaire"],false));
+}
+
+function tocQuestionExpected(q,def) {
+  if(isDisplayBlock(q)) return false;
+  if(isRequiredQuestion(q)) return true;
+  if(matrixKind(q)) return matrixRows(q,def).some(r=>isRequiredQuestion(r));
+  return false;
+}
+
+function tocSectionStatus(section,def,answers={}) {
+  const expected=(section.questions??[]).filter(q=>tocQuestionExpected(q,def));
+  if(!expected.length) return null;
+  const errors={};
+  for(const q of expected){
+    const code=codeOf(q.Question_Code);
+    if(matrixKind(q)){
+      const mx=matrixErrors(q,answers);
+      if(mx.length)errors[code]=mx.join(" ");
+    }else{
+      const error=validateQuestion(q,answers[code],true);
+      if(error)errors[code]=error;
+    }
+  }
+  return Object.keys(errors).length ? {complete:false,label:"En attente"} : {complete:true,label:"Complété"};
+}
+
+function tocPageStatus(page,def,answers={},fiches={}) {
+  const sectionStates=(page.sections??[]).map(s=>tocSectionStatus(s,def,answers)).filter(Boolean);
+  const repeatable=(page.repeatableTypes??[]).filter(t=>Number(t.minimum||0)>0);
+  if(!sectionStates.length && !repeatable.length)return null;
+  const ficheErrors=validateFicheCounts(repeatable,fiches);
+  const complete=sectionStates.every(x=>x.complete) && Object.keys(ficheErrors).length===0;
+  return {complete,label:complete?"Complété":"En attente"};
+}
+
+function tocBadgeHtml(status){
+  if(!status)return "";
+  const cls=status.complete?"toc-status-complete":"toc-status-pending";
+  return `<span class="toc-status ${cls}">${escapeHtml(status.label)}</span>`;
+}
+
 export function validateVisiblePage(page, answers={}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
@@ -1387,30 +1397,7 @@ function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.(
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
 async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
-function selectedCampaign(){
-  const cs=state.definition.campaigns??[];
-  // Une fois la campagne du lien identifiée, elle reste stable pendant toute la
-  // session répondant. La sélection de ligne Grist peut changer ensuite et ne
-  // doit jamais faire basculer le questionnaire vers une autre campagne.
-  if(state.resolvedCampaignId!=null){
-    const cached=cs.find(x=>String(x.id)===String(state.resolvedCampaignId));
-    if(cached)return cached;
-    state.resolvedCampaignId=null;
-  }
-  const remember=c=>{if(c)state.resolvedCampaignId=c.id;return c};
-  /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */
-  const access=requestedParam("Acces_");
-  if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return remember(c);}
-  const requested=requestedParam("Campagne_");
-  if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return remember(c);}
-  // Une réponse déjà chargée est une preuve plus forte qu'une sélection Grist.
-  const responseCampaign=state.response?.Campagne_Code;
-  if(responseCampaign!=null){const raw=codeOf(responseCampaign);const c=cs.find(x=>String(x.id)===String(raw)||String(codeOf(x.Campagne_Code))===String(raw));if(c)return remember(c);}
-  const candidate=state.selectedRecord?.Campagne_Code;
-  if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===String(raw)||String(codeOf(x.Campagne_Code))===String(raw));if(c)return remember(c);}
-  if(cs.length===1)return remember(cs[0]);
-  throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");
-}
+function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
