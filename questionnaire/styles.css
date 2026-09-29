@@ -114,7 +114,7 @@ textarea { min-height:110px; resize:vertical; }
 .questionnaire-toc{margin:18px 0 24px;padding:14px 16px;border:1px solid #e2dfe8;border-radius:10px;background:#faf9fc}
 .questionnaire-toc-title{font-weight:700;margin-bottom:8px;color:#3f3b47}
 .toc-page{margin:3px 0}.toc-page-link,.toc-section-link{display:block;width:100%;border:0;background:transparent;text-align:left;cursor:pointer;color:#5c3b8b;border-radius:6px}
-.toc-page-link{padding:7px 8px;font-weight:650;display:flex;align-items:center;justify-content:space-between;gap:10px}.toc-page-label{min-width:0}.toc-page-link:hover,.toc-section-link:hover{background:#f0ebf6}.toc-page.is-current>.toc-page-link{background:#eee9f5;color:#45276d}
+.toc-page-link{padding:7px 8px;font-weight:650}.toc-page-link:hover,.toc-section-link:hover{background:#f0ebf6}.toc-page.is-current>.toc-page-link{background:#eee9f5;color:#45276d}
 .toc-sections{padding-left:16px}.toc-section-link{padding:5px 8px;font-size:.9rem;color:#696071}
 .section[id]{scroll-margin-top:82px}
 @media(max-width:600px){.questionnaire-toc{padding:12px}.toc-sections{padding-left:10px}}
@@ -130,3 +130,8 @@ textarea { min-height:110px; resize:vertical; }
 .toc-status-pending{background:#f4eee3;color:#72541e}
 .toc-status-complete{background:#e7f2ea;color:#285f38}
 @media(max-width:600px){.toc-section-link{align-items:flex-start}.toc-status{margin-top:1px}}
+
+/* V2.5.2 - badge de statut sur les pages du sommaire */
+.toc-page-link{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.toc-page-label{min-width:0}
+@media(max-width:600px){.toc-page-link{align-items:flex-start}}

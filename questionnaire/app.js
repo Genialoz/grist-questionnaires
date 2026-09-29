@@ -8,7 +8,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, resolvedCampaignId:null, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -870,7 +870,7 @@ function render() {
   const showTocStatus=isTrue(vm.version.Afficher_statut_sommaire);
   const tocStatuses=showTocStatus?vm.pages.flatMap(p=>(p.sections??[]).map(sec=>tocSectionCompletion(sec,p))).filter(x=>x.expected):[];
   const tocCompleted=tocStatuses.filter(x=>x.complete).length;
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${showTocStatus&&tocStatuses.length?`<div class="toc-progress-summary"><strong>${tocCompleted}</strong> partie${tocStatuses.length>1?"s":""} complétée${tocCompleted>1?"s":""} sur <strong>${tocStatuses.length}</strong></div>`:""}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const status=showTocStatus?tocSectionCompletion(sec,p):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-section-label">${escapeHtml(st)}</span>${status?.expected?`<span class="toc-status toc-status-${status.complete?"complete":"pending"}">${escapeHtml(status.label)}</span>`:""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${showTocStatus&&tocStatuses.length?`<div class="toc-progress-summary"><strong>${tocCompleted}</strong> partie${tocStatuses.length>1?"s":""} complétée${tocCompleted>1?"s":""} sur <strong>${tocStatuses.length}</strong></div>`:""}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});const pageStatuses=showTocStatus?visibleSections.map(sec=>tocSectionCompletion(sec,p)).filter(x=>x.expected):[];const pageStatus=pageStatuses.length?{expected:true,complete:pageStatuses.every(x=>x.complete),label:pageStatuses.every(x=>x.complete)?"Complété":"En attente"}:null;return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span class="toc-page-label">${escapeHtml(pt)}</span>${pageStatus?.expected?`<span class="toc-status toc-status-${pageStatus.complete?"complete":"pending"}">${escapeHtml(pageStatus.label)}</span>`:""}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const status=showTocStatus?tocSectionCompletion(sec,p):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-section-label">${escapeHtml(st)}</span>${status?.expected?`<span class="toc-status toc-status-${status.complete?"complete":"pending"}">${escapeHtml(status.label)}</span>`:""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
@@ -1387,7 +1387,30 @@ function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.(
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
 async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
-function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
+function selectedCampaign(){
+  const cs=state.definition.campaigns??[];
+  // Une fois la campagne du lien identifiée, elle reste stable pendant toute la
+  // session répondant. La sélection de ligne Grist peut changer ensuite et ne
+  // doit jamais faire basculer le questionnaire vers une autre campagne.
+  if(state.resolvedCampaignId!=null){
+    const cached=cs.find(x=>String(x.id)===String(state.resolvedCampaignId));
+    if(cached)return cached;
+    state.resolvedCampaignId=null;
+  }
+  const remember=c=>{if(c)state.resolvedCampaignId=c.id;return c};
+  /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */
+  const access=requestedParam("Acces_");
+  if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return remember(c);}
+  const requested=requestedParam("Campagne_");
+  if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return remember(c);}
+  // Une réponse déjà chargée est une preuve plus forte qu'une sélection Grist.
+  const responseCampaign=state.response?.Campagne_Code;
+  if(responseCampaign!=null){const raw=codeOf(responseCampaign);const c=cs.find(x=>String(x.id)===String(raw)||String(codeOf(x.Campagne_Code))===String(raw));if(c)return remember(c);}
+  const candidate=state.selectedRecord?.Campagne_Code;
+  if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===String(raw)||String(codeOf(x.Campagne_Code))===String(raw));if(c)return remember(c);}
+  if(cs.length===1)return remember(cs[0]);
+  throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");
+}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
