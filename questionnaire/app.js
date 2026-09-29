@@ -405,6 +405,40 @@ export function allowsPostValidationEdit(version={}) {
 }
 function responseIsLocked(){return String(state.response?.Statut??"").toLowerCase()==="validé" && !allowsPostValidationEdit(state.definition?.version);}
 
+function tocSectionCompletion(section,page){
+  const sectionCode=codeOf(section.Section_Code);
+  let expected=false, complete=true;
+  for(const q of section.questions??[]){
+    if(isDisplayBlock(q)||isDataTableQuestion(q)||!isRequiredQuestion(q))continue;
+    expected=true;
+    const qc=codeOf(q.Question_Code);
+    const invalid=matrixKind(q)?matrixErrors(q,state.answers).length>0:Boolean(validateQuestion(q,state.answers[qc],true));
+    if(invalid)complete=false;
+  }
+  const allTypes=[];
+  const walk=types=>{for(const t of types??[]){allTypes.push(t);walk(t.children)}};
+  walk(page.repeatableTypes??[]);
+  for(const type of allTypes){
+    const qs=visibleFicheQuestions(type,state.definition,state.answers).filter(q=>resolveRefCode(q.Section_Code,state.definition.sections,"Section_Code")===sectionCode);
+    const relevantRequired=qs.some(q=>isRequiredQuestion(q));
+    if(!relevantRequired && !(type.minimum>0))continue;
+    expected=true;
+    const list=(state.fiches[type.code]??[]).filter(f=>type.parentCode?Boolean(f.parentElementId):!f.parentElementId);
+    if(type.minimum>0 && list.length<type.minimum){complete=false;continue;}
+    for(const fiche of list){
+      const combined={...state.answers,...(fiche.answers??{})};
+      for(const q of visibleFicheQuestions(type,state.definition,combined).filter(q=>resolveRefCode(q.Section_Code,state.definition.sections,"Section_Code")===sectionCode)){
+        if(!isRequiredQuestion(q))continue;
+        const qc=codeOf(q.Question_Code);
+        const invalid=matrixKind(q)?matrixErrors(q,fiche.answers??{}).length>0:Boolean(validateQuestion(q,fiche.answers?.[qc],true));
+        if(invalid){complete=false;break;}
+      }
+      if(!complete)break;
+    }
+  }
+  return expected?{expected:true,complete,label:complete?"Complété":"En attente"}:{expected:false,complete:true,label:""};
+}
+
 function exportHasValue(value){return !(value==null||value===""||(Array.isArray(value)&&!value.length));}
 function exportAnswerLabel(q,value,answers={}){
   if(!exportHasValue(value))return "";
@@ -833,7 +867,10 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const showTocStatus=isTrue(vm.version.Afficher_statut_sommaire);
+  const tocStatuses=showTocStatus?vm.pages.flatMap(p=>(p.sections??[]).map(sec=>tocSectionCompletion(sec,p))).filter(x=>x.expected):[];
+  const tocCompleted=tocStatuses.filter(x=>x.complete).length;
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${showTocStatus&&tocStatuses.length?`<div class="toc-progress-summary"><strong>${tocCompleted}</strong> partie${tocStatuses.length>1?"s":""} complétée${tocCompleted>1?"s":""} sur <strong>${tocStatuses.length}</strong></div>`:""}${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);const status=showTocStatus?tocSectionCompletion(sec,p):null;return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-section-label">${escapeHtml(st)}</span>${status?.expected?`<span class="toc-status toc-status-${status.complete?"complete":"pending"}">${escapeHtml(status.label)}</span>`:""}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
