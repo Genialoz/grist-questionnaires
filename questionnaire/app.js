@@ -1502,53 +1502,39 @@ function ensureUniqueLinkPrivateResume(){
 }
 
 
-let previewReloadInProgress=false;
-let lastPreviewVersion="";
-
-function currentDefinitionVersionCode(){
-  return codeOf(state.definition?.version?.Version_Code ?? "");
+let gristSelectionReloading=false;
+function selectedVersionCandidate(record){
+  if(!record)return "";
+  return String(codeOf(record.Version_Code ?? record.version_Code ?? record.id) ?? "").trim();
 }
-
-async function reloadInternalPreviewIfChanged(force=false){
-  if(hasRealResponseContext() || previewReloadInProgress)return;
-  const wanted=requestedPreviewVersion();
-  if(!wanted)return;
-  const current=currentDefinitionVersionCode();
-  if(!force && wanted===current && wanted===lastPreviewVersion)return;
-  previewReloadInProgress=true;
+async function reloadFromGristSelection(record){
+  if(hasRealResponseContext() || gristSelectionReloading || !record)return;
+  const candidate=selectedVersionCandidate(record);
+  if(!candidate)return;
+  const current=String(codeOf(state.definition?.version?.Version_Code ?? "") ?? "").trim();
+  const currentId=String(state.definition?.version?.id ?? "").trim();
+  if(candidate===current || candidate===currentId)return;
+  gristSelectionReloading=true;
   try{
+    state.selectedRecord=record;
     state.previewMode=true;
-    state.response=null;
-    state.principalElement=null;
-    state.answers={};
-    state.fiches={};
-    state.ficheEditor=null;
-    state.subFicheEditor=null;
-    state.pageIndex=0;
-    state.saveError="";
-    state.statusMessage="";
-    state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    lastPreviewVersion=currentDefinitionVersionCode() || wanted;
+    state.response=null; state.principalElement=null; state.answers={}; state.fiches={};
+    state.ficheEditor=null; state.subFicheEditor=null; state.pageIndex=0;
+    state.definition=await loadDefinition(grist.docApi,record);
     render();
   }catch(e){
     const status=document.querySelector("#status");
     if(status)status.innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
-  }finally{
-    previewReloadInProgress=false;
-  }
+  }finally{gristSelectionReloading=false;}
 }
 
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{
-      state.selectedRecord=record;
-      if(!hasRealResponseContext())reloadInternalPreviewIfChanged(false);
-    });
+    grist.onRecord(record=>{ state.selectedRecord=record; reloadFromGristSelection(record); });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    lastPreviewVersion=currentDefinitionVersionCode() || requestedPreviewVersion();
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
@@ -1560,16 +1546,6 @@ async function boot() {
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
     render();
-    if(!hasRealResponseContext()){
-      window.addEventListener("storage",e=>{
-        if(e.key==="gristionnaire.previewVersion")reloadInternalPreviewIfChanged(false);
-      });
-      window.addEventListener("focus",()=>reloadInternalPreviewIfChanged(false));
-      document.addEventListener("visibilitychange",()=>{
-        if(!document.hidden)reloadInternalPreviewIfChanged(false);
-      });
-      setInterval(()=>reloadInternalPreviewIfChanged(false),1000);
-    }
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
