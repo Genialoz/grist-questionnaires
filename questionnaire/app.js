@@ -151,16 +151,19 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
-  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
-  // active campaign, its version is authoritative over stale preview context.
+  // Internal Concepteur preview has priority when there is no real response
+  // context. This keeps p/38 synchronized with the version selected in the
+  // Concepteur instead of letting an ACL-visible campaign override it.
+  const previewVersion=requestedPreviewVersion();
+  if(!version && previewVersion){
+    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
+  }
+  // LinkKey Acces_ may be hidden from widget JS. Only use the single visible
+  // campaign as a fallback when no Concepteur preview selected a version.
   const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
   if(!version && aclCampaigns.length===1){
     const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
-  }
-  const previewVersion=requestedPreviewVersion();
-  if(!version && previewVersion){
-    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
   const candidate = selectedRecord && (selectedRecord.Version_Code ?? selectedRecord.version_Code ?? selectedRecord.id);
   if (!version && candidate != null) {
@@ -1508,7 +1511,10 @@ async function boot() {
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+    // A preview selected by the Concepteur must remain an internal preview.
+    // Do not demote it merely because ACLs expose one personalized campaign;
+    // otherwise p/38 starts the respondent/campaign path and asks for a campaign.
+    if(state.previewMode && !requestedPreviewVersion() && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
     // For a public unique link, mint the respondent-private Reprise_ before any
