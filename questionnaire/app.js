@@ -108,6 +108,16 @@ export function normalizeRules(loaded) {
 }
 
 function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function p38DiagnosticSnapshot(note=""){
+  let pv="",pq="",storageError="";
+  try{pv=String(localStorage.getItem("gristionnaire.previewVersion")||"");pq=String(localStorage.getItem("gristionnaire.previewQuestionnaire")||"")}catch(e){storageError=String(e?.message||e)}
+  const rec=state.selectedRecord||{}; const candidate=rec.Version_Code??rec.version_Code??rec.id??"";
+  const campaigns=(state.definition?.campaigns||[]).filter(active); const defVersion=codeOf(state.definition?.version?.Version_Code)||String(state.definition?.version?.id??"");
+  let box=document.getElementById("p38-diagnostic-questionnaire");
+  if(!box){box=document.createElement("div");box.id="p38-diagnostic-questionnaire";box.style.cssText="position:fixed;right:10px;bottom:10px;z-index:99999;max-width:500px;max-height:55vh;overflow:auto;background:#eef7ff;border:2px solid #0969da;padding:10px;font:12px/1.35 monospace;color:#222;white-space:pre-wrap;box-shadow:0 2px 12px #0003";document.body.appendChild(box)}
+  box.textContent=["DIAGNOSTIC P/38 — QUESTIONNAIRE",note,`storage previewQuestionnaire = ${pq}`,`storage previewVersion = ${pv}`,`requestedPreviewVersion() = ${requestedPreviewVersion()}`,`hasRealResponseContext() = ${hasRealResponseContext()}`,`URL a Apercu_/Preview_ = ${hasExplicitPreviewContext()}`,`onRecord reçu = ${Boolean(state.selectedRecord)}`,`onRecord candidate version/id = ${String(codeOf(candidate)||candidate||"")}`,`version chargée = ${defVersion}`,`previewMode = ${state.previewMode}`,`campagnes actives visibles = ${campaigns.length}`,`réponse hydratée = ${Boolean(state.response)}`,`storage error = ${storageError||"aucune"}`].join("\n");
+}
+
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -150,6 +160,13 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if(!version && accessVersion!=null && accessVersion!==""){
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
+  }
+  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
+  // active campaign, its version is authoritative over stale preview context.
+  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
+  if(!version && aclCampaigns.length===1){
+    const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
+    version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
   }
   const previewVersion=requestedPreviewVersion();
   if(!version && previewVersion){
@@ -1498,7 +1515,7 @@ async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{ state.selectedRecord=record; });
+    grist.onRecord(record=>{ state.selectedRecord=record; queueMicrotask(()=>p38DiagnosticSnapshot("événement grist.onRecord reçu")); });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
@@ -1512,6 +1529,7 @@ async function boot() {
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
     render();
+    p38DiagnosticSnapshot("fin du boot()");
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
