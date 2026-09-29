@@ -107,17 +107,8 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
-function p38DiagnosticSnapshot(note=""){
-  let pv="",pq="",storageError="";
-  try{pv=String(localStorage.getItem("gristionnaire.previewVersion")||"");pq=String(localStorage.getItem("gristionnaire.previewQuestionnaire")||"")}catch(e){storageError=String(e?.message||e)}
-  const rec=state.selectedRecord||{}; const candidate=rec.Version_Code??rec.version_Code??rec.id??"";
-  const campaigns=(state.definition?.campaigns||[]).filter(active); const defVersion=codeOf(state.definition?.version?.Version_Code)||String(state.definition?.version?.id??"");
-  let box=document.getElementById("p38-diagnostic-questionnaire");
-  if(!box){box=document.createElement("div");box.id="p38-diagnostic-questionnaire";box.style.cssText="position:fixed;right:10px;bottom:10px;z-index:99999;max-width:500px;max-height:55vh;overflow:auto;background:#eef7ff;border:2px solid #0969da;padding:10px;font:12px/1.35 monospace;color:#222;white-space:pre-wrap;box-shadow:0 2px 12px #0003";document.body.appendChild(box)}
-  box.textContent=["DIAGNOSTIC P/38 — QUESTIONNAIRE",note,`storage previewQuestionnaire = ${pq}`,`storage previewVersion = ${pv}`,`requestedPreviewVersion() = ${requestedPreviewVersion()}`,`hasRealResponseContext() = ${hasRealResponseContext()}`,`Acces_ présent = ${Boolean(requestedParam("Acces_"))}`,`Reprise_ présent = ${Boolean(requestedResumeToken())}`,`Reponse_ présent = ${Boolean(requestedParam("Reponse_"))}`,`Campagne_ présent = ${Boolean(requestedParam("Campagne_"))}`,`URL a Apercu_/Preview_ = ${hasExplicitPreviewContext()}`,`onRecord reçu = ${Boolean(state.selectedRecord)}`,`onRecord candidate version/id = ${String(codeOf(candidate)||candidate||"")}`,`version chargée = ${defVersion}`,`previewMode = ${state.previewMode}`,`campagnes actives visibles = ${campaigns.length}`,`réponse hydratée = ${Boolean(state.response)}`,`storage error = ${storageError||"aucune"}`].join("\n");
-}
-
+function hasExplicitResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function hasRealResponseContext(){return hasExplicitResponseContext();}
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -144,7 +135,17 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   let version=null;
   // Une reprise désigne une réponse précise : sa version est prioritaire sur tout
   // contexte de campagne, de session ou de sélection Grist.
-  const resumeToken=requestedResumeToken();
+  const explicitResumeToken=requestedParam("Reprise_")||requestedParam("Reprise");
+  const pendingResumeToken=pendingUniqueResumeToken();
+  const storedPreviewVersion=(()=>{try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}})();
+  const activeCampaignsForContext=(loaded.CAMPAGNES??[]).filter(active);
+  // pendingUniqueResume is only a transient fallback for LIEN_UNIQUE. It must not
+  // turn the internal p/38 preview into a real response context after that link
+  // has been left. When several campaigns are visible and the Concepteur has
+  // selected a preview version, the pending token is stale and is discarded.
+  const pendingResumeIsUsable=Boolean(pendingResumeToken) && !(storedPreviewVersion && !hasExplicitResponseContext() && activeCampaignsForContext.length!==1);
+  if(pendingResumeToken && !pendingResumeIsUsable)setPendingUniqueResumeToken("");
+  const resumeToken=explicitResumeToken||(pendingResumeIsUsable?pendingResumeToken:"");
   const resumeResponse=resumeToken ? findResponseByResumeToken(loaded.REPONSES,resumeToken) : null;
   if(resumeResponse?.Version_Code!=null && resumeResponse.Version_Code!==""){
     const c=resolveRefCode(resumeResponse.Version_Code,versions,"Version_Code");
@@ -1515,7 +1516,7 @@ async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{ state.selectedRecord=record; queueMicrotask(()=>p38DiagnosticSnapshot("événement grist.onRecord reçu")); });
+    grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
@@ -1529,7 +1530,6 @@ async function boot() {
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
     render();
-    p38DiagnosticSnapshot("fin du boot()");
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
