@@ -151,19 +151,16 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
-  // Internal Concepteur preview has priority when there is no real response
-  // context. This keeps p/38 synchronized with the version selected in the
-  // Concepteur instead of letting an ACL-visible campaign override it.
-  const previewVersion=requestedPreviewVersion();
-  if(!version && previewVersion){
-    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
-  }
-  // LinkKey Acces_ may be hidden from widget JS. Only use the single visible
-  // campaign as a fallback when no Concepteur preview selected a version.
+  // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
+  // active campaign, its version is authoritative over stale preview context.
   const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
   if(!version && aclCampaigns.length===1){
     const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
+  }
+  const previewVersion=requestedPreviewVersion();
+  if(!version && previewVersion){
+    version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
   const candidate = selectedRecord && (selectedRecord.Version_Code ?? selectedRecord.version_Code ?? selectedRecord.id);
   if (!version && candidate != null) {
@@ -1504,17 +1501,55 @@ function ensureUniqueLinkPrivateResume(){
   try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{setPendingUniqueResumeToken("");return false}
 }
 
+
+let previewReloadInProgress=false;
+let lastPreviewVersion="";
+
+function currentDefinitionVersionCode(){
+  return codeOf(state.definition?.version?.Version_Code ?? "");
+}
+
+async function reloadInternalPreviewIfChanged(force=false){
+  if(hasRealResponseContext() || previewReloadInProgress)return;
+  const wanted=requestedPreviewVersion();
+  if(!wanted)return;
+  const current=currentDefinitionVersionCode();
+  if(!force && wanted===current && wanted===lastPreviewVersion)return;
+  previewReloadInProgress=true;
+  try{
+    state.previewMode=true;
+    state.response=null;
+    state.principalElement=null;
+    state.answers={};
+    state.fiches={};
+    state.ficheEditor=null;
+    state.subFicheEditor=null;
+    state.pageIndex=0;
+    state.saveError="";
+    state.statusMessage="";
+    state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
+    lastPreviewVersion=currentDefinitionVersionCode() || wanted;
+    render();
+  }catch(e){
+    const status=document.querySelector("#status");
+    if(status)status.innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
+  }finally{
+    previewReloadInProgress=false;
+  }
+}
+
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
-    grist.onRecord(record=>{ state.selectedRecord=record; });
+    grist.onRecord(record=>{
+      state.selectedRecord=record;
+      if(!hasRealResponseContext())reloadInternalPreviewIfChanged(false);
+    });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    // A preview selected by the Concepteur must remain an internal preview.
-    // Do not demote it merely because ACLs expose one personalized campaign;
-    // otherwise p/38 starts the respondent/campaign path and asks for a campaign.
-    if(state.previewMode && !requestedPreviewVersion() && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+    lastPreviewVersion=currentDefinitionVersionCode() || requestedPreviewVersion();
+    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
     // For a public unique link, mint the respondent-private Reprise_ before any
@@ -1525,6 +1560,16 @@ async function boot() {
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
     render();
+    if(!hasRealResponseContext()){
+      window.addEventListener("storage",e=>{
+        if(e.key==="gristionnaire.previewVersion")reloadInternalPreviewIfChanged(false);
+      });
+      window.addEventListener("focus",()=>reloadInternalPreviewIfChanged(false));
+      document.addEventListener("visibilitychange",()=>{
+        if(!document.hidden)reloadInternalPreviewIfChanged(false);
+      });
+      setInterval(()=>reloadInternalPreviewIfChanged(false),1000);
+    }
   } catch(e) {
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
