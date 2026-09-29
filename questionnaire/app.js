@@ -1553,6 +1553,21 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
+    // L’aperçu Concepteur -> Questionnaire est transmis par localStorage.
+    // Le widget répondant est un iframe distinct : il doit donc réagir aux
+    // changements de version sans confondre ce mécanisme avec un vrai lien
+    // de campagne (Acces_/Reprise_/Reponse_/Campagne_).
+    if(!hasRealResponseContext()){
+      window.addEventListener("storage",event=>{
+        if(event.key!=="gristionnaire.previewVersion")return;
+        const next=String(event.newValue||"").trim();
+        const current=String(state.definition?.version?.Version_Code||"").trim();
+        if(!next||next===current)return;
+        // L’aperçu ne contient aucune donnée persistée : un rechargement ciblé
+        // est le moyen le plus sûr de repartir avec la nouvelle définition.
+        window.location.reload();
+      });
+    }
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
