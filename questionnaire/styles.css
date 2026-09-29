@@ -121,17 +121,3 @@ textarea { min-height:110px; resize:vertical; }
 
 .return-toc-wrap{margin:0 0 16px}.return-toc{font-weight:650}
 .readonly-data-table{overflow:auto;margin:.5rem 0 1rem}.readonly-data-table table{width:100%;border-collapse:collapse;background:#fff}.readonly-data-table th,.readonly-data-table td{padding:.65rem .75rem;border:1px solid #d9dee7;text-align:left;vertical-align:top}.readonly-data-table th{background:#f4f6f9;font-weight:700}.data-table-empty{padding:.85rem 1rem;border:1px dashed #c8ced8;border-radius:8px;background:#fafbfc;color:#596273}
-
-/* Optional completion badges in questionnaire summary */
-.toc-progress-summary{margin:0 0 10px;padding:8px 10px;border-radius:8px;background:#f3f1f6;color:#514b59;font-size:.9rem}
-.toc-section-link{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.toc-section-label{min-width:0}
-.toc-status{flex:0 0 auto;display:inline-flex;align-items:center;border-radius:999px;padding:2px 8px;font-size:.75rem;font-weight:700;line-height:1.5}
-.toc-status-pending{background:#f4eee3;color:#72541e}
-.toc-status-complete{background:#e7f2ea;color:#285f38}
-@media(max-width:600px){.toc-section-link{align-items:flex-start}.toc-status{margin-top:1px}}
-
-/* V2.5.2 - badge de statut sur les pages du sommaire */
-.toc-page-link{display:flex;align-items:center;justify-content:space-between;gap:10px}
-.toc-page-label{min-width:0}
-@media(max-width:600px){.toc-page-link{align-items:flex-start}}
