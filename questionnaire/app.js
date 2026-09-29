@@ -107,8 +107,7 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasExplicitResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
-function hasRealResponseContext(){return hasExplicitResponseContext();}
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -135,17 +134,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   let version=null;
   // Une reprise désigne une réponse précise : sa version est prioritaire sur tout
   // contexte de campagne, de session ou de sélection Grist.
-  const explicitResumeToken=requestedParam("Reprise_")||requestedParam("Reprise");
-  const pendingResumeToken=pendingUniqueResumeToken();
-  const storedPreviewVersion=(()=>{try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}})();
-  const activeCampaignsForContext=(loaded.CAMPAGNES??[]).filter(active);
-  // pendingUniqueResume is only a transient fallback for LIEN_UNIQUE. It must not
-  // turn the internal p/38 preview into a real response context after that link
-  // has been left. When several campaigns are visible and the Concepteur has
-  // selected a preview version, the pending token is stale and is discarded.
-  const pendingResumeIsUsable=Boolean(pendingResumeToken) && !(storedPreviewVersion && !hasExplicitResponseContext() && activeCampaignsForContext.length!==1);
-  if(pendingResumeToken && !pendingResumeIsUsable)setPendingUniqueResumeToken("");
-  const resumeToken=explicitResumeToken||(pendingResumeIsUsable?pendingResumeToken:"");
+  const resumeToken=requestedResumeToken();
   const resumeResponse=resumeToken ? findResponseByResumeToken(loaded.REPONSES,resumeToken) : null;
   if(resumeResponse?.Version_Code!=null && resumeResponse.Version_Code!==""){
     const c=resolveRefCode(resumeResponse.Version_Code,versions,"Version_Code");
@@ -1518,6 +1507,7 @@ async function boot() {
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
+    if(state.previewMode)setPendingUniqueResumeToken("");
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
