@@ -107,7 +107,7 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -1276,6 +1276,12 @@ function setPendingUniqueResumeToken(token){
   try{if(token)sessionStorage.setItem("gristionnaire.pendingUniqueResume",String(token));else sessionStorage.removeItem("gristionnaire.pendingUniqueResume")}catch{}
 }
 function requestedResumeToken(){return requestedParam("Reprise_")||requestedParam("Reprise")||pendingUniqueResumeToken()}
+function hasExplicitResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function rememberedPreviewVersion(){
+  const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
+  if(explicit)return explicit;
+  try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
+}
 function accessibleResponse(def){
   const rows=(def.responses??[]).filter(r=>!isTrue(r.Supprime_logiquement));
   const resume=requestedResumeToken();
@@ -1506,8 +1512,12 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
+    // A pending LIEN_UNIQUE resume token is only a technical bridge between two
+    // loads. If p/38 is opened normally from the Concepteur, a remembered
+    // preview version must not inherit that stale bridge from an earlier visit.
+    // Explicit respondent parameters remain authoritative and are never cleared.
+    if(rememberedPreviewVersion() && !hasExplicitResponseContext()) setPendingUniqueResumeToken("");
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
-    if(state.previewMode)setPendingUniqueResumeToken("");
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
