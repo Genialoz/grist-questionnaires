@@ -115,12 +115,9 @@ function hasExplicitResponseParams(){
   return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));
 }
 function isInternalGristPreviewContext(){
-  // Le Concepteur mémorise toujours la version qu'il souhaite prévisualiser.
-  // Ce marqueur est plus fiable que style=singlePage : Grist peut conserver ce
-  // style dans son URL alors que l'on est encore dans l'aperçu interne p/38.
-  // En revanche, un vrai lien répondant porte un contexte explicite
-  // (Acces_/Reprise_/Reponse_/Campagne_) et ne doit jamais devenir un aperçu.
-  return Boolean(storedPreviewVersion()) && !hasExplicitResponseParams();
+  // Le widget p/38 ouvert depuis Grist n'est pas un lien répondant singlePage.
+  // Les vrais liens générés (PERSONNALISE et LIEN_UNIQUE) utilisent singlePage.
+  return Boolean(storedPreviewVersion()) && !hasExplicitResponseParams() && String(requestedParam("style")||"").toLowerCase()!=="singlepage";
 }
 function requestedPreviewVersion(){
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
