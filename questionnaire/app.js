@@ -847,7 +847,33 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
-  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}>${escapeHtml(pt)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}">${escapeHtml(st)}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
+  const completionBadge=status=>status?`<span class="toc-completion toc-completion-${status.state}">${escapeHtml(status.label)}</span>`:"";
+  const questionHasRequiredPart=q=>{
+    if(isDisplayBlock(q)||isDataTableQuestion(q))return false;
+    if(isRequiredQuestion(q))return true;
+    if(matrixKind(q))return matrixRows(q,state.definition).some(r=>isRequiredQuestion(r))||matrixCols(q,state.definition).some(c=>c.required);
+    return false;
+  };
+  const sectionCompletion=section=>{
+    const required=(section.questions??[]).filter(questionHasRequiredPart);
+    if(!required.length)return null;
+    const errors=required.some(q=>matrixKind(q)?matrixErrors(q,state.answers).length>0:Boolean(validateQuestion(q,state.answers[codeOf(q.Question_Code)],true)));
+    return errors?{state:"pending",label:"En attente"}:{state:"complete",label:"Complété"};
+  };
+  const repeatableCompletion=type=>{
+    const list=state.fiches[type.code]??[];
+    const hasObligation=type.minimum>0||list.length>0;
+    if(!hasObligation)return null;
+    if(list.length<type.minimum)return {state:"pending",label:"En attente"};
+    for(const fiche of list){if(Object.keys(validateFiche(type,state.definition,fiche.answers??{},state.answers)).length)return {state:"pending",label:"En attente"};}
+    return {state:"complete",label:"Complété"};
+  };
+  const pageCompletion=page=>{
+    const statuses=[...(page.sections??[]).map(sectionCompletion),...(page.repeatableTypes??[]).map(repeatableCompletion)].filter(Boolean);
+    if(!statuses.length)return null;
+    return statuses.some(x=>x.state==="pending")?{state:"pending",label:"En attente"}:{state:"complete",label:"Complété"};
+  };
+  const renderTocHtml=(title="Sommaire")=>`<nav class="questionnaire-toc" aria-label="Sommaire du questionnaire"><div class="questionnaire-toc-title">${escapeHtml(title||"Sommaire")}</div>${vm.pages.map((p,pi)=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const pageStatus=pageCompletion(p);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span class="toc-link-label">${escapeHtml(pt)}</span>${completionBadge(pageStatus)}</button>${visibleSections.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-link-label">${escapeHtml(st)}</span>${completionBadge(sectionCompletion(sec))}</button>`}).join("")}</div>`:""}</div>`}).join("")}${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`;
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
