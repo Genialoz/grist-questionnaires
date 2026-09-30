@@ -107,12 +107,24 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function storedPreviewVersion(){
+  try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
+}
+function hasExplicitResponseParams(){
+  return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));
+}
+function isInternalGristPreviewContext(){
+  // Le widget p/38 ouvert depuis Grist n'est pas un lien répondant singlePage.
+  // Les vrais liens générés (PERSONNALISE et LIEN_UNIQUE) utilisent singlePage.
+  return Boolean(storedPreviewVersion()) && !hasExplicitResponseParams() && String(requestedParam("style")||"").toLowerCase()!=="singlepage";
+}
 function requestedPreviewVersion(){
-  if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
   if(explicit)return explicit;
-  try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
+  if(isInternalGristPreviewContext())return storedPreviewVersion();
+  if(hasRealResponseContext())return "";
+  return storedPreviewVersion();
 }
 function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
 function hasAclPersonalizedCampaignContext(def){
@@ -1506,10 +1518,13 @@ async function boot() {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
-    state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
-    if(state.previewMode)setPendingUniqueResumeToken("");
+    const internalPreview=isInternalGristPreviewContext();
+    // Un ancien jeton technique LIEN_UNIQUE ne doit pas transformer l'ouverture
+    // normale de p/38 en reprise. Les vrais liens singlePage ne passent pas ici.
+    if(internalPreview)setPendingUniqueResumeToken("");
+    state.previewMode=internalPreview || (Boolean(requestedPreviewVersion()) && !hasRealResponseContext());
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+    if(state.previewMode && !internalPreview && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
     // For a public unique link, mint the respondent-private Reprise_ before any
