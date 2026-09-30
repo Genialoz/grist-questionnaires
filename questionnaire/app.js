@@ -129,12 +129,14 @@ function requestedPreviewVersion(){
 function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
-  // When ACLs leave exactly one personalized campaign visible, that campaign is
-  // authoritative over a stale localStorage preview left by the Concepteur.
+  // A single PERSONNALISE campaign exposed by ACLs is therefore authoritative:
+  // it must restore respondent mode so campaign personalization is applied/locked.
+  // LIEN_UNIQUE is deliberately excluded here: its mere visibility must never
+  // hijack the internal p/38 preview selected from the Concepteur.
   const campaigns=(def?.campaigns??[]).filter(active);
   if(campaigns.length!==1)return false;
   const c=campaigns[0];
-  return isUniqueLinkCampaign(c) || Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
+  return !isUniqueLinkCampaign(c) && Boolean(codeOf(c.Question_personnalisation_Code) && String(c.Valeur_personnalisation??"").trim());
 }
 export async function loadDefinition(docApi, selectedRecord=null) {
   const loaded={};
@@ -1524,7 +1526,7 @@ async function boot() {
     if(internalPreview)setPendingUniqueResumeToken("");
     state.previewMode=internalPreview || (Boolean(requestedPreviewVersion()) && !hasRealResponseContext());
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
-    if(state.previewMode && !internalPreview && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
+    if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
     }
     // For a public unique link, mint the respondent-private Reprise_ before any
