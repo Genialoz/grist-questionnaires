@@ -116,9 +116,15 @@ textarea { min-height:110px; resize:vertical; }
 .toc-page{margin:3px 0}.toc-page-link,.toc-section-link{display:block;width:100%;border:0;background:transparent;text-align:left;cursor:pointer;color:#5c3b8b;border-radius:6px}
 .toc-page-link{padding:7px 8px;font-weight:650}.toc-page-link:hover,.toc-section-link:hover{background:#f0ebf6}.toc-page.is-current>.toc-page-link{background:#eee9f5;color:#45276d}
 .toc-sections{padding-left:16px}.toc-section-link{padding:5px 8px;font-size:.9rem;color:#696071}
-.toc-page-link,.toc-section-link{display:flex;align-items:center;gap:8px}.toc-link-label{flex:1;min-width:0}.toc-completion{flex:0 0 auto;display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.35;white-space:nowrap}.toc-completion-pending{background:#f3f4f6;color:#5f6368;border:1px solid #d9dce1}.toc-completion-complete{background:#e8f5ec;color:#27643a;border:1px solid #b9dec4}
 .section[id]{scroll-margin-top:82px}
 @media(max-width:600px){.questionnaire-toc{padding:12px}.toc-sections{padding-left:10px}}
 
 .return-toc-wrap{margin:0 0 16px}.return-toc{font-weight:650}
 .readonly-data-table{overflow:auto;margin:.5rem 0 1rem}.readonly-data-table table{width:100%;border-collapse:collapse;background:#fff}.readonly-data-table th,.readonly-data-table td{padding:.65rem .75rem;border:1px solid #d9dee7;text-align:left;vertical-align:top}.readonly-data-table th{background:#f4f6f9;font-weight:700}.data-table-empty{padding:.85rem 1rem;border:1px dashed #c8ced8;border-radius:8px;background:#fafbfc;color:#596273}
+
+/* Statut des parties dans le sommaire */
+.toc-page-link,.toc-section-link{display:flex;align-items:center;gap:8px}
+.toc-link-label{flex:1;min-width:0;text-align:left}
+.toc-completion{flex:0 0 auto;display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.35;white-space:nowrap}
+.toc-completion-pending{background:#f3f4f6;color:#5f6368;border:1px solid #d9dce1}
+.toc-completion-complete{background:#e8f5ec;color:#27643a;border:1px solid #b9dec4}
