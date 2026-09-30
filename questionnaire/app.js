@@ -8,7 +8,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -107,7 +107,7 @@ export function normalizeRules(loaded) {
   }));
 }
 
-function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));}
+function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));}
 function requestedPreviewVersion(){
   if(hasRealResponseContext())return "";
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
@@ -991,7 +991,6 @@ function clearRenderedAnswer(scope,attr,code){
 }
 function clearPrincipalAnswer(code){
   if(!code)return;
-  state.principalDirty=true;
   const before=state.answers[code];
   clearRenderedAnswer(document,"data-question",code);
   state.answers[code]=emptyAnswerForQuestion(code);
@@ -1147,7 +1146,6 @@ async function saveCurrentSubFiche() {
 
 function onMatrixAnswer(e){
   const el=e.target,qc=el.dataset.matrixQuestion,rc=el.dataset.matrixRow,cc=el.dataset.matrixCol;if(!qc||!rc||!cc)return;
-  if(!el.dataset.matrixFiche)state.principalDirty=true;
   const target=el.dataset.matrixFiche?(el.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor):null;
   const answers=target?target.answers:state.answers; answers[qc]??={};
   const kind=matrixKind((state.definition.questions??[]).find(q=>codeOf(q.Question_Code)===qc));
@@ -1180,7 +1178,6 @@ function collectPrincipalMatrixAnswers(root=document, answers=state.answers){
 function onAnswer(e) {
   const code=e.target.dataset.question;
   if (!code) return;
-  state.principalDirty=true;
   if(e.target.type==="checkbox"){
     let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
@@ -1438,45 +1435,34 @@ async function writeAnswers(element,questions,answers){
   }
   if(actions.length)await grist.docApi.applyUserActions(actions);
 }
-async function bumpElementRevision(element){const er=Number(element.Revision||0)+1,now=Date.now()/1000;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:now}]]);state.response={...state.response,Date_modification:now};element.Revision=er;}
+async function bumpRevisions(element){const rr=Number(state.response.Revision||0)+1,er=Number(element.Revision||0)+1;await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",element.id,{Revision:er}],["UpdateRecord","REPONSES",state.response.id,{Revision:rr,Date_modification:Date.now()/1000}]]);state.response={...state.response,Revision:rr,Date_modification:Date.now()/1000};element.Revision=er;}
 async function savePrincipal(){try{
   state.saveError="";
   assertResponseEditable();
-  // La navigation ne doit pas écrire le bloc principal s'il n'a pas été modifié
-  // dans ce navigateur. Sur un lien collectif, une autre personne peut avoir
-  // créé/enregistré une fiche entre-temps sans rendre cette session obsolète.
-  if(!state.principalDirty){
-    await ensureResponse();
-    await refreshPersistenceRows();
-    const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
-    state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.fiches=h.fiches;
-    applyCampaignPersonalization();
-    return true;
-  }
+  // Relire les cellules directement dans le DOM juste avant la sauvegarde.
+  // Cela évite de dépendre du timing des événements change/input des matrices.
   collectPrincipalMatrixAnswers(document,state.answers);
   state.saving=true;render();
   await ensureResponse();
-  // Concurrence optimiste au bon niveau : seule une modification concurrente
-  // du même élément principal bloque. Une fiche indépendante ne bloque plus.
-  await refreshPersistenceRows();
-  const freshPrincipal=state.definition.responseElements.find(e=>e.id===state.principalElement?.id);
-  if(state.principalElement&&freshPrincipal)assertRevision(state.principalElement.Revision,freshPrincipal.Revision);
-  if(freshPrincipal)state.principalElement=freshPrincipal;
+  await checkResponseRevision();
   const qs=state.definition.questions.filter(q=>!resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code"));
   await writeAnswers(state.principalElement,qs,state.answers);
-  await bumpElementRevision(state.principalElement);
+  await bumpRevisions(state.principalElement);
   await refreshPersistenceRows();
+  // La vérité après Enregistrer est ce qui vient réellement d'être relu depuis Grist.
   const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
-  state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.fiches=h.fiches;state.principalDirty=false;
-  applyCampaignPersonalization();
+  state.response=h.response;
+  state.principalElement=h.principalElement;
+  state.answers=h.principalAnswers;
+  state.fiches=h.fiches;
   state.saving=false;
   return true;
 }catch(e){state.saving=false;showSaveError(e);render();return false;}}
-async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await refreshPersistenceRows();const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
-  await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
+async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await checkResponseRevision();const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
+  await writeAnswers(el,type.questions,editor.answers);await bumpRevisions(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
-async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
-async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;if(state.previewMode){const all=state.fiches[typeCode]??[];const pos=all.indexOf(fiche);if(pos>=0)all.splice(pos,1);state.subFicheEditor=null;render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;if(state.previewMode){const all=state.fiches[typeCode]??[];const pos=all.indexOf(fiche);if(pos>=0)all.splice(pos,1);state.subFicheEditor=null;render();return;}try{state.saving=true;render();await checkResponseRevision();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Revision:Number(state.response.Revision||0)+1,Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
 async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
@@ -1507,7 +1493,6 @@ async function boot() {
     grist.ready({requiredAccess:"full"});
     grist.onRecord(record=>{ state.selectedRecord=record; });
     state.previewMode=Boolean(requestedPreviewVersion()) && !hasRealResponseContext();
-    if(state.previewMode)setPendingUniqueResumeToken("");
     state.definition=await loadDefinition(grist.docApi,state.selectedRecord);
     if(state.previewMode && !hasExplicitPreviewContext() && hasAclPersonalizedCampaignContext(state.definition)){
       state.previewMode=false;
