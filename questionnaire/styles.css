@@ -128,3 +128,6 @@ textarea { min-height:110px; resize:vertical; }
 .toc-completion{flex:0 0 auto;display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:.74rem;font-weight:700;line-height:1.35;white-space:nowrap}
 .toc-completion-pending{background:#f3f4f6;color:#5f6368;border:1px solid #d9dce1}
 .toc-completion-complete{background:#e8f5ec;color:#27643a;border:1px solid #b9dec4}
+
+/* Sommaire personnalisable V1 */
+.questionnaire-toc-intro{margin:0 0 12px;color:#696071;line-height:1.45}.toc-grid{display:grid;grid-template-columns:repeat(var(--toc-cols,1),minmax(0,1fr));gap:8px 18px}.toc-cols-1{--toc-cols:1}.toc-cols-2{--toc-cols:2}.toc-cols-3{--toc-cols:3}.toc-grid .toc-page{margin:0;align-self:start}@media(max-width:760px){.toc-grid{grid-template-columns:1fr}}
