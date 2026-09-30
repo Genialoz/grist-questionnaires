@@ -854,7 +854,7 @@ function render() {
     if(matrixKind(q))return matrixRows(q,state.definition).some(r=>isRequiredQuestion(r))||matrixCols(q,state.definition).some(c=>c.required);
     return false;
   };
-  const sectionCompletion=section=>{
+  const sectionCompletionCore=section=>{
     const answerable=(section.questions??[]).filter(q=>!isDisplayBlock(q)&&!isDataTableQuestion(q));
     if(!answerable.length)return null;
     const required=answerable.filter(questionHasRequiredPart);
@@ -862,6 +862,7 @@ function render() {
     const errors=required.some(q=>matrixKind(q)?matrixErrors(q,state.answers).length>0:Boolean(validateQuestion(q,state.answers[codeOf(q.Question_Code)],true)));
     return errors?{state:"pending",label:"En attente",hasRequired:true}:{state:"complete",label:"Complété",hasRequired:true};
   };
+  const sectionCompletion=section=>isTrue(section?.Afficher_badge_completion)?sectionCompletionCore(section):null;
   const repeatableCompletion=type=>{
     const list=state.fiches[type.code]??[];
     const hasRequired=type.minimum>0;
@@ -871,7 +872,8 @@ function render() {
     return {state:"complete",label:"Complété",hasRequired:true};
   };
   const pageCompletion=page=>{
-    const statuses=[...(page.sections??[]).map(sectionCompletion),...(page.repeatableTypes??[]).map(repeatableCompletion)].filter(Boolean);
+    if(!isTrue(page?.Afficher_badge_completion))return null;
+    const statuses=[...(page.sections??[]).map(sectionCompletionCore),...(page.repeatableTypes??[]).map(repeatableCompletion)].filter(Boolean);
     if(!statuses.length)return null;
     const requiredStatuses=statuses.filter(x=>x.hasRequired);
     if(requiredStatuses.length)return requiredStatuses.some(x=>x.state==="pending")?{state:"pending",label:"En attente"}:{state:"complete",label:"Complété"};
