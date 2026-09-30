@@ -168,7 +168,14 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
   // active campaign, its version is authoritative over stale preview context.
   const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
-  if(!version && aclCampaigns.length===1){
+  // En aperçu interne p/38, la simple visibilité ACL d'une campagne LIEN_UNIQUE
+  // ne doit jamais imposer sa version : le Concepteur (previewVersion) reste prioritaire.
+  // Sur un vrai lien répondant singlePage, isInternalGristPreviewContext() est faux
+  // et la campagne LIEN_UNIQUE conserve donc son comportement normal.
+  const aclCampaignHijacksInternalPreview = aclCampaigns.length===1
+    && isInternalGristPreviewContext()
+    && isUniqueLinkCampaign(aclCampaigns[0]);
+  if(!version && aclCampaigns.length===1 && !aclCampaignHijacksInternalPreview){
     const av=aclCampaigns[0].Version_Code,c=resolveRefCode(av,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
   }
