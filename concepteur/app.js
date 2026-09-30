@@ -2,8 +2,16 @@ import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 const TABLES=["QUESTIONNAIRES","VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","FILTRES_TYPES_FICHES","CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","CONDITIONS","REGLES_CONDITION","FILTRES_CHOIX","COLONNES_MATRICE","CAMPAGNES"];
 const S={data:{},questionnaire:null,version:null,selected:null,showInactive:false,resultsExportData:null};
-function rememberRespondentPreview(){try{if(S.version)localStorage.setItem("gristionnaire.previewVersion",String(S.version));else localStorage.removeItem("gristionnaire.previewVersion");if(S.questionnaire)localStorage.setItem("gristionnaire.previewQuestionnaire",String(S.questionnaire));}catch{}}
+function rememberRespondentPreview(){try{if(S.version)localStorage.setItem("gristionnaire.previewVersion",String(S.version));else localStorage.removeItem("gristionnaire.previewVersion");if(S.questionnaire)localStorage.setItem("gristionnaire.previewQuestionnaire",String(S.questionnaire));}catch{} queueMicrotask(()=>p38DiagnosticSnapshot("après rememberRespondentPreview()"));}
 const $=s=>document.querySelector(s);
+function p38DiagnosticSnapshot(note=""){
+  let pv="",pq="",storageError="";
+  try{pv=String(localStorage.getItem("gristionnaire.previewVersion")||"");pq=String(localStorage.getItem("gristionnaire.previewQuestionnaire")||"")}catch(e){storageError=String(e?.message||e)}
+  let box=document.getElementById("p38-diagnostic-concepteur");
+  if(!box){box=document.createElement("div");box.id="p38-diagnostic-concepteur";box.style.cssText="position:fixed;right:10px;bottom:10px;z-index:99999;max-width:430px;max-height:45vh;overflow:auto;background:#fffbe6;border:2px solid #9a6700;padding:10px;font:12px/1.35 monospace;color:#222;white-space:pre-wrap;box-shadow:0 2px 12px #0003";document.body.appendChild(box)}
+  box.textContent=["DIAGNOSTIC P/38 — CONCEPTEUR",note,`S.questionnaire = ${S.questionnaire??""}`,`S.version = ${S.version??""}`,`storage previewQuestionnaire = ${pq}`,`storage previewVersion = ${pv}`,`storage error = ${storageError||"aucune"}`].join("\n");
+}
+
 const isTrue=v=>v===true||v===1||String(v??"").toLowerCase()==="true";
 const esc=(v="")=>String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const active=r=>{const v=Object.prototype.hasOwnProperty.call(r||{},"Actif")?r.Actif:r?.Active;return v===undefined||v===null||v===""||v===true||v===1||String(v).toLowerCase()==="true"};
