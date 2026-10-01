@@ -67,6 +67,22 @@ export function evaluateCondition(condition, rules = [], answers = {}) {
   return logic === "OR" || logic === "OU" ? results.some(Boolean) : results.every(Boolean);
 }
 
+export function cleanNumber(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return n;
+  if (Number.isInteger(n)) return n;
+  // Élimine les résidus binaires de JavaScript (ex. 0.1 + 0.2) sans imposer
+  // un nombre fixe de décimales aux vraies valeurs saisies.
+  return Number.parseFloat(n.toPrecision(15));
+}
+
+export function sumNumbers(values = []) {
+  return cleanNumber(values.reduce((sum, value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? sum + n : sum;
+  }, 0));
+}
+
 export function isTrue(v) {
   return v === true || v === 1 || String(v).toLowerCase() === "true" || String(v).toLowerCase() === "oui";
 }
