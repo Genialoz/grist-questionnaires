@@ -38,3 +38,22 @@ body.dashboard-view-mode .answer-row{padding:11px 0;border-bottom:1px solid #edf
 body.dashboard-view-mode .answer-row strong{color:#25324a;font-size:.88rem}
 body.dashboard-view-mode canvas{max-width:100%}
 @media(max-width:700px){body.dashboard-view-mode #dashboard{padding:18px 14px 32px}body.dashboard-view-mode .dash-head{padding:20px;border-radius:16px}body.dashboard-view-mode .indicator-card,body.dashboard-view-mode .dash-card,body.dashboard-view-mode .dashboard-configured-block,body.dashboard-view-mode .dash-kpi{border-radius:14px;padding:16px}body.dashboard-view-mode .dashboard-tab-nav{width:100%}}
+
+
+/* Actions consultation : export et impression/PDF */
+body.dashboard-view-mode .dashboard-view-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;align-items:center}
+body.dashboard-view-mode .dashboard-view-actions button{appearance:none;border:1px solid #d9e1ec;background:#fff;color:#344054;border-radius:10px;padding:9px 12px;font:inherit;font-size:.86rem;font-weight:650;cursor:pointer;box-shadow:0 2px 7px rgba(30,41,59,.045)}
+body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc;border-color:#c7d2e1}
+@media(max-width:850px){body.dashboard-view-mode .dashboard-view-actions{margin-top:16px;justify-content:flex-start}}
+@media print{
+ @page{size:auto;margin:12mm}
+ body.dashboard-view-mode{background:#fff!important}
+ body.dashboard-view-mode #dashboard{max-width:none!important;padding:0!important}
+ body.dashboard-view-mode .dashboard-view-actions,body.dashboard-view-mode .dashboard-tab-nav,body.dashboard-view-mode .dash-tabs{display:none!important}
+ body.dashboard-view-mode .dash-head{box-shadow:none!important;border:0!important;padding:0 0 14px!important;margin-bottom:14px!important}
+ body.dashboard-view-mode .indicator-card,body.dashboard-view-mode .dash-card,body.dashboard-view-mode .dashboard-configured-block,body.dashboard-view-mode .dash-kpi{box-shadow:none!important;break-inside:avoid;page-break-inside:avoid}
+ body.dashboard-view-mode .dash-table-wrap{overflow:visible!important}
+ body.dashboard-view-mode .dash-table{min-width:0!important}
+ body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]{display:block!important}
+ body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]+[data-view-tab-panel]{break-before:page;page-break-before:always}
+}
