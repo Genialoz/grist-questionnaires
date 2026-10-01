@@ -2,7 +2,7 @@
 <title>Concepteur de questionnaires</title><link rel="stylesheet" href="../shared/common.css"><link rel="stylesheet" href="./styles.css">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script></head><body><main id="designer">
 <header class="topbar"><div><h1>Concepteur</h1><p>Construction du questionnaire</p></div><div class="selectors">
-<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="manage-questionnaires">Mes questionnaires</button><button type="button" class="btn" id="manage-campaigns">Campagnes</button><button type="button" class="btn" id="manage-results">Résultats / Suivi</button><button type="button" class="btn" id="respondent-preview">Aperçu répondant</button><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
+<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="manage-questionnaires">Mes questionnaires</button><button type="button" class="btn" id="manage-campaigns">Campagnes</button><button type="button" class="btn" id="manage-results">Résultats / Suivi</button><button type="button" class="btn" id="manage-dashboards">Tableaux de bord</button><button type="button" class="btn" id="respondent-preview">Aperçu répondant</button><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
 <div id="status"></div>
 <dialog id="new-questionnaire-dialog" class="app-dialog">
 <form id="new-questionnaire-form" class="form-grid">
@@ -29,6 +29,8 @@
 <div class="dialog-shell"><div class="dialog-head"><div><h2>Campagnes et liens personnalisés</h2><p>Créez un accès distinct par structure pour la version sélectionnée.</p></div><button type="button" class="dialog-close" id="close-campaigns" aria-label="Fermer">×</button></div>
 <div id="campaigns-content"></div></div>
 </dialog>
+
+<dialog id="dashboards-dialog" class="app-dialog wide-dialog"><div class="dialog-shell"><div class="dialog-head"><div><h2>Tableaux de bord</h2><p>Créez des liens de consultation en lecture seule, rattachés à une campagne précise.</p></div><button type="button" class="dialog-close" id="close-dashboards" aria-label="Fermer">×</button></div><div id="dashboards-content"></div></div></dialog>
 <dialog id="results-dialog" class="app-dialog wide-dialog">
 <div class="dialog-shell"><div class="dialog-head"><div><h2>Résultats / Suivi des réponses</h2><p>Suivez l’avancement des campagnes de la version sélectionnée.</p></div><button type="button" class="dialog-close" id="close-results" aria-label="Fermer">×</button></div>
 <div id="results-content"></div></div>
