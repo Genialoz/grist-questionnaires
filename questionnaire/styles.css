@@ -131,3 +131,5 @@ textarea { min-height:110px; resize:vertical; }
 
 /* Sommaire personnalisable V1 */
 .questionnaire-toc-intro{margin:0 0 12px;color:#696071;line-height:1.45}.toc-grid{display:grid;grid-template-columns:repeat(var(--toc-cols,1),minmax(0,1fr));gap:8px 18px}.toc-cols-1{--toc-cols:1}.toc-cols-2{--toc-cols:2}.toc-cols-3{--toc-cols:3}.toc-grid .toc-page{margin:0;align-self:start}@media(max-width:760px){.toc-grid{grid-template-columns:1fr}}
+/* Espacement titre / texte des blocs Description et messages personnalisés */
+.content-description-title + .content-description-text{margin-top:10px}
