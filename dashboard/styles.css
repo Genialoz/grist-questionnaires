@@ -60,3 +60,17 @@ body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc
 
 /* Ligne Total optionnelle des tableaux Dashboard */
 .dash-table .dash-total-row th{font-weight:700;border-top:2px solid #d9dce1}
+
+
+/* Regroupements personnalisés du Dashboard */
+.dashboard-groupings-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:18px 0 10px}
+.dashboard-groupings-head h2{margin:0}
+.dashboard-grouping-card{background:#fff;border:1px solid #dfe3e8;border-radius:12px;padding:16px;margin:12px 0}
+.dashboard-group-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(260px,2fr) auto;gap:12px;align-items:end;padding:12px 0;border-top:1px solid #edf0f2}
+.dashboard-group-row select[multiple]{min-height:120px}
+.dashboard-group-row button{align-self:end;margin-bottom:1px}
+
+/* Case Total : case et libellé restent sur une seule ligne */
+.stats-box label.check{display:flex!important;flex-direction:row!important;align-items:center!important;gap:8px;white-space:nowrap;width:auto}
+.stats-box label.check input[type="checkbox"]{width:auto!important;min-width:16px;margin:0;flex:0 0 auto}
+@media(max-width:720px){.dashboard-group-row{grid-template-columns:1fr}.stats-box label.check{white-space:normal}}
