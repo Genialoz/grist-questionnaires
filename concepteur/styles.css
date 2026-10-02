@@ -89,5 +89,6 @@
 
 /* Sommaire personnalisable V1 */
 .preview-toc-intro{margin:0 0 12px;color:#6f6877;line-height:1.45}.preview-toc-grid{display:grid;grid-template-columns:repeat(var(--preview-toc-cols,1),minmax(0,1fr));gap:8px 18px}.preview-toc.toc-cols-1{--preview-toc-cols:1}.preview-toc.toc-cols-2{--preview-toc-cols:2}.preview-toc.toc-cols-3{--preview-toc-cols:3}.preview-toc-grid .preview-toc-page{margin:0}.toc-order-list{display:grid;gap:6px}.toc-order-row{display:grid;grid-template-columns:72px 1fr;gap:10px;align-items:center}.toc-order-row input{width:100%}@media(max-width:760px){.preview-toc-grid{grid-template-columns:1fr}}
+
 /* Aperçu : espacement titre / texte des blocs Description et messages personnalisés */
 .preview-content-description .preview-question-label + .preview-description-text{margin-top:10px}
