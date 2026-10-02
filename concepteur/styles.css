@@ -92,3 +92,9 @@
 
 /* Aperçu : espacement titre / texte des blocs Description et messages personnalisés */
 .preview-content-description .preview-question-label + .preview-description-text{margin-top:10px}
+
+.result-row-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.results-reset-zone{margin-top:18px;padding:14px;border:1px solid #ead1d4;border-radius:10px;background:#fffafb;display:flex;align-items:center;justify-content:space-between;gap:16px}
+.results-reset-zone .btn-danger{flex:0 0 auto}
+.btn-danger:disabled{opacity:.45;cursor:not-allowed}
+@media(max-width:760px){.results-reset-zone{align-items:stretch;flex-direction:column}.results-reset-zone .btn-danger{width:100%}}
