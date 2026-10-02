@@ -95,3 +95,6 @@ body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc
   .dashboard-grouping-card .builder-indicator-grid{grid-template-columns:1fr}
   .dashboard-group-row{grid-template-columns:1fr}
 }
+
+/* V2.3.2 : jusqu'à trois paramètres de regroupement sans débordement */
+.dashboard-grouping-card .builder-indicator-grid{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
