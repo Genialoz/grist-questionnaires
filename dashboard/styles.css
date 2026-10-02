@@ -112,3 +112,13 @@ details[open]>.dashboard-grouping-summary .dashboard-disclosure,details[open]>su
 .dashboard-grouping-body,.dashboard-group-row-body{padding:0 14px 14px}
 .dashboard-group-row{border:1px solid #e1e5ea;border-radius:8px;margin:8px 0;background:#fff}
 .dashboard-group-row-body{display:grid;gap:10px}
+
+.builder-tab>summary,.builder-block>summary{list-style:none;cursor:pointer;user-select:none}
+.builder-tab>summary::-webkit-details-marker,.builder-block>summary::-webkit-details-marker{display:none}
+.builder-collapse-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px}
+.builder-collapse-summary>span:first-child{display:flex;flex-direction:column;gap:3px;min-width:0}
+.builder-collapse-summary small{font-weight:400;color:#6b7280}
+.builder-tab-body,.builder-block-body{padding:0 14px 14px}
+.builder-tab[open]>.builder-collapse-summary .dashboard-disclosure,.builder-block[open]>.builder-collapse-summary .dashboard-disclosure{transform:rotate(180deg)}
+.builder-tab-summary{background:#f8f9fb}
+.builder-block>.builder-collapse-summary{background:#fff}
