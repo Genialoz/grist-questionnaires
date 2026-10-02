@@ -74,3 +74,24 @@ body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc
 .stats-box label.check{display:flex!important;flex-direction:row!important;align-items:center!important;gap:8px;white-space:nowrap;width:auto}
 .stats-box label.check input[type="checkbox"]{width:auto!important;min-width:16px;margin:0;flex:0 0 auto}
 @media(max-width:720px){.dashboard-group-row{grid-template-columns:1fr}.stats-box label.check{white-space:normal}}
+
+
+/* Correctif ergonomique V2.3.1 : les champs du regroupement restent dans leur carte */
+.dashboard-grouping-card{min-width:0;overflow:hidden}
+.dashboard-grouping-card .builder-indicator-grid{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+  gap:12px;
+  width:100%;
+}
+.dashboard-grouping-card .builder-indicator-grid label,
+.dashboard-grouping-card .dashboard-group-row label{min-width:0;width:100%}
+.dashboard-grouping-card input,
+.dashboard-grouping-card select,
+.dashboard-grouping-card textarea{box-sizing:border-box;max-width:100%;width:100%;min-width:0}
+.dashboard-grouping-card [data-grouping-source]{width:100%;max-width:100%}
+.dashboard-group-row{grid-template-columns:minmax(0,.8fr) minmax(0,1.7fr) auto}
+@media(max-width:900px){
+  .dashboard-grouping-card .builder-indicator-grid{grid-template-columns:1fr}
+  .dashboard-group-row{grid-template-columns:1fr}
+}
