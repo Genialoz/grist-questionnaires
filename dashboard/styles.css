@@ -57,3 +57,6 @@ body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc
  body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]{display:block!important}
  body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]+[data-view-tab-panel]{break-before:page;page-break-before:always}
 }
+
+/* Ligne Total optionnelle des tableaux Dashboard */
+.dash-table .dash-total-row th{font-weight:700;border-top:2px solid #d9dce1}
