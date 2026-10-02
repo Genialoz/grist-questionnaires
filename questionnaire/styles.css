@@ -25,7 +25,7 @@ textarea { min-height:110px; resize:vertical; }
 .status-error { padding:12px; border-radius:8px; background:#fff0f0; color:#8a111a; white-space:pre-wrap; }
 .status-info { padding:12px; border-radius:8px; background:#f0f3f8; color:#424653; }
 .diagnostic { margin-top:16px; font-size:.82rem; color:#755; }
-#navigation { display:flex; justify-content:space-between; gap:12px; margin-top:24px; }
+#navigation { display:flex; justify-content:space-between; gap:12px; margin-top:40px; }
 .btn { border:1px solid #77717f; border-radius:8px; padding:9px 16px; background:white; }
 .btn-primary { background:#6f4aa8; color:white; border-color:#6f4aa8; margin-left:auto; }
 .btn:disabled { opacity:.45; cursor:not-allowed; }
@@ -131,5 +131,6 @@ textarea { min-height:110px; resize:vertical; }
 
 /* Sommaire personnalisable V1 */
 .questionnaire-toc-intro{margin:0 0 12px;color:#696071;line-height:1.45}.toc-grid{display:grid;grid-template-columns:repeat(var(--toc-cols,1),minmax(0,1fr));gap:8px 18px}.toc-cols-1{--toc-cols:1}.toc-cols-2{--toc-cols:2}.toc-cols-3{--toc-cols:3}.toc-grid .toc-page{margin:0;align-self:start}@media(max-width:760px){.toc-grid{grid-template-columns:1fr}}
+
 /* Espacement titre / texte des blocs Description et messages personnalisés */
 .content-description-title + .content-description-text{margin-top:10px}
