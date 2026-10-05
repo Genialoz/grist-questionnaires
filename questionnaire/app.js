@@ -1018,7 +1018,7 @@ function render() {
     : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
-  root.querySelectorAll("[data-multiselect-details]").forEach(el=>el.addEventListener("toggle",()=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`;if(el.open)state.openMultiSelect=key;else if(state.openMultiSelect===key)state.openMultiSelect="";}));
+  root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>{panel.scrollTop=y})}el.addEventListener("toggle",()=>{if(el.open)state.openMultiSelect=key;else if(state.openMultiSelect===key)state.openMultiSelect=""})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   updateMatrixTotals(root);
@@ -1186,7 +1186,7 @@ function onFicheAnswer(e) {
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
   if(e.target.type==="checkbox"){
-    if(e.target.dataset.multiselect==="1")state.openMultiSelect=`f:${code}`;
+    if(e.target.dataset.multiselect==="1"){state.openMultiSelect=`f:${code}`;const panel=e.target.closest(".multi-select-panel");state.multiSelectScroll={...(state.multiSelectScroll||{}),[`f:${code}`]:panel?.scrollTop||0};}
     let selected=[...(Array.isArray(editor.answers[code])?editor.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
@@ -1327,7 +1327,7 @@ function onAnswer(e) {
   if (!code) return;
   state.principalDirty=true;
   if(e.target.type==="checkbox"){
-    if(e.target.dataset.multiselect==="1")state.openMultiSelect=`p:${code}`;
+    if(e.target.dataset.multiselect==="1"){state.openMultiSelect=`p:${code}`;const panel=e.target.closest(".multi-select-panel");state.multiSelectScroll={...(state.multiSelectScroll||{}),[`p:${code}`]:panel?.scrollTop||0};}
     let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
