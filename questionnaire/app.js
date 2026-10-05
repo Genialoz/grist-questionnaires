@@ -8,7 +8,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[] };
+const state = { definition:null, answers:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -500,6 +500,8 @@ export function controlKind(question) {
   return "text";
 }
 
+function isMultiSelectList(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return (t.includes("liste")||t.includes("déroul")||t.includes("deroul"))&&isTrue(q?.Selection_multiple)}
+
 function shouldAutoHideSingleChoice(q,def,answers={}) {
   if(!isTrue(q?.Masquer_si_choix_unique) || controlKind(q)!=="select" || !choiceFiltersForQuestion(q,def).length) return false;
   return optionsFor(q,def,answers).length===1;
@@ -651,7 +653,7 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
     readOnly?"disabled":""
   ].filter(Boolean).join(" ");
   if (kind==="textarea") return `<textarea ${attrs}>${escapeHtml(value)}</textarea>`;
-  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
+  if (kind==="select") {const forced=locked?campaignPersonalization():null;const opts=[...(q.options??[])];if(locked&&forced&&String(forced.value)!==""&&!opts.some(o=>String(o.value)===String(forced.value)))opts.unshift({value:forced.value,label:forced.label||forced.value});if(isMultiSelectList(q)){const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]),labels=opts.filter(o=>selected.has(String(o.value))).map(o=>o.label),summary=labels.length?labels.join(", "):"— Sélectionner —",open=state.openMultiSelect===`${ficheMode?"f":"p"}:${code}`;return `<div class="select-group multi-select-group"><details class="multi-select-dropdown" data-multiselect-details="${escapeHtml(code)}" data-multiselect-scope="${ficheMode?"f":"p"}"${open?" open":""}><summary><span>${escapeHtml(summary)}</span><small>${selected.size?`${selected.size} sélection${selected.size>1?"s":""}`:""}</small></summary><div class="multi-select-panel">${opts.map(o=>`<label class="multi-select-option"><input type="checkbox" data-multiselect="1" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}</div></details>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}return `<div class="select-group"><select ${attrs}><option value="">— Sélectionner —</option>${opts.map(o=>`<option value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" selected":""}>${escapeHtml(o.label)}</option>`).join("")}</select>${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
   if (kind==="radio") return `<div class="radio-group">${q.options.map(o=>`<label class="radio-option"><input type="radio" name="${escapeHtml(code)}" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}"${String(value)===String(o.value)?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;
   if (kind==="checkbox") {const selected=new Set(Array.isArray(value)?value.map(String):value?[String(value)]:[]);return `<div class="checkbox-group">${q.options.map(o=>`<label class="radio-option"><input type="checkbox" data-${ficheMode?"fiche-":""}question="${escapeHtml(code)}" value="${escapeHtml(o.value)}" data-exclusive="${o.exclusive?"1":"0"}"${selected.has(String(o.value))?" checked":""}${readOnly?" disabled":""}><span>${escapeHtml(o.label)}</span></label>`).join("")}${!readOnly?`<button type="button" class="clear-answer" data-${ficheMode?"clear-fiche-question":"clear-question"}="${escapeHtml(code)}">Effacer la réponse</button>`:""}</div>`;}
   return `<input type="${kind}" ${attrs} value="${escapeHtml(value)}"${kind==="number" && q.Nb_decimales!=null && q.Nb_decimales!=="" ? ` step="${1/(10**Number(q.Nb_decimales))}"` : ""}>`;
@@ -1016,6 +1018,7 @@ function render() {
     : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
+  root.querySelectorAll("[data-multiselect-details]").forEach(el=>el.addEventListener("toggle",()=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`;if(el.open)state.openMultiSelect=key;else if(state.openMultiSelect===key)state.openMultiSelect="";}));
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   updateMatrixTotals(root);
@@ -1120,7 +1123,7 @@ function renderPreservingInputFocus(target) {
 
 function emptyAnswerForQuestion(code){
   const q=(state.definition?.questions??[]).find(x=>String(codeOf(x.Question_Code))===String(code));
-  return controlKind(q)==="checkbox" ? [] : "";
+  return (controlKind(q)==="checkbox"||isMultiSelectList(q)) ? [] : "";
 }
 
 function clearRenderedAnswer(scope,attr,code){
@@ -1183,6 +1186,7 @@ function onFicheAnswer(e) {
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
   if(e.target.type==="checkbox"){
+    if(e.target.dataset.multiselect==="1")state.openMultiSelect=`f:${code}`;
     let selected=[...(Array.isArray(editor.answers[code])?editor.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
@@ -1323,6 +1327,7 @@ function onAnswer(e) {
   if (!code) return;
   state.principalDirty=true;
   if(e.target.type==="checkbox"){
+    if(e.target.dataset.multiselect==="1")state.openMultiSelect=`p:${code}`;
     let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
@@ -1524,7 +1529,7 @@ async function ensureResponse(){
 }
 function gristValueFields(question,value){const fields=serializeAnswer(question,value,state.definition);if(fields.Valeur_reference_Code)fields.Valeur_reference_Code=rowIdByCode(state.definition.referentialValues,"ValeurRef_Code",fields.Valeur_reference_Code);if(fields.Valeur_structure_Code)fields.Valeur_structure_Code=rowIdByCode(state.definition.structures,"Structure_Code",fields.Valeur_structure_Code);return fields;}
 async function checkResponseRevision(){await refreshPersistenceRows();const fresh=state.definition.responses.find(r=>r.id===state.response?.id);if(state.response&&fresh)assertRevision(state.response.Revision,fresh.Revision);return fresh;}
-function isMultiQuestion(q){return controlKind(q)==="checkbox";}
+function isMultiQuestion(q){return controlKind(q)==="checkbox"||isMultiSelectList(q);}
 function selectionTarget(q,value){
   const option=optionsFor(q,state.definition,state.answers).find(o=>String(o.value)===String(value));
   if(!option)return null;

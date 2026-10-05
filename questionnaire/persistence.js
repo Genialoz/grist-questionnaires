@@ -42,7 +42,7 @@ export function hydrateResponse(rows,definition,reponseCode){
   const elements=(rows.ELEMENTS_REPONSE??[]).filter(e=>sameRef(e.Reponse_Code,response,"Reponse_Code"));
   const values=rows.VALEURS_REPONSE??[]; const questions=definition.questions??[];
   const selections=rows.SELECTIONS_REPONSE??[];
-  const multi=q=>qtype(q).includes("case");
+  const multi=q=>{const t=qtype(q);return t.includes("case")||t.includes("checkbox")||((t.includes("liste")||t.includes("déroul")||t.includes("deroul"))&&isTrue(q?.Selection_multiple));};
   const selectedCode=s=>{
     if(s.Choix_Code){const raw=codeOf(s.Choix_Code),row=(definition.choices??[]).find(x=>String(x.id)===raw||codeOf(x.Choix_Code)===raw);return row?codeOf(row.Choix_Code):raw;}
     if(s.ValeurRef_Code){const raw=codeOf(s.ValeurRef_Code),row=(definition.referentialValues??[]).find(x=>String(x.id)===raw||codeOf(x.ValeurRef_Code)===raw);return row?codeOf(row.ValeurRef_Code):raw;}
