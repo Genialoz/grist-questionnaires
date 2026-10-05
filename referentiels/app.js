@@ -1,16 +1,16 @@
 import {rowsFromTable,codeOf,isTrue} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 const $=s=>document.querySelector(s), esc=v=>String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-const S={refs:[],values:[],selected:null,preview:null};
+const S={refs:[],values:[],questions:[],selected:null,preview:null};
 function status(msg,bad=false){$("#status").innerHTML=msg?`<div class="${bad?"error":"success"}">${esc(msg)}</div>`:""}
 async function fetchRows(t){return rowsFromTable(await grist.docApi.fetchTable(t))}
-async function load(){try{const [refs,values]=await Promise.all([fetchRows("REFERENTIELS"),fetchRows("VALEURS_REFERENTIELS")]);S.refs=refs;S.values=values;if(S.selected&&!refs.some(r=>String(r.id)===String(S.selected)))S.selected=null;render()}catch(e){status(`Chargement impossible : ${e?.message||e}`,true)}}
+async function load(){try{const [refs,values,questions]=await Promise.all([fetchRows("REFERENTIELS"),fetchRows("VALEURS_REFERENTIELS"),fetchRows("QUESTIONS")]);S.refs=refs;S.values=values;S.questions=questions;if(S.selected&&!refs.some(r=>String(r.id)===String(S.selected)))S.selected=null;render()}catch(e){status(`Chargement impossible : ${e?.message||e}`,true)}}
 const source=r=>String(r?.Type_source||"VALEURS_REFERENTIELS").trim().toUpperCase();
 const refValues=r=>S.values.filter(v=>String(codeOf(v.Referentiel_Code))===String(r.id));
 function render(){renderList();renderContent()}
 function renderList(){const host=$("#refs"),rows=[...S.refs].sort((a,b)=>Number(a.manualSort||0)-Number(b.manualSort||0));host.innerHTML=rows.map(r=>`<button class="ref-card ${String(r.id)===String(S.selected)?"active":""}" data-id="${r.id}"><strong>${esc(r.Nom||r.Referentiel_Code)}</strong><span>${esc(r.Referentiel_Code)} · ${isTrue(r.Hierarchique)?"Hiérarchique":"Simple"}${source(r)!=="VALEURS_REFERENTIELS"?` · Source ${esc(source(r))}`:""}</span></button>`).join("")||'<div class="muted">Aucun référentiel.</div>';host.querySelectorAll(".ref-card").forEach(b=>b.onclick=()=>{S.selected=Number(b.dataset.id);S.preview=null;render()})}
 function valueTree(rows){const byId=new Map(rows.map(r=>[String(r.id),r]));const depth=r=>{let d=0,p=codeOf(r.Parent_Code),seen=new Set();while(p&&byId.has(String(p))&&!seen.has(String(p))){seen.add(String(p));d++;p=codeOf(byId.get(String(p)).Parent_Code)}return d};return [...rows].sort((a,b)=>Number(a.Ordre||0)-Number(b.Ordre||0)||Number(a.id)-Number(b.id)).map(r=>({...r,_depth:depth(r),_parent:byId.get(String(codeOf(r.Parent_Code)))?.Code||""}))}
-function renderContent(){const host=$("#content"),r=S.refs.find(x=>String(x.id)===String(S.selected));if(!r){host.className="empty-state";host.innerHTML="Sélectionnez un référentiel ou créez-en un.";return}host.className="";const vals=valueTree(refValues(r)),managed=source(r)==="VALEURS_REFERENTIELS";host.innerHTML=`<div class="head"><div><h2>${esc(r.Nom||r.Referentiel_Code)}</h2><div class="meta">${esc(r.Referentiel_Code)} · ${isTrue(r.Hierarchique)?"Hiérarchique":"Simple"} · ${vals.length} valeur${vals.length>1?"s":""}</div>${r.Description?`<p>${esc(r.Description)}</p>`:""}</div><div class="actions"><button class="btn" id="edit-ref">Modifier</button><button class="btn" id="download-model">Télécharger le modèle</button><button class="btn" id="export-ref">Exporter</button></div></div>${managed?importHtml(r):`<div class="preview bad">Ce référentiel utilise la source <strong>${esc(source(r))}</strong>. Ses valeurs ne sont pas gérées dans VALEURS_REFERENTIELS ; l’import est donc désactivé ici.</div>`}<h3>Valeurs actuelles</h3><div class="table-wrap"><table><thead><tr><th>Code</th><th>Libellé</th>${isTrue(r.Hierarchique)?"<th>Parent</th><th>Niveau</th>":""}<th>Ordre</th><th>Actif</th></tr></thead><tbody>${vals.map(v=>`<tr><td>${`<span class="indent" style="width:${v._depth*14}px"></span>`}${esc(v.Code)}</td><td>${esc(v.Libelle)}</td>${isTrue(r.Hierarchique)?`<td>${esc(v._parent)}</td><td>${esc(v.Niveau??v._depth)}</td>`:""}<td>${esc(v.Ordre)}</td><td>${isTrue(v.Actif)?"Oui":"Non"}</td></tr>`).join("")||'<tr><td colspan="6" class="muted">Aucune valeur.</td></tr>'}</tbody></table></div>`;$("#edit-ref").onclick=()=>openRef(r);$("#download-model").onclick=()=>downloadModel(r);$("#export-ref").onclick=()=>exportRef(r);if(managed)bindImport(r)}
+function renderContent(){const host=$("#content"),r=S.refs.find(x=>String(x.id)===String(S.selected));if(!r){host.className="empty-state";host.innerHTML="Sélectionnez un référentiel ou créez-en un.";return}host.className="";const vals=valueTree(refValues(r)),managed=source(r)==="VALEURS_REFERENTIELS";host.innerHTML=`<div class="head"><div><h2>${esc(r.Nom||r.Referentiel_Code)}</h2><div class="meta">${esc(r.Referentiel_Code)} · ${isTrue(r.Hierarchique)?"Hiérarchique":"Simple"} · ${vals.length} valeur${vals.length>1?"s":""}</div>${r.Description?`<p>${esc(r.Description)}</p>`:""}</div><div class="actions"><button class="btn" id="edit-ref">Modifier</button><button class="btn" id="download-model">Télécharger le modèle</button><button class="btn" id="export-ref">Exporter</button><button class="btn danger" id="delete-ref">Supprimer le référentiel</button></div></div>${managed?importHtml(r):`<div class="preview bad">Ce référentiel utilise la source <strong>${esc(source(r))}</strong>. Ses valeurs ne sont pas gérées dans VALEURS_REFERENTIELS ; l’import est donc désactivé ici.</div>`}<div class="values-head"><h3>Valeurs actuelles</h3>${managed?'<button class="btn btn-primary" id="add-value">+ Ajouter une valeur</button>':""}</div><div class="table-wrap"><table><thead><tr><th>Code</th><th>Libellé</th>${isTrue(r.Hierarchique)?"<th>Parent</th><th>Niveau</th>":""}<th>Ordre</th><th>Actif</th>${managed?"<th>Actions</th>":""}</tr></thead><tbody>${vals.map(v=>`<tr><td>${`<span class="indent" style="width:${v._depth*14}px"></span>`}${esc(v.Code)}</td><td>${esc(v.Libelle)}</td>${isTrue(r.Hierarchique)?`<td>${esc(v._parent)}</td><td>${esc(v.Niveau??v._depth)}</td>`:""}<td>${esc(v.Ordre)}</td><td>${isTrue(v.Actif)?"Oui":"Non"}</td>${managed?`<td class="row-actions"><button class="mini-btn" data-edit-value="${v.id}">Modifier</button><button class="mini-btn danger" data-delete-value="${v.id}">Supprimer</button></td>`:""}</tr>`).join("")||`<tr><td colspan="${isTrue(r.Hierarchique)?7:5}" class="muted">Aucune valeur.</td></tr>`}</tbody></table></div>`;$("#edit-ref").onclick=()=>openRef(r);$("#download-model").onclick=()=>downloadModel(r);$("#export-ref").onclick=()=>exportRef(r);$("#delete-ref").onclick=()=>deleteReferential(r);if(managed){bindImport(r);$("#add-value").onclick=()=>openValue(r);host.querySelectorAll("[data-edit-value]").forEach(b=>b.onclick=()=>openValue(r,S.values.find(v=>String(v.id)===String(b.dataset.editValue))));host.querySelectorAll("[data-delete-value]").forEach(b=>b.onclick=()=>deleteValue(r,S.values.find(v=>String(v.id)===String(b.dataset.deleteValue))))}}
 function importHtml(r){return `<div class="import-box"><h3>Importer des valeurs</h3><div class="import-grid"><label class="file-field">Fichier Excel ou CSV<input id="import-file" type="file" accept=".xlsx,.csv"></label><label>Mode<select id="import-mode"><option value="update">Mettre à jour + ajouter</option><option value="add">Ajouter uniquement</option><option value="sync">Synchroniser avec le fichier</option></select></label><button id="analyze-import" class="btn">Analyser</button></div><div class="hint">Colonnes attendues : <strong>Code, Libelle, Ordre, Actif</strong>${isTrue(r.Hierarchique)?" et <strong>Parent_Code</strong>":""}. En mode Synchroniser, les codes absents du fichier seront supprimés après confirmation.</div><div id="import-preview">${S.preview?previewHtml(S.preview):""}</div></div>`}
 function previewHtml(p){return `<div class="preview ${p.errors.length?"bad":"ok"}"><strong>${p.rows.length} ligne${p.rows.length>1?"s":""} détectée${p.rows.length>1?"s":""}</strong> · ${p.newCount} nouvelle${p.newCount>1?"s":""} · ${p.updateCount} existante${p.updateCount>1?"s":""}${p.removeCount?` · ${p.removeCount} absente${p.removeCount>1?"s":""} du fichier`:""}${p.errors.length?`<div class="danger">${p.errors.map(esc).join("<br>")}</div>`:`<div>Aucune anomalie détectée.</div><button id="run-import" class="btn btn-primary" style="margin-top:8px">Importer maintenant</button>`}</div>`}
 function openRef(r=null){const f=$("#ref-form");f.reset();f.elements.id.value=r?.id||"";f.elements.name.value=r?.Nom||"";f.elements.code.value=r?.Referentiel_Code||"";f.elements.description.value=r?.Description||"";f.elements.hierarchical.value=isTrue(r?.Hierarchique)?"1":"0";f.elements.active.checked=r?isTrue(r.Actif):true;$("#ref-dialog-title").textContent=r?"Modifier le référentiel":"Nouveau référentiel";$("#ref-dialog").showModal()}
@@ -25,6 +25,71 @@ function bindImport(r){$("#analyze-import").onclick=async()=>{const file=$("#imp
 function stableValueCode(r,code,used){const base=`VR_${String(r.Referentiel_Code||"REF").replace(/[^A-Za-z0-9]+/g,"_")}_${String(code).replace(/[^A-Za-z0-9]+/g,"_")}`.slice(0,90);let x=base,n=2;while(used.has(x))x=`${base}_${n++}`;used.add(x);return x}
 function computeLevels(rows){const by=new Map(rows.map(x=>[x.Code,x])),memo=new Map();const lev=x=>{if(memo.has(x.Code))return memo.get(x.Code);const n=x.Parent_Code&&by.has(x.Parent_Code)?lev(by.get(x.Parent_Code))+1:0;memo.set(x.Code,n);return n};rows.forEach(lev);return memo}
 async function runImport(r,p){if(p.errors.length)return;const msg=p.mode==="sync"?`Synchroniser ce référentiel ? ${p.removeCount} valeur(s) absente(s) du fichier seront supprimées.`:`Importer ${p.rows.length} valeur(s) ?`;if(!confirm(msg))return;try{const current=refValues(r),byCode=new Map(current.map(v=>[normalizeCode(v.Code),v])),used=new Set(S.values.map(v=>String(v.ValeurRef_Code||""))),levels=computeLevels(p.rows),actions=[];for(const x of p.rows){const old=byCode.get(x.Code);if(old){if(p.mode!=="add")actions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(old.id),{Code:x.Code,Libelle:x.Libelle,Ordre:x.Ordre,Actif:x.Actif,Niveau:levels.get(x.Code)||0}])}else actions.push(["AddRecord","VALEURS_REFERENTIELS",null,{ValeurRef_Code:stableValueCode(r,x.Code,used),Referentiel_Code:Number(r.id),Code:x.Code,Libelle:x.Libelle,Ordre:x.Ordre,Actif:x.Actif,Niveau:levels.get(x.Code)||0}])}if(p.mode==="sync"){const keep=new Set(p.rows.map(x=>x.Code));for(const old of current)if(!keep.has(normalizeCode(old.Code)))actions.push(["RemoveRecord","VALEURS_REFERENTIELS",Number(old.id)])}if(actions.length)await grist.docApi.applyUserActions(actions);await load();const fresh=S.refs.find(x=>String(x.id)===String(r.id)),freshVals=refValues(fresh),freshByCode=new Map(freshVals.map(v=>[normalizeCode(v.Code),v])),parentActions=[];for(const x of p.rows){const row=freshByCode.get(x.Code);if(!row)continue;const parent=x.Parent_Code?freshByCode.get(x.Parent_Code):null;parentActions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(row.id),{Parent_Code:parent?Number(parent.id):null,Niveau:levels.get(x.Code)||0}])}if(parentActions.length)await grist.docApi.applyUserActions(parentActions);S.preview=null;await load();status(`Import terminé : ${p.rows.length} ligne(s) traitée(s).`)}catch(e){status(`Import impossible : ${e?.message||e}`,true)}}
+
+
+
+function openValue(r,v=null){
+  const d=$("#value-dialog"),f=$("#value-form"),vals=valueTree(refValues(r));
+  f.elements.id.value=v?.id||"";f.elements.ref_id.value=r.id;f.elements.code.value=v?.Code||"";f.elements.label.value=v?.Libelle||"";f.elements.order.value=v?.Ordre??(vals.length+1);f.elements.active.checked=v?isTrue(v.Actif):true;
+  $("#value-dialog-title").textContent=v?"Modifier la valeur":"Ajouter une valeur";
+  const pf=$("#parent-field"),sel=f.elements.parent;pf.style.display=isTrue(r.Hierarchique)?"":"none";
+  sel.innerHTML='<option value="">Aucun parent</option>'+vals.filter(x=>!v||String(x.id)!==String(v.id)).map(x=>`<option value="${x.id}">${esc(x.Code)} — ${esc(x.Libelle)}</option>`).join("");
+  sel.value=String(codeOf(v?.Parent_Code)||"");d.showModal();
+}
+function valueDescendants(r,id){
+  const vals=refValues(r),out=new Set(),walk=x=>{for(const v of vals)if(String(codeOf(v.Parent_Code))===String(x)&&!out.has(String(v.id))){out.add(String(v.id));walk(v.id)}};walk(id);return out;
+}
+async function saveValue(e){
+  e.preventDefault();const f=e.currentTarget,fd=new FormData(f),r=S.refs.find(x=>String(x.id)===String(fd.get("ref_id")));if(!r)return;
+  const id=String(fd.get("id")||""),code=normalizeCode(fd.get("code")),label=String(fd.get("label")||"").trim(),parentId=String(fd.get("parent")||""),order=Number(fd.get("order")||0);
+  if(!code||!label){status("Le code et le libellé sont obligatoires.",true);return}
+  const duplicate=refValues(r).find(v=>normalizeCode(v.Code)===code&&String(v.id)!==id);if(duplicate){status(`Le code ${code} existe déjà dans ce référentiel.`,true);return}
+  if(id&&parentId){const descendants=valueDescendants(r,id);if(parentId===id||descendants.has(parentId)){status("Ce parent créerait une boucle dans la hiérarchie.",true);return}}
+  let level=0;if(parentId){let cur=refValues(r).find(v=>String(v.id)===parentId),seen=new Set();while(cur&&!seen.has(String(cur.id))){seen.add(String(cur.id));level++;const p=codeOf(cur.Parent_Code);cur=p?refValues(r).find(v=>String(v.id)===String(p)):null}}
+  const vals={Code:code,Libelle:label,Parent_Code:parentId?Number(parentId):null,Ordre:Number.isFinite(order)?order:0,Actif:fd.get("active")==="on",Niveau:level};
+  try{
+    if(id)await grist.docApi.applyUserActions([["UpdateRecord","VALEURS_REFERENTIELS",Number(id),vals]]);
+    else{const used=new Set(S.values.map(v=>String(v.ValeurRef_Code||"")));await grist.docApi.applyUserActions([["AddRecord","VALEURS_REFERENTIELS",null,{ValeurRef_Code:stableValueCode(r,code,used),Referentiel_Code:Number(r.id),...vals}]])}
+    $("#value-dialog").close();await load();status(id?"Valeur modifiée.":"Valeur ajoutée.");
+  }catch(err){status(`Enregistrement impossible : ${err?.message||err}`,true)}
+}
+async function deleteValue(r,v){
+  if(!v)return;const children=refValues(r).filter(x=>String(codeOf(x.Parent_Code))===String(v.id));
+  if(children.length){status(`Suppression impossible : ${children.length} valeur(s) ont « ${v.Code} » comme parent. Modifiez ou supprimez d’abord ces valeurs.`,true);return}
+  if(!confirm(`Supprimer la valeur « ${v.Code} — ${v.Libelle} » ?`))return;
+  try{await grist.docApi.applyUserActions([["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]]);await load();status(`Valeur ${v.Code} supprimée.`)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true)}
+}
+
+function questionUsesReferential(q,r){
+  const raw=codeOf(q?.Referentiel_Code);
+  if(raw===null||raw===undefined||String(raw)==="")return false;
+  return String(raw)===String(r.id)||String(raw)===String(codeOf(r.Referentiel_Code));
+}
+function referentialUsages(r){return (S.questions||[]).filter(q=>questionUsesReferential(q,r))}
+async function deleteReferential(r){
+  const code=String(codeOf(r.Referentiel_Code)||"");
+  if(code==="REF_STRUCTURES"||source(r)==="STRUCTURES"){
+    status("Ce référentiel est lié à STRUCTURES et ne peut pas être supprimé depuis ce widget.",true);return;
+  }
+  const uses=referentialUsages(r);
+  if(uses.length){
+    const labels=uses.slice(0,8).map(q=>String(q.Libelle||q.Question||q.Variable||q.Question_Code||`Question ${q.id}`));
+    const more=uses.length>8?` (+${uses.length-8} autre(s))`:"";
+    status(`Suppression impossible : ce référentiel est utilisé par ${uses.length} question(s) : ${labels.join(" ; ")}${more}.`,true);return;
+  }
+  const vals=refValues(r);
+  const typed=prompt(`Suppression définitive du référentiel « ${r.Nom||code} » et de ses ${vals.length} valeur(s).\n\nPour confirmer, saisissez exactement : ${code}`);
+  if(typed===null)return;
+  if(String(typed).trim()!==code){status("Suppression annulée : le code saisi ne correspond pas.",true);return;}
+  try{
+    const actions=vals.map(v=>["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]);
+    actions.push(["RemoveRecord","REFERENTIELS",Number(r.id)]);
+    await grist.docApi.applyUserActions(actions);
+    S.selected=null;S.preview=null;await load();status(`Référentiel ${code} supprimé.`);
+  }catch(e){status(`Suppression impossible : ${e?.message||e}`,true)}
+}
 $("#new-ref").onclick=()=>openRef();$("#refresh").onclick=load;$("#close-ref").onclick=$("#cancel-ref").onclick=()=>$("#ref-dialog").close();
 $("#ref-form").onsubmit=async e=>{e.preventDefault();const f=e.currentTarget,fd=new FormData(f),id=fd.get("id"),code=normalizeCode(fd.get("code")),name=String(fd.get("name")||"").trim();if(!code||!name)return;const duplicate=S.refs.find(r=>String(r.Referentiel_Code)===code&&String(r.id)!==String(id));if(duplicate){status(`Le code ${code} existe déjà.`,true);return}const existing=id?S.refs.find(r=>String(r.id)===String(id)):null;const vals={Referentiel_Code:code,Nom:name,Description:String(fd.get("description")||"").trim(),Hierarchique:fd.get("hierarchical")==="1",Actif:fd.get("active")==="on",Type_source:existing?String(existing.Type_source||"VALEURS_REFERENTIELS"):"VALEURS_REFERENTIELS"};try{if(id)await grist.docApi.applyUserActions([["UpdateRecord","REFERENTIELS",Number(id),vals]]);else await grist.docApi.applyUserActions([["AddRecord","REFERENTIELS",null,vals]]);$("#ref-dialog").close();await load();if(!id){const nr=S.refs.find(r=>String(r.Referentiel_Code)===code);if(nr)S.selected=nr.id;render()}status(id?"Référentiel modifié.":"Référentiel créé.")}catch(err){status(`Enregistrement impossible : ${err?.message||err}`,true)}};
+$("#close-value").onclick=$("#cancel-value").onclick=()=>$("#value-dialog").close();
+$("#value-form").onsubmit=saveValue;
 grist.ready({requiredAccess:"full"});load();
