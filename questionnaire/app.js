@@ -1018,7 +1018,7 @@ function render() {
     : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
-  root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0),anchor=state.multiSelectAnchor?.key===key?state.multiSelectAnchor.value:"";requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y;if(anchor){const target=[...panel.querySelectorAll('input[data-multiselect="1"]')].find(x=>String(x.value)===String(anchor));if(target){const top=target.offsetTop,bottom=top+target.offsetHeight;if(top<panel.scrollTop||bottom>panel.scrollTop+panel.clientHeight)target.scrollIntoView({block:"nearest"});}}}))}el.addEventListener("toggle",()=>{if(el.open)state.openMultiSelect=key;else if(state.openMultiSelect===key)state.openMultiSelect=""})});
+  root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open)state.openMultiSelect=key;else if(state.openMultiSelect===key)state.openMultiSelect=""})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   updateMatrixTotals(root);
@@ -1186,7 +1186,7 @@ function onFicheAnswer(e) {
   const code=e.target.dataset.ficheQuestion;
   if (!code) return;
   if(e.target.type==="checkbox"){
-    if(e.target.dataset.multiselect==="1"){const key=`f:${code}`,panel=e.target.closest(".multi-select-panel");state.openMultiSelect=key;state.multiSelectScroll={...(state.multiSelectScroll||{}),[key]:panel?.scrollTop||0};state.multiSelectAnchor={key,value:String(e.target.value)};}
+    if(e.target.dataset.multiselect==="1"){const key=`f:${code}`,panel=e.target.closest(".multi-select-panel");state.openMultiSelect=key;state.multiSelectScroll={...(state.multiSelectScroll||{}),[key]:panel?.scrollTop||0};}
     let selected=[...(Array.isArray(editor.answers[code])?editor.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-fiche-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
@@ -1196,7 +1196,8 @@ function onFicheAnswer(e) {
   sanitizeDependentAnswers(state.definition,combined);
   for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
-  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
+  const isMultiSelect=e.target.dataset.multiselect==="1";
+  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) renderPreservingInputFocus(e.target);
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -1327,7 +1328,7 @@ function onAnswer(e) {
   if (!code) return;
   state.principalDirty=true;
   if(e.target.type==="checkbox"){
-    if(e.target.dataset.multiselect==="1"){const key=`p:${code}`,panel=e.target.closest(".multi-select-panel");state.openMultiSelect=key;state.multiSelectScroll={...(state.multiSelectScroll||{}),[key]:panel?.scrollTop||0};state.multiSelectAnchor={key,value:String(e.target.value)};}
+    if(e.target.dataset.multiselect==="1"){const key=`p:${code}`,panel=e.target.closest(".multi-select-panel");state.openMultiSelect=key;state.multiSelectScroll={...(state.multiSelectScroll||{}),[key]:panel?.scrollTop||0};}
     let selected=[...(Array.isArray(state.answers[code])?state.answers[code]:[])].map(String);
     if(e.target.checked){if(e.target.dataset.exclusive==="1")selected=[String(e.target.value)];else{selected=selected.filter(v=>document.querySelector(`[data-question="${CSS.escape(code)}"][value="${CSS.escape(v)}"]`)?.dataset.exclusive!=="1");if(!selected.includes(String(e.target.value)))selected.push(String(e.target.value));}}
     else selected=selected.filter(v=>v!==String(e.target.value));
@@ -1336,7 +1337,8 @@ function onAnswer(e) {
   sanitizeDependentAnswers(state.definition,state.answers);
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const drivesDataTable=(state.definition.questions ?? []).some(q=>isDataTableQuestion(q)&&String(q.TD_Mode||"all")==="personalized"&&String(q.TD_Context_Source||"campaign")==="question"&&String(q.TD_Context_Question||"")===String(code));
-  if (e.target.type==="radio" || e.target.type==="checkbox" || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
+  const isMultiSelect=e.target.dataset.multiselect==="1";
+  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
 export function validateVisiblePage(page, answers={}) {
