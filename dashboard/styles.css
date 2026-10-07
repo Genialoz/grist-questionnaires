@@ -127,3 +127,36 @@ details[open]>.dashboard-grouping-summary .dashboard-disclosure,details[open]>su
 .dashboard-grouping-library label{flex:1;min-width:0}
 .dashboard-group-order-actions{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
 @media(max-width:760px){.dashboard-grouping-library{align-items:stretch;flex-direction:column}}
+
+/* V2.3.13 — hiérarchie visuelle du constructeur, sans changement métier */
+.builder-page-head{align-items:center;gap:18px}
+.builder-main-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.builder-section{margin-top:18px;padding:20px;border:1px solid #dfe4ea;border-radius:16px;background:#fff;box-shadow:0 2px 10px rgba(31,41,55,.04)}
+.builder-section-heading{display:flex;align-items:flex-start;gap:12px;margin-bottom:16px}
+.builder-section-heading h2{margin:0 0 4px;font-size:1.12rem}
+.builder-step{display:inline-flex;align-items:center;justify-content:center;min-width:30px;height:30px;border-radius:9px;background:#eef2f7;font-weight:700;color:#374151}
+.builder-config-grid{display:grid;grid-template-columns:minmax(220px,1fr) minmax(240px,1.35fr) minmax(220px,1fr);gap:14px;align-items:end;margin:0;padding:0;background:transparent;border:0;box-shadow:none}
+.builder-config-grid label{min-width:0}
+.builder-secondary-grid{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:14px;margin-top:14px}
+.builder-panel{border:1px solid #dfe4ea;border-radius:14px;background:#fff;overflow:hidden}
+.builder-panel>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;cursor:pointer;list-style:none}
+.builder-panel>summary::-webkit-details-marker{display:none}
+.builder-panel>summary>span:first-child{display:flex;flex-direction:column;gap:3px}
+.builder-panel>summary strong{font-size:1rem}
+.builder-panel>summary small{font-size:.84rem;color:#6b7280;font-weight:400}
+.builder-panel[open]>summary{border-bottom:1px solid #e5e7eb;background:#fafbfc}
+.builder-panel-body{padding:16px}
+.builder-panel-body>.share-card{margin:0}
+.builder-panel-body>.dashboard-groupings-head{margin-top:0}
+.builder-design-section{margin-top:20px}
+.builder-design-heading{align-items:center}
+.builder-design-heading>div{flex:1}
+.builder-design-heading #add-dashboard-tab{margin-left:auto}
+.builder-design-section>#builder-tabs{margin-top:6px}
+@media(max-width:900px){
+ .builder-config-grid,.builder-secondary-grid{grid-template-columns:1fr}
+ .builder-page-head{align-items:flex-start}
+ .builder-main-actions{width:100%;justify-content:flex-start}
+ .builder-design-heading{align-items:flex-start;flex-wrap:wrap}
+ .builder-design-heading #add-dashboard-tab{margin-left:42px}
+}
