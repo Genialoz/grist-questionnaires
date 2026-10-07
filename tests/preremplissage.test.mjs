@@ -1,4 +1,4 @@
-import test from 'node:test';import assert from 'node:assert/strict';import {analyzeSheets,sheetKind,boolVal,splitMultiValue} from '../preremplissage/import-core.js';
+import test from 'node:test';import assert from 'node:assert/strict';import {analyzeSheets,sheetKind,boolVal,splitMultiValue,isReusableEmptyResponseState} from '../preremplissage/import-core.js';
 test('reconnait les feuilles attendues',()=>{assert.equal(sheetKind('Réponses'),'REPONSES');assert.equal(sheetKind('SOUS_FICHES'),'SOUS_FICHES');assert.equal(sheetKind('Divers'),'')});
 test('booléens lecture seule',()=>{assert.equal(boolVal('Oui'),true);assert.equal(boolVal('non'),false)});
 test('sépare les valeurs multiples',()=>{assert.deepEqual(splitMultiValue('A | B;C'),['A','B','C'])});
@@ -7,3 +7,5 @@ test('bloque parent absent',()=>{const a=analyzeSheets([{name:'SOUS_FICHES',rows
 test('bloque les doublons dans REPONSES',()=>{const a=analyzeSheets([{name:'REPONSES',rows:[['IDENTIFIANT','VILLE'],['A1','Paris'],['A1','Lyon']]}],{questions:[{id:1,Question_Code:'VILLE',TypeFiche_Code:0}],ficheTypes:[],identifierColumn:'IDENTIFIANT',expectedIdentifiers:['A1']});assert.ok(a.errors.some(x=>x.includes('présent plusieurs fois')))});
 
 test('accepte un import contenant uniquement des fiches',()=>{const a=analyzeSheets([{name:'FICHES',rows:[['IDENTIFIANT','TYPE_FICHE','CODE_FICHE','MONTANT'],['A1','DEP','F1','25'],['A1','DEP','F2','40']]}],{questions:[{id:2,Question_Code:'MONTANT',TypeFiche_Code:10}],ficheTypes:[{id:10,TypeFiche_Code:'DEP',Version_Code:1}],identifierColumn:'IDENTIFIANT',expectedIdentifiers:['A1']});assert.deepEqual(a.errors,[]);assert.equal(a.stats.ficheCount,2);assert.equal(a.stats.identifiers,1);assert.equal(a.parsed.filter(x=>x.kind==='FICHES').length,2)});
+
+test('réutilise seulement une réponse existante réellement vide',()=>{assert.equal(isReusableEmptyResponseState({status:'Brouillon',elementTypes:['Principal'],valueCount:0}),true);assert.equal(isReusableEmptyResponseState({status:'Brouillon',elementTypes:['Principal','Fiche'],valueCount:0}),false);assert.equal(isReusableEmptyResponseState({status:'Brouillon',elementTypes:['Principal'],valueCount:1}),false);assert.equal(isReusableEmptyResponseState({status:'Validé',elementTypes:['Principal'],valueCount:0}),false)});
