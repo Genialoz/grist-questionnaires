@@ -1,33 +1,34 @@
-# Données initiales / Pré-remplissage — Étape 1
+# Données initiales / Pré-remplissage — Étape 2
 
-Ce widget prépare et contrôle les imports de données initiales sans écrire dans les tables de réponses.
+Cette version conserve l’étape 1 (modèle Excel, analyse et stockage dans les tables d’import) et ajoute l’initialisation réelle des questions simples depuis la feuille `REPONSES`.
 
-## Tables réutilisées
+## Initialisation unique
+- Une réponse est créée seulement si aucune réponse active n’existe déjà pour la ligne de campagne/participant correspondante.
+- Si une réponse existe déjà, elle est ignorée et n’est jamais écrasée.
+- Les réimports ne réappliquent donc pas les valeurs sur une réponse commencée.
+
+## Types pris en charge à cette étape
+- texte ;
+- numérique / montant ;
+- date ;
+- booléen ;
+- radio / liste simple ;
+- cases à cocher / liste multiple (`|` ou `;` pour séparer plusieurs codes/modalités) ;
+- référentiels et Structures.
+
+Les matrices, fiches et sous-fiches ne sont pas initialisées à cette étape.
+
+## Lecture seule
+Les marqueurs `__LECTURE_SEULE` restent enregistrés dans l’import mais ne sont pas encore appliqués au Questionnaire. Leur application appartient à l’étape 3.
+
+## Tables existantes utilisées
 - SOURCES_IMPORT
 - MAPPINGS_IMPORT
 - LIGNES_IMPORTEES
 - VALEURS_IMPORTEES
-
-Aucune nouvelle table ni colonne n'est nécessaire à cette étape.
-
-## Feuilles Excel reconnues
 - REPONSES
-- FICHES
-- SOUS_FICHES
+- ELEMENTS_REPONSE
+- VALEURS_REPONSE
+- SELECTIONS_REPONSE
 
-Le nom de la colonne identifiant est paramétrable dans le widget.
-
-### REPONSES
-Colonnes : IDENTIFIANT (ou nom choisi), puis codes exacts des questions.
-Une colonne `QUESTION_CODE__LECTURE_SEULE` peut accompagner chaque question.
-
-### FICHES
-Colonnes techniques : IDENTIFIANT, TYPE_FICHE, CODE_FICHE, LECTURE_SEULE_FICHE.
-Les autres colonnes doivent être des codes exacts de questions du type de fiche.
-
-### SOUS_FICHES
-Colonnes techniques : IDENTIFIANT, TYPE_FICHE, CODE_FICHE, CODE_PARENT, LECTURE_SEULE_FICHE.
-
-## Important
-Cette version ne crée ni REPONSES, ni ELEMENTS_REPONSE, ni VALEURS_REPONSE, ni SELECTIONS_REPONSE.
-Elle enregistre uniquement un import préparé après contrôle.
+Aucune nouvelle table ni colonne Grist n’est requise.
