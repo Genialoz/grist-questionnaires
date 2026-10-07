@@ -1,25 +1,22 @@
-# Données initiales / Pré-remplissage — Étape 2
+# Données initiales / Pré-remplissage — Étape 3 (fiches)
 
-Cette version conserve l’étape 1 (modèle Excel, analyse et stockage dans les tables d’import) et ajoute l’initialisation réelle des questions simples depuis la feuille `REPONSES`.
+Cette version conserve les étapes validées précédentes et ajoute l’initialisation réelle des fiches depuis la feuille `FICHES`.
 
 ## Initialisation unique
-- Une réponse est créée seulement si aucune réponse active n’existe déjà pour la ligne de campagne/participant correspondante.
-- Si une réponse existe déjà, elle est ignorée et n’est jamais écrasée.
-- Les réimports ne réappliquent donc pas les valeurs sur une réponse commencée.
+- Les lignes `REPONSES` et `FICHES` sont regroupées par identifiant participant.
+- Si aucune réponse active n’existe, le module crée une réponse support et son élément `Principal`.
+- Les réponses simples éventuelles sont appliquées au Principal.
+- Les lignes `FICHES` créent de vrais `ELEMENTS_REPONSE` avec `Type_element = Fiche`.
+- Si une réponse active existait déjà avant l’import, le participant est ignoré intégralement afin de ne pas écraser ni compléter une réponse déjà commencée.
+- Un fichier peut donc contenir uniquement `FICHES` : la réponse support est créée automatiquement.
 
-## Types pris en charge à cette étape
-- texte ;
-- numérique / montant ;
-- date ;
-- booléen ;
-- radio / liste simple ;
-- cases à cocher / liste multiple (`|` ou `;` pour séparer plusieurs codes/modalités) ;
-- référentiels et Structures.
+## Valeurs de fiches
+Les valeurs utilisent les mécanismes existants `VALEURS_REPONSE` et `SELECTIONS_REPONSE`, avec les mêmes conversions que les réponses simples.
 
-Les matrices, fiches et sous-fiches ne sont pas initialisées à cette étape.
-
-## Lecture seule
-Les marqueurs `__LECTURE_SEULE` restent enregistrés dans l’import mais ne sont pas encore appliqués au Questionnaire. Leur application appartient à l’étape 3.
+## Pas encore pris en charge
+- sous-fiches réelles ;
+- application des marqueurs de lecture seule ;
+- matrices.
 
 ## Tables existantes utilisées
 - SOURCES_IMPORT
