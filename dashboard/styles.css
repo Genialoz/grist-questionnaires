@@ -160,3 +160,5 @@ details[open]>.dashboard-grouping-summary .dashboard-disclosure,details[open]>su
  .builder-design-heading{align-items:flex-start;flex-wrap:wrap}
  .builder-design-heading #add-dashboard-tab{margin-left:42px}
 }
+
+.builder-main-actions .danger{border-color:#e5b8b8;background:#fff;color:#9b2c2c}.builder-main-actions .danger:hover:not(:disabled){background:#fff5f5}.builder-main-actions .danger:disabled{opacity:.45;cursor:not-allowed}
