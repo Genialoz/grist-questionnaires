@@ -29,3 +29,6 @@ Les valeurs utilisent les mécanismes existants `VALEURS_REPONSE` et `SELECTIONS
 - SELECTIONS_REPONSE
 
 Aucune nouvelle table ni colonne Grist n’est requise.
+
+## Correctif V3.1
+Une réponse déjà créée par simple ouverture du lien peut désormais être réutilisée si elle est encore réellement vide (Principal uniquement, aucune valeur, aucune fiche/sous-fiche, non validée). Une réponse déjà commencée reste protégée et est ignorée.

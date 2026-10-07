@@ -27,3 +27,5 @@ export function analyzeSheets(sheets,ctx){
   const expected=new Set((ctx.expectedIdentifiers||[]).map(String));let found=0,notFound=0;for(const id of identifiers){if(expected.size&&expected.has(String(id)))found++;else if(expected.size)notFound++;}
   return{parsed,errors:[...new Set(errors)],warnings:[...new Set(warnings)],stats:{lines:parsed.length,identifiers:identifiers.size,participantsFound:found,participantsNotFound:notFound,recognizedQuestions,unknownColumns,ficheCount,subCount}};
 }
+
+export function isReusableEmptyResponseState({status="",elementTypes=[],valueCount=0}={}){const st=String(status||"").trim().toLowerCase();if(["validé","valide","validated"].includes(st))return false;const types=(elementTypes||[]).map(x=>String(x||"").trim().toLowerCase());if(!types.includes("principal"))return false;if(types.some(x=>x==="fiche"||x==="sous-fiche"))return false;return Number(valueCount||0)===0}
