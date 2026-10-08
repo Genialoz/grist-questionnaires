@@ -32,3 +32,14 @@ Aucune nouvelle table ni colonne Grist n’est requise.
 
 ## Correctif V3.1
 Une réponse déjà créée par simple ouverture du lien peut désormais être réutilisée si elle est encore réellement vide (Principal uniquement, aucune valeur, aucune fiche/sous-fiche, non validée). Une réponse déjà commencée reste protégée et est ignorée.
+
+
+## V4 — Sous-fiches préremplies
+
+- Les lignes `SOUS_FICHES` créent désormais de vrais `ELEMENTS_REPONSE` avec `Type_element = Sous-fiche`.
+- `CODE_PARENT` référence le `CODE_FICHE` de la fiche/sous-fiche parente du même identifiant importé.
+- Le parent réel est enregistré dans `ELEMENTS_REPONSE.Parent_Code`.
+- Les réponses de la sous-fiche utilisent `VALEURS_REPONSE` / `SELECTIONS_REPONSE` comme les fiches ordinaires.
+- Le contrôle vérifie que le type enfant correspond au type du parent.
+- Plusieurs niveaux de sous-fiches sont supportés si la hiérarchie `TYPES_FICHES.Parent_Code` les autorise.
+- La lecture seule importée reste prévue pour l'étape suivante et n'est pas encore appliquée.

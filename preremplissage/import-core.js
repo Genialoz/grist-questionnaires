@@ -23,7 +23,13 @@ export function analyzeSheets(sheets,ctx){
     }
   }
   if(!knownKinds.size)errors.push("Aucune feuille REPONSES, FICHES ou SOUS_FICHES n’a été trouvée.");
-  for(const r of parsed.filter(x=>x.kind==="SOUS_FICHES")){if(r.identifier&&r.parentCode&&!ficheCodes.has(`${r.identifier}::${r.parentCode}`))errors.push(`${r.sheet}, ligne ${r.line} : parent « ${r.parentCode} » introuvable pour ${r.identifier}.`);}
+  for(const r of parsed.filter(x=>x.kind==="SOUS_FICHES")){
+    if(!r.identifier||!r.parentCode)continue;
+    const parentInfo=ficheCodes.get(`${r.identifier}::${r.parentCode}`);
+    if(!parentInfo){errors.push(`${r.sheet}, ligne ${r.line} : parent « ${r.parentCode} » introuvable pour ${r.identifier}.`);continue;}
+    const child=typeByCode.get(String(r.typeCode||"").toUpperCase()),parent=typeByCode.get(String(parentInfo.typeCode||"").toUpperCase());
+    if(child&&parent){const expected=String(child.Parent_Code??"").trim();if(expected&&expected!==String(parent.id)&&expected!==code(parent.TypeFiche_Code))errors.push(`${r.sheet}, ligne ${r.line} : le type « ${r.typeCode} » n’est pas enfant du type parent « ${parentInfo.typeCode} ».`);}
+  }
   const expected=new Set((ctx.expectedIdentifiers||[]).map(String));let found=0,notFound=0;for(const id of identifiers){if(expected.size&&expected.has(String(id)))found++;else if(expected.size)notFound++;}
   return{parsed,errors:[...new Set(errors)],warnings:[...new Set(warnings)],stats:{lines:parsed.length,identifiers:identifiers.size,participantsFound:found,participantsNotFound:notFound,recognizedQuestions,unknownColumns,ficheCount,subCount}};
 }
