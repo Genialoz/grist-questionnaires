@@ -38,4 +38,4 @@ export function generateAnswers(questions,ctx,rng,index=1,mode="realiste"){
 }
 export function rootFicheTypes(types=[]){const active=types.filter(t=>t.Active!==false),ids=new Set(active.map(t=>String(t.id))),codes=new Set(active.map(t=>codeOf(t.TypeFiche_Code)));return sortByOrder(active.filter(t=>{const p=codeOf(t.Parent_Code);return !p||(!ids.has(p)&&!codes.has(p))}))}
 export function childTypes(parent,types=[]){const pids=new Set([String(parent.id),codeOf(parent.TypeFiche_Code)]);return sortByOrder(types.filter(t=>t.Active!==false&&pids.has(codeOf(t.Parent_Code))))}
-export function safeCountRange(type,defaultMax=3){const min=Math.max(0,Number(type.Minimum)||0),declared=Number(type.Maximum),max=Number.isFinite(declared)&&declared>=min?declared:Math.max(min,defaultMax);return{min,max:Math.min(max,10)}}
+export function safeCountRange(type,defaultMax=3){const min=Math.max(0,Number(type.Minimum)||0),raw=type.Maximum,declared=(raw===null||raw===undefined||raw==="")?null:Number(raw);const hasRealMaximum=Number.isFinite(declared)&&declared>0;const max=hasRealMaximum?Math.max(min,declared):Math.max(min,defaultMax);return{min,max:Math.min(max,10)}}
