@@ -371,6 +371,7 @@ export function buildRepeatableTypes(def, pageCode) {
 }
 
 function findRepeatableType(types,code){for(const t of types??[]){if(t.code===code)return t;const c=findRepeatableType(t.children,code);if(c)return c;}return null;}
+function parentElementIdFromDataset(value){const raw=String(value??"").trim();if(/^\d+$/.test(raw))return Number(raw);return raw;}
 function childFiches(type,parentFiche){return (state.fiches[type.code]??[]).filter(f=>String(f.parentElementId??"")===String(parentFiche?.elementId??""));}
 function subFicheOverview(parentType,parentFiche){
   const children=parentType.children??[];
@@ -1075,9 +1076,9 @@ function render() {
   root.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
   root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addFiche;createDraftFiche(state,typeCode);render();scrollToEditor(`[data-fiche-editor="${CSS.escape(typeCode)}"]`)}));
-  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addSubfiche;state.subFicheEditor={typeCode,index:null,parentElementId:Number(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor(`[data-subfiche-editor="${CSS.escape(typeCode)}"]`)}));
-  root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=Number(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.subFicheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render();scrollToEditor("[data-subfiche-editor]")}));
-  root.querySelectorAll("[data-delete-subfiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentSubFiche(e.currentTarget.dataset.deleteSubfiche,Number(e.currentTarget.dataset.parentElement),Number(e.currentTarget.dataset.subIndex))));
+  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addSubfiche;state.subFicheEditor={typeCode,index:null,parentElementId:parentElementIdFromDataset(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor(`[data-subfiche-editor="${CSS.escape(typeCode)}"]`)}));
+  root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=parentElementIdFromDataset(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.subFicheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render();scrollToEditor("[data-subfiche-editor]")}));
+  root.querySelectorAll("[data-delete-subfiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentSubFiche(e.currentTarget.dataset.deleteSubfiche,parentElementIdFromDataset(e.currentTarget.dataset.parentElement),Number(e.currentTarget.dataset.subIndex))));
   root.querySelectorAll("[data-add-fiche-floating]").forEach(floating=>{
     const code=floating.dataset.addFicheFloating;
     const normal=root.querySelector(`[data-add-fiche-normal="${CSS.escape(code)}"]`);
