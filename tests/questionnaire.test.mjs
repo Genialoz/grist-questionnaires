@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import {rowsFromTable, sortByOrder, normalizeRef, evaluateRule, evaluateCondition, validateQuestion} from "../shared/grist-common.js";
 import {controlKind, buildViewModel, validateVisiblePage, buildMatrixHeaderLevels} from "../questionnaire/app.js";
+import {hydrateResponse} from "../questionnaire/persistence.js";
 
 test("rowsFromTable converts Grist columnar data",()=>assert.deepEqual(rowsFromTable({id:[1,2],Code:["A","B"]}),[{id:1,Code:"A"},{id:2,Code:"B"}]));
 test("normalizeRef handles common reference/list shapes",()=>{assert.equal(normalizeRef(["Ref",12]),12);assert.deepEqual(normalizeRef(["L","A","B"]),["A","B"])});
@@ -69,4 +70,20 @@ test("multi-level matrix headers group common parents",()=>{
 
 test("multi-level matrix headers stay disabled without hierarchy",()=>{
   assert.equal(buildMatrixHeaderLevels(["Femme","Homme"],"-"),null);
+});
+
+
+test("hydrateResponse exposes imported read-only locks",()=>{
+  const def={questions:[{id:10,Question_Code:"VILLE",Type_question:"Texte"},{id:11,Question_Code:"MONTANT",Type_question:"Nombre",TypeFiche_Code:20}],ficheTypes:[{id:20,TypeFiche_Code:"DEP"}],choices:[],referentialValues:[],structures:[],matrixColumns:[]};
+  const rows={
+    REPONSES:[{id:1,Reponse_Code:"R1",Revision:1}],
+    ELEMENTS_REPONSE:[{id:2,Element_Code:"E0",Reponse_Code:1,Type_element:"Principal",Revision:1},{id:3,Element_Code:"E1",Reponse_Code:1,Type_element:"Fiche",TypeFiche_Code:20,Revision:1,Lecture_seule_import:true}],
+    VALEURS_REPONSE:[{id:4,Valeur_Code:"V1",Element_Code:2,Question_Code:10,Valeur_texte:"Paris",Lecture_seule_import:true},{id:5,Valeur_Code:"V2",Element_Code:3,Question_Code:11,Valeur_nombre:25}],
+    SELECTIONS_REPONSE:[]
+  };
+  const h=hydrateResponse(rows,def,"R1");
+  assert.equal(h.principalAnswers.VILLE,"Paris");
+  assert.equal(h.principalReadOnlyQuestions.VILLE,true);
+  assert.equal(h.fiches.DEP[0].readOnlyImport,true);
+  assert.equal(h.fiches.DEP[0].answers.MONTANT,25);
 });
