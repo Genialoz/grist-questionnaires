@@ -323,7 +323,11 @@ export function saveDraftFiche(targetState) {
   const editor=targetState.ficheEditor;
   if (!editor) return null;
   const list=targetState.fiches[editor.typeCode] ??= [];
-  const saved={answers:{...editor.answers}};
+  const previous=editor.index===null?null:list[editor.index];
+  const saved={
+    answers:{...editor.answers},
+    elementId:previous?.elementId ?? `preview-fiche-${Date.now()}-${Math.random().toString(36).slice(2,8)}`
+  };
   if (editor.index===null) list.push(saved); else list[editor.index]=saved;
   targetState.ficheEditor=null;
   return saved;
@@ -368,6 +372,23 @@ export function buildRepeatableTypes(def, pageCode) {
 
 function findRepeatableType(types,code){for(const t of types??[]){if(t.code===code)return t;const c=findRepeatableType(t.children,code);if(c)return c;}return null;}
 function childFiches(type,parentFiche){return (state.fiches[type.code]??[]).filter(f=>String(f.parentElementId??"")===String(parentFiche?.elementId??""));}
+function subFicheOverview(parentType,parentFiche){
+  const children=parentType.children??[];
+  if(!children.length)return "";
+  const rows=children.map(type=>{
+    const count=parentFiche?.elementId?childFiches(type,parentFiche).length:0;
+    const minimum=Number(type.minimum||0);
+    const incomplete=minimum>0&&count<minimum;
+    const label=count===1?type.labelSingular:type.labelPlural;
+    return `<span class="subfiche-overview-item${incomplete?" is-incomplete":""}"><strong>${escapeHtml(label)} :</strong> ${count}${minimum>0?` / min. ${minimum}`:""}${incomplete?` <em>À compléter</em>`:""}</span>`;
+  }).join("");
+  return `<div class="subfiche-overview" aria-label="Sous-fiches de cette fiche"><span class="subfiche-overview-title">Sous-fiches</span>${rows}</div>`;
+}
+function pendingSubFiches(parentType){
+  const children=parentType.children??[];
+  if(!children.length)return "";
+  return `<div class="subfiches-pending"><div class="subfiches-pending-title">Sous-fiches</div><p>Cette fiche comporte des sous-fiches. Enregistrez d’abord la fiche pour pouvoir les renseigner.</p><div class="subfiches-pending-list">${children.map(type=>`<span>${escapeHtml(type.labelPlural)}${Number(type.minimum||0)>0?` — minimum ${Number(type.minimum||0)}`:""}</span>`).join("")}</div></div>`;
+}
 function renderSubFiches(parentType,parentFiche,readOnly=false){
   if(!parentFiche?.elementId || !(parentType.children??[]).length) return "";
   return `<div class="subfiches subfiches-inline">${parentType.children.map(type=>{
@@ -862,9 +883,9 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def,list);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index);return `<article class="fiche-card"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span></div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${readOnly?"Consulter":"Modifier"}</button>${!readOnly && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
-  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],readOnly) : (type.children?.length ? `<p class="help">Enregistrez d’abord cette fiche pour pouvoir ajouter ses sous-fiches.</p>` : "")}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const editorHtml=editor ? `<div class="fiche-editor" data-fiche-editor="${escapeHtml(type.code)}"><h3>${readOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers)).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],readOnly) : pendingSubFiches(type)}${readOnly?"":`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${readOnly?"Fermer":"Annuler"}</button>${readOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
   const canShowAdd=!readOnly && !editor && type.allowAdd;
   const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";

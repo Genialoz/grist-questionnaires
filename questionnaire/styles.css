@@ -139,3 +139,16 @@ textarea { min-height:110px; resize:vertical; }
 .toc-validation{margin-top:28px}
 
 .multi-select-group{display:flex;align-items:flex-start;gap:8px;flex-wrap:wrap}.multi-select-dropdown{position:relative;min-width:min(420px,100%);flex:1}.multi-select-dropdown>summary{list-style:none;cursor:pointer;border:1px solid #cfd5dc;border-radius:7px;background:#fff;padding:9px 11px;display:flex;justify-content:space-between;gap:12px;align-items:center}.multi-select-dropdown>summary::-webkit-details-marker{display:none}.multi-select-dropdown>summary:after{content:"▾";margin-left:auto}.multi-select-dropdown[open]>summary:after{transform:rotate(180deg)}.multi-select-dropdown>summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.multi-select-dropdown>summary small{color:#68707a;white-space:nowrap}.multi-select-panel{margin-top:4px;border:1px solid #d7dce2;border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.10);max-height:260px;overflow:auto;padding:6px}.multi-select-option{display:flex;align-items:flex-start;gap:8px;padding:7px 8px;border-radius:6px;font-weight:400!important}.multi-select-option:hover{background:#f5f7f9}.multi-select-option input{width:auto;margin-top:3px}
+
+/* Sous-fiches : rendre leur présence visible dès la carte de la fiche. */
+.subfiche-overview{margin-top:.7rem;padding:.65rem .75rem;border:1px solid #e2dced;border-radius:9px;background:#faf8fd;display:flex;gap:.5rem .75rem;align-items:center;flex-wrap:wrap;font-size:.84rem;color:#56515f}
+.subfiche-overview-title{font-weight:700;color:#4b3f58}
+.subfiche-overview-item{display:inline-flex;gap:.25rem;align-items:center;padding:.2rem .45rem;border-radius:999px;background:#fff;border:1px solid #e5e0eb}
+.subfiche-overview-item.is-incomplete{border-color:#d6b7bd;background:#fff8f8;color:#7b2935}
+.subfiche-overview-item em{font-style:normal;font-weight:700}
+.subfiches-pending{margin-top:18px;padding:14px;border:1px dashed #cfc5db;border-radius:10px;background:#faf8fd}
+.subfiches-pending-title{font-weight:700;margin-bottom:4px;color:#44384f}
+.subfiches-pending p{margin:4px 0 10px;color:#625d69;font-size:.9rem}
+.subfiches-pending-list{display:flex;gap:6px;flex-wrap:wrap}
+.subfiches-pending-list span{padding:4px 8px;border-radius:999px;background:#fff;border:1px solid #e3deea;color:#5c5664;font-size:.82rem}
+@media (max-width:600px){.subfiche-overview{align-items:flex-start;flex-direction:column}.subfiche-overview-item{border-radius:8px}}
