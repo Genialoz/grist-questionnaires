@@ -45,6 +45,11 @@
   });
   select.addEventListener('change',()=>{
     if(!select.value) return;
+    if(select.value.includes('/p/38?style=singlePage')){
+      window.open(select.value,'_blank','noopener');
+      select.value='';
+      return;
+    }
     window.top.location.href=select.value;
   });
   nav.appendChild(select);
@@ -60,7 +65,13 @@
     const a=document.createElement('a');
     a.className='gristionnaire-module-nav__link';
     a.href=url;
-    a.target='_top';
+    if(name==='Questionnaire'){
+      a.target='_blank';
+      a.rel='noopener noreferrer';
+      a.title='Ouvrir le Questionnaire dans un nouvel onglet';
+    }else{
+      a.target='_top';
+    }
     a.textContent=name;
     quick.appendChild(a);
   });
