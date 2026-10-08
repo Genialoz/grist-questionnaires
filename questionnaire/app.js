@@ -1265,11 +1265,33 @@ async function saveCurrentFiche() {
     firstInvalid?.querySelector?.("input,select,textarea")?.focus?.({preventScroll:true});
     return;
   }
-  if(state.previewMode){saveDraftFiche(state);render();return;}
+  const keepOpenForSubFiches=(type.children??[]).length>0;
+  const savedIndex=state.ficheEditor.index;
+  const savedAnswers={...state.ficheEditor.answers};
+  if(state.previewMode){
+    const saved=saveDraftFiche(state);
+    if(keepOpenForSubFiches && saved){
+      const list=state.fiches[type.code]??[];
+      const index=savedIndex==null?list.indexOf(saved):savedIndex;
+      state.ficheEditor={typeCode:type.code,index,answers:{...(list[index]?.answers??savedAnswers)}};
+    }
+    render();
+    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"]`);
+    return;
+  }
   try {
     state.saving=true; render();
+    const beforeCount=(state.fiches[type.code]??[]).length;
     await persistFiche(type,state.ficheEditor);
-    state.ficheEditor=null; state.saving=false; render();
+    if(keepOpenForSubFiches){
+      const list=state.fiches[type.code]??[];
+      const index=savedIndex==null?Math.min(beforeCount,list.length-1):savedIndex;
+      state.ficheEditor={typeCode:type.code,index,answers:{...(list[index]?.answers??savedAnswers)}};
+    }else{
+      state.ficheEditor=null;
+    }
+    state.saving=false; render();
+    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"]`);
   } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
