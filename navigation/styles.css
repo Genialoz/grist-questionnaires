@@ -1,0 +1,36 @@
+:root{
+  color-scheme:light;
+  --bg:#f6f7f8;
+  --panel:#ffffff;
+  --text:#1f2937;
+  --muted:#667085;
+  --border:#e5e7eb;
+  --accent:#7057d2;
+  --accent-soft:#f1edff;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+body{min-height:100vh}
+.page{max-width:1180px;margin:0 auto;padding:32px 24px 40px}
+.hero{background:linear-gradient(135deg,#ffffff 0%,#f3f0ff 100%);border:1px solid var(--border);border-radius:22px;padding:28px 30px;margin-bottom:26px}
+.eyebrow{margin:0 0 6px;color:var(--accent);font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.08em}
+h1{margin:0;font-size:32px;line-height:1.15}
+.intro{margin:10px 0 0;max-width:780px;color:var(--muted);font-size:15px;line-height:1.6}
+.group{margin-top:28px}
+.group-head{display:flex;gap:16px;align-items:baseline;flex-wrap:wrap;margin-bottom:12px}
+h2{margin:0;font-size:20px}
+.group-head p{margin:0;color:var(--muted);font-size:14px}
+.grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.grid.one{grid-template-columns:minmax(0,1fr)}
+.card{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;min-height:112px;padding:18px 18px;background:var(--panel);border:1px solid var(--border);border-radius:18px;color:inherit;text-decoration:none;transition:transform .15s ease,border-color .15s ease,box-shadow .15s ease}
+.card:hover{transform:translateY(-2px);border-color:#cfc7f3;box-shadow:0 8px 24px rgba(31,41,55,.08)}
+.card:focus-visible{outline:3px solid rgba(112,87,210,.25);outline-offset:2px}
+.icon{display:grid;place-items:center;width:44px;height:44px;border-radius:13px;background:var(--accent-soft);font-size:22px}
+.content{min-width:0}
+.content strong{display:block;font-size:16px;margin-bottom:6px}
+.content small{display:block;color:var(--muted);font-size:13px;line-height:1.45}
+.arrow{font-size:24px;color:var(--accent);font-weight:700}
+.featured{border-color:#d9d1ff;background:linear-gradient(180deg,#fff 0%,#fbfaff 100%)}
+footer{margin-top:30px;padding-top:18px;border-top:1px solid var(--border);color:#98a2b3;font-size:12px;text-align:center}
+@media (max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.page{padding:18px 14px 30px}.hero{padding:22px 20px;border-radius:18px}h1{font-size:27px}.grid{grid-template-columns:1fr}.card{min-height:100px}.group-head{display:block}.group-head p{margin-top:4px}}
