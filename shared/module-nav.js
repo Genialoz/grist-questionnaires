@@ -53,6 +53,7 @@
   quick.className='gristionnaire-module-nav__quick';
   [
     ['Concepteur',`${BASE}/p/39?style=singlePage`],
+    ['Questionnaire',`${BASE}/p/38?style=singlePage`],
     ['Simulation',`${BASE}/p/54?style=singlePage`],
     ['Dashboard',`${BASE}/p/50?style=singlePage`]
   ].forEach(([name,url])=>{
