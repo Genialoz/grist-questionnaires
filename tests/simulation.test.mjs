@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {mulberry32,intBetween,fakeSimpleValue,generateAnswers,rootFicheTypes,childTypes,safeCountRange,matrixKind} from '../simulation/core.js';
+const ctx={choices:[{id:1,Question_Code:10,Choix_Code:'OUI',Libelle:'Oui',Ordre:1,Actif:true},{id:2,Question_Code:10,Choix_Code:'NON',Libelle:'Non',Ordre:2,Actif:true}],referentials:[],referentialValues:[],structures:[],conditions:[],rules:[]};
+test('rng déterministe',()=>{const a=mulberry32(42),b=mulberry32(42);assert.deepEqual([a(),a(),a()],[b(),b(),b()])});
+test('bornes entières',()=>{const r=mulberry32(1);for(let i=0;i<30;i++){const n=intBetween(r,2,5);assert.ok(n>=2&&n<=5)}});
+test('génère un choix existant',()=>{const q={id:10,Question_Code:'Q1',Type_question:'Radio'};const v=fakeSimpleValue(q,ctx,mulberry32(2),1);assert.ok(['OUI','NON'].includes(v))});
+test('génère un nombre dans les bornes',()=>{const q={id:11,Question_Code:'N',Type_question:'Numérique',Valeur_min:5,Valeur_max:8,Nb_decimales:0};const v=fakeSimpleValue(q,ctx,mulberry32(3),1);assert.ok(v>=5&&v<=8)});
+test('reconnait les matrices',()=>{assert.equal(matrixKind({Type_question:'Matrice numérique'}),'number');assert.equal(matrixKind({Type_question:'Matrice texte'}),'text')});
+test('hiérarchie fiches',()=>{const types=[{id:1,TypeFiche_Code:'A',Active:true,Minimum:1,Maximum:2},{id:2,TypeFiche_Code:'B',Parent_Code:1,Active:true}];assert.deepEqual(rootFicheTypes(types).map(x=>x.id),[1]);assert.deepEqual(childTypes(types[0],types).map(x=>x.id),[2]);assert.deepEqual(safeCountRange(types[0]),{min:1,max:2})});
+test('génération réponses ignore lignes matrice',()=>{const qs=[{id:1,Question_Code:'TXT',Type_question:'Texte',Active:true},{id:2,Question_Code:'L1',Type_question:'Texte',Est_ligne_matrice:true,Active:true}];const a=generateAnswers(qs,ctx,mulberry32(4),1);assert.ok(a.TXT);assert.equal(a.L1,undefined)});
