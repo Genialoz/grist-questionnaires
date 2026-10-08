@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {rowsFromTable, sortByOrder, normalizeRef, evaluateRule, evaluateCondition, validateQuestion} from "../shared/grist-common.js";
-import {controlKind, buildViewModel, validateVisiblePage} from "../questionnaire/app.js";
+import {controlKind, buildViewModel, validateVisiblePage, buildMatrixHeaderLevels} from "../questionnaire/app.js";
 
 test("rowsFromTable converts Grist columnar data",()=>assert.deepEqual(rowsFromTable({id:[1,2],Code:["A","B"]}),[{id:1,Code:"A"},{id:2,Code:"B"}]));
 test("normalizeRef handles common reference/list shapes",()=>{assert.equal(normalizeRef(["Ref",12]),12);assert.deepEqual(normalizeRef(["L","A","B"]),["A","B"])});
@@ -56,4 +56,17 @@ test("view model orders and applies generic conditions",()=>{
 test("visible page validation ignores questions absent from view",()=>{
   const page={sections:[{questions:[{Question_Code:"Q1",Obligatoire:true}]}]};
   assert.deepEqual(validateVisiblePage(page,{}),{Q1:"Ce champ est obligatoire."});
+});
+
+
+test("multi-level matrix headers group common parents",()=>{
+  const levels=buildMatrixHeaderLevels(["Missions permanentes-CDI-F","Missions permanentes-CDI-H","Missions permanentes-CDD-F","Missions temporaires-CDD-F"],"-");
+  assert.equal(levels.length,3);
+  assert.deepEqual(levels[0].map(x=>[x.label,x.colSpan]),[["Missions permanentes",3],["Missions temporaires",1]]);
+  assert.deepEqual(levels[1].map(x=>[x.label,x.colSpan]),[["CDI",2],["CDD",1],["CDD",1]]);
+  assert.deepEqual(levels[2].map(x=>[x.label,x.colSpan]),[["F",1],["H",1],["F",1],["F",1]]);
+});
+
+test("multi-level matrix headers stay disabled without hierarchy",()=>{
+  assert.equal(buildMatrixHeaderLevels(["Femme","Homme"],"-"),null);
 });
