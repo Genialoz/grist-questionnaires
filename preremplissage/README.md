@@ -15,7 +15,7 @@ Les valeurs utilisent les mécanismes existants `VALEURS_REPONSE` et `SELECTIONS
 
 ## Pas encore pris en charge
 - sous-fiches réelles ;
-- application des marqueurs de lecture seule ;
+- application des marqueurs de lecture seule sur les réponses, fiches et sous-fiches ;
 - matrices.
 
 ## Tables existantes utilisées
