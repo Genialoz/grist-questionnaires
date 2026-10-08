@@ -49,13 +49,14 @@ export function hydrateResponse(rows,definition,reponseCode){
     if(s.Structure_Code){const raw=codeOf(s.Structure_Code),row=(definition.structures??[]).find(x=>String(x.id)===raw||codeOf(x.Structure_Code)===raw);return row?codeOf(row.Structure_Code):raw;}
     return "";
   };
-  const answersFor=el=>{const out={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(!q)continue;
-    if(isTrue(q.Est_ligne_matrice)){const parentRaw=codeOf(q.Question_parente_Code),parent=questions.find(x=>String(x.id)===parentRaw||codeOf(x.Question_Code)===parentRaw);if(!parent)continue;const pc=codeOf(parent.Question_Code),rc=codeOf(q.Question_Code),pt=qtype(parent);out[pc]??={};
+  const answersFor=el=>{const out={},readOnlyQuestions={}; for(const v of values.filter(v=>sameRef(v.Element_Code,el,"Element_Code"))){const q=questions.find(q=>sameRef(v.Question_Code,q,"Question_Code")); if(!q)continue;
+    const qc=codeOf(q.Question_Code);if(isTrue(v.Lecture_seule_import))readOnlyQuestions[qc]=true;
+    if(isTrue(q.Est_ligne_matrice)){const parentRaw=codeOf(q.Question_parente_Code),parent=questions.find(x=>String(x.id)===parentRaw||codeOf(x.Question_Code)===parentRaw);if(!parent)continue;const pc=codeOf(parent.Question_Code),rc=qc,pt=qtype(parent);out[pc]??={};if(isTrue(v.Lecture_seule_import))readOnlyQuestions[pc]=true;
       if(pt.includes("radio")||pt.includes("checkbox")){const selected=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);out[pc][rc]=pt.includes("checkbox")?selected:(selected[0]??v.Valeur_texte??"");}
       else {const colRaw=codeOf(v.ColonneMatrice_Code),col=(definition.matrixColumns??[]).find(c=>String(c.id)===colRaw||codeOf(c.ColonneMatrice_Code)===colRaw);if(!col)continue;const cc=codeOf(col.ColonneMatrice_Code);out[pc][rc]??={};out[pc][rc][cc]=pt.includes("nombre")||pt.includes("numérique")||pt.includes("numerique")?(v.Valeur_nombre??""):(v.Valeur_texte??"");}
       continue;}
-    if(multi(q))out[codeOf(q.Question_Code)]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[codeOf(q.Question_Code)]=deserializeAnswer(q,v,definition);
-  } return out;};
+    if(multi(q))out[qc]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[qc]=deserializeAnswer(q,v,definition);
+  } return {answers:out,readOnlyQuestions};};
   const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
@@ -65,9 +66,11 @@ export function hydrateResponse(rows,definition,reponseCode){
     if(!tc) continue;
     const parentRaw=codeOf(el.Parent_Code);
     const parentEl=parentRaw ? elements.find(x=>String(x.id)===parentRaw || codeOf(x.Element_Code)===parentRaw) : null;
-    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",answers:answersFor(el)});
+    const bundle=answersFor(el);
+    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
   }
-  return {response,principalAnswers:principal?answersFor(principal):{},principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
+  const principalBundle=principal?answersFor(principal):{answers:{},readOnlyQuestions:{}};
+  return {response,principalAnswers:principalBundle.answers,principalReadOnlyQuestions:principalBundle.readOnlyQuestions,principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
 }
 export function assertRevision(expected,actual){if(Number(expected??0)!==Number(actual??0)){const e=new Error("Une version plus récente de cette réponse existe. Rechargez le questionnaire avant de continuer.");e.code="revision_conflict";throw e;} return true;}
 export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions){
