@@ -682,6 +682,30 @@ function renderControl(q, answers=state.answers, ficheMode=false) {
 }
 
 
+export function buildMatrixHeaderLevels(labels,separator="-"){
+  const sep=String(separator??"");
+  const source=(labels??[]).map(x=>String(x??"").trim());
+  if(!sep||!source.length||!source.some(x=>x.includes(sep)))return null;
+  const columns=source.map(label=>label.split(sep).map(part=>part.trim()));
+  const levelCount=Math.max(1,...columns.map(parts=>parts.length));
+  if(levelCount<2)return null;
+  columns.forEach(parts=>{while(parts.length<levelCount)parts.push("")});
+  const levels=[];
+  for(let level=0;level<levelCount;level++){
+    const cells=[];let index=0;
+    while(index<columns.length){
+      const value=columns[index][level];let span=1;
+      while(index+span<columns.length){
+        let same=true;
+        for(let parent=0;parent<=level;parent++){if(columns[index+span][parent]!==columns[index][parent]){same=false;break}}
+        if(!same)break;span++;
+      }
+      cells.push({label:value,colSpan:span});index+=span;
+    }
+    levels.push(cells);
+  }
+  return levels;
+}
 function matrixKind(q){
   const t=String(q?.Type_question ?? q?.Type ?? "").trim().toLowerCase();
   if(!t.includes("matrice")) return "";
@@ -705,7 +729,9 @@ function renderMatrix(q,answers=state.answers,ficheMode=false){
   const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition);
   const ro=isTrue(q.Lecture_seule)||responseIsLocked();
   if(!rows.length||!cols.length) return `<div class="matrix-empty">Matrice à configurer : ${!rows.length?"aucune ligne":"aucune colonne"}.</div>`;
-  const head=cols.map(c=>`<th scope="col">${escapeHtml(c.label)}</th>`).join("");
+  const multiHeader=["number","text"].includes(kind)&&isTrue(q.Matrice_entetes_multiniveaux);
+  const separator=String(q.Matrice_separateur_niveaux||"-");
+  const headerLevels=multiHeader?buildMatrixHeaderLevels(cols.map(c=>c.label),separator):null;
   const body=rows.map(r=>{const rc=codeOf(r.Question_Code); const cells=cols.map(c=>{const v=kind==="radio"?(answers?.[qc]?.[rc] ?? ""):matrixValue(answers,qc,rc,c.code); const base=`data-matrix-question="${escapeHtml(qc)}" data-matrix-row="${escapeHtml(rc)}" data-matrix-col="${escapeHtml(c.code)}"${ficheMode?' data-matrix-fiche="1"':''}`;
     if(kind==="radio") return `<td><input type="radio" name="mx_${escapeHtml(qc)}_${escapeHtml(rc)}" ${base} value="${escapeHtml(c.code)}"${String(v)===String(c.code)?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;
     if(kind==="checkbox"){const arr=Array.isArray(answers?.[qc]?.[rc])?answers[qc][rc]:[];return `<td><input type="checkbox" ${base} value="${escapeHtml(c.code)}" data-exclusive="${c.exclusive?"1":"0"}"${arr.map(String).includes(String(c.code))?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;}
@@ -714,9 +740,10 @@ function renderMatrix(q,answers=state.answers,ficheMode=false){
   }).join("");
   const total=kind==="number"&&isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-row-total="${escapeHtml(qc)}:${escapeHtml(rc)}">0</td>`:"";
   return `<tr><th scope="row">${escapeHtml(first(r,["Libelle","Libellé","Titre"],rc))}${isRequiredQuestion(r)?' <span class="required">*</span>':""}</th>${cells}${total}</tr>`;}).join("");
-  const totalHead=kind==="number"&&isTrue(q.Afficher_total_ligne)?'<th scope="col">Total</th>':"";
-  const foot=kind==="number"&&isTrue(q.Afficher_total_colonne)?`<tfoot><tr><th scope="row">Total</th>${cols.map(c=>`<td class="matrix-total" data-matrix-col-total="${escapeHtml(qc)}:${escapeHtml(c.code)}">0</td>`).join("")}${isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-grand-total="${escapeHtml(qc)}">0</td>`:""}</tr></tfoot>`:"";
-  return `<div class="matrix-wrap" data-matrix="${escapeHtml(qc)}"><table class="matrix-table"><thead><tr><th></th>${head}${totalHead}</tr></thead><tbody>${body}</tbody>${foot}</table></div>`;
+  const hasRowTotal=kind==="number"&&isTrue(q.Afficher_total_ligne);
+  const header=headerLevels?headerLevels.map((cells,level)=>`<tr class="matrix-header-level matrix-header-level-${Math.min(level+1,4)}">${level===0?`<th class="matrix-corner" rowspan="${headerLevels.length}"></th>`:""}${cells.map(c=>`<th scope="${c.colSpan>1?"colgroup":"col"}" colspan="${c.colSpan}">${escapeHtml(c.label)}</th>`).join("")}${level===0&&hasRowTotal?`<th scope="col" class="matrix-total-header" rowspan="${headerLevels.length}">Total</th>`:""}</tr>`).join(""):`<tr><th class="matrix-corner"></th>${cols.map(c=>`<th scope="col">${escapeHtml(c.label)}</th>`).join("")}${hasRowTotal?'<th scope="col">Total</th>':""}</tr>`;
+  const foot=kind==="number"&&isTrue(q.Afficher_total_colonne)?`<tfoot><tr><th scope="row">Total</th>${cols.map(c=>`<td class="matrix-total" data-matrix-col-total="${escapeHtml(qc)}:${escapeHtml(c.code)}">0</td>`).join("")}${hasRowTotal?`<td class="matrix-total" data-matrix-grand-total="${escapeHtml(qc)}">0</td>`:""}</tr></tfoot>`:"";
+  return `<div class="matrix-wrap" data-matrix="${escapeHtml(qc)}"><table class="matrix-table"><thead>${header}</thead><tbody>${body}</tbody>${foot}</table></div>`;
 }
 
 function isDataTableQuestion(q){return String(q?.Type_question??q?.Type??"").toLowerCase()==="tableau_donnees"}
