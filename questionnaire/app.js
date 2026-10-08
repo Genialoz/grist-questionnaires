@@ -1276,7 +1276,7 @@ async function saveCurrentFiche() {
       state.ficheEditor={typeCode:type.code,index,answers:{...(list[index]?.answers??savedAnswers)}};
     }
     render();
-    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"]`);
+    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"] .subfiches`);
     return;
   }
   try {
@@ -1291,7 +1291,7 @@ async function saveCurrentFiche() {
       state.ficheEditor=null;
     }
     state.saving=false; render();
-    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"]`);
+    if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"] .subfiches`);
   } catch(e) { state.saving=false; showSaveError(e); render(); }
 }
 
