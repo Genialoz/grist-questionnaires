@@ -143,18 +143,16 @@ function isInternalGristPreviewContext(){
   // Les vrais liens générés (PERSONNALISE et LIEN_UNIQUE) utilisent singlePage.
   return Boolean(storedPreviewVersion()) && !hasExplicitResponseParams() && String(requestedParam("style")||"").toLowerCase()!=="singlepage";
 }
+function isAdminPreviewContext(){
+  return /^(?:1|true|oui)$/i.test(String(requestedParam("AdminPreview_")||"").trim());
+}
 function requestedPreviewVersion(){
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
   if(explicit)return explicit;
-  if(isInternalGristPreviewContext())return storedPreviewVersion();
-  if(hasRealResponseContext())return "";
-  return storedPreviewVersion();
+  if(isAdminPreviewContext()||isInternalGristPreviewContext())return storedPreviewVersion();
+  return "";
 }
-function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_"));}
-function isSinglePageRequest(){return String(requestedParam("style")||"").toLowerCase()==="singlepage";}
-export function unresolvedSinglePageRespondentContext({campaignCount=0,resumeFound=false,explicitPreview=false}={}){
-  return isSinglePageRequest() && !explicitPreview && !resumeFound && Number(campaignCount||0)===0;
-}
+function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_")||isAdminPreviewContext());}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
   // A single PERSONNALISE campaign exposed by ACLs is therefore authoritative:
@@ -178,12 +176,6 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   // contexte de campagne, de session ou de sélection Grist.
   const resumeToken=requestedResumeToken();
   const resumeResponse=resumeToken ? findResponseByResumeToken(loaded.REPONSES,resumeToken) : null;
-  // En singlePage, un lien répondant qui ne donne accès à aucune campagne et
-  // à aucune réponse ne doit jamais retomber sur l'aperçu mémorisé du navigateur.
-  // C'est notamment le cas des anciens liens révoqués/supprimés.
-  if(unresolvedSinglePageRespondentContext({campaignCount:(loaded.CAMPAGNES??[]).length,resumeFound:Boolean(resumeResponse),explicitPreview:hasExplicitPreviewContext()})){
-    throw new Error("Ce lien n’est plus valide ou la campagne a été supprimée.");
-  }
   if(resumeResponse?.Version_Code!=null && resumeResponse.Version_Code!==""){
     const c=resolveRefCode(resumeResponse.Version_Code,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(resumeResponse.Version_Code))) ?? null;
@@ -229,6 +221,11 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(av))) ?? null;
   }
   const previewVersion=requestedPreviewVersion();
+  const singlePage=String(requestedParam("style")||"").toLowerCase()==="singlepage";
+  const respondentSignal=Boolean(resumeResponse||accessCampaign||aclVisibleCampaign||requestedAccess||requestedResumeToken()||requestedParam("Reponse_")||requestedParam("Campagne_"));
+  if(!version && singlePage && !previewVersion && !respondentSignal){
+    throw new Error("Ce lien n’est plus valide ou la campagne n’est plus accessible.");
+  }
   if(!version && previewVersion){
     version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
