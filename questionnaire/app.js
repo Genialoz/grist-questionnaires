@@ -14,6 +14,30 @@ function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
   return value === undefined || value === null || value === "" || isTrue(value);
 }
+function campaignStatus(c){
+  const raw=String(c?.Statut??c?.Etat??"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  if(raw.includes("supprim"))return "Supprimée";
+  if(raw.includes("clot"))return "Clôturée";
+  if(raw.includes("brouillon"))return "Brouillon";
+  if(raw.includes("ouvert")||raw.includes("active")||raw.includes("publ"))return "Ouverte";
+  return active(c)?"Ouverte":"Brouillon";
+}
+function campaignDay(v){
+  if(v==null||v==="")return null;
+  if(typeof v==="number"&&Number.isFinite(v))return Math.floor(v/86400);
+  const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m)return Math.floor(Date.UTC(Number(m[1]),Number(m[2])-1,Number(m[3]))/86400000);
+  const d=new Date(v);return Number.isNaN(d.getTime())?null:Math.floor(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())/86400000);
+}
+export function campaignAccessState(c,now=Date.now()){
+  const status=campaignStatus(c),today=Math.floor(now/86400000),open=campaignDay(c?.Date_ouverture),limit=campaignDay(c?.Date_limite);
+  if(status==="Supprimée")return{allowed:false,code:"deleted",message:"Ce lien n’est plus valide ou la campagne a été supprimée."};
+  if(status==="Brouillon")return{allowed:false,code:"draft",message:"Cette campagne n’est pas encore ouverte."};
+  if(status==="Clôturée")return{allowed:false,code:"closed",message:"Cette campagne est clôturée. Vous ne pouvez plus répondre."};
+  if(open!=null&&open>today)return{allowed:false,code:"not-open-yet",message:"Cette campagne n’est pas encore ouverte."};
+  if(limit!=null&&limit<today)return{allowed:false,code:"deadline",message:"Cette campagne est clôturée. La date limite de réponse est dépassée."};
+  return{allowed:true,code:"open",message:""};
+}
 export function resolveRefCode(value, rows, codeColumn) {
   const raw=codeOf(value);
   if (!raw) return "";
@@ -158,7 +182,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   // This avoids opening an unrelated questionnaire when an OWNER can read several campaigns/versions.
   const requestedAccess=requestedParam("Acces_");
   const accessCampaign=requestedAccess
-    ? (loaded.CAMPAGNES ?? []).find(c=>active(c) && String(c.Jeton_acces??"").trim()===requestedAccess)
+    ? (loaded.CAMPAGNES ?? []).find(c=>String(c.Jeton_acces??"").trim()===requestedAccess)
     : null;
   // Un lien répondant portant explicitement Acces_ est autoritaire.
   // Si son jeton ne correspond plus à une campagne active (campagne supprimée,
@@ -167,14 +191,22 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if(requestedAccess && !accessCampaign){
     throw new Error("Ce lien n’est plus valide ou la campagne a été supprimée.");
   }
-  const accessVersion=accessCampaign?.Version_Code;
+  const aclVisibleCampaign=!requestedAccess && (loaded.CAMPAGNES??[]).length===1 && !isInternalGristPreviewContext()
+    ? (loaded.CAMPAGNES??[])[0]
+    : null;
+  const respondentCampaign=accessCampaign||aclVisibleCampaign;
+  if(respondentCampaign){
+    const gate=campaignAccessState(respondentCampaign);
+    if(!gate.allowed)throw new Error(gate.message);
+  }
+  const accessVersion=respondentCampaign?.Version_Code;
   if(!version && accessVersion!=null && accessVersion!==""){
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
     version=versions.find(v=>codeOf(v.Version_Code)===c || String(v.id)===String(codeOf(accessVersion))) ?? null;
   }
   // LinkKey Acces_ may be hidden from widget JS. If ACLs expose exactly one
   // active campaign, its version is authoritative over stale preview context.
-  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(active);
+  const aclCampaigns=(loaded.CAMPAGNES??[]).filter(c=>campaignAccessState(c).allowed);
   // En aperçu interne p/38, la simple visibilité ACL d'une campagne LIEN_UNIQUE
   // ne doit jamais imposer sa version : le Concepteur (previewVersion) reste prioritaire.
   // Sur un vrai lien répondant singlePage, isInternalGristPreviewContext() est faux
@@ -217,7 +249,7 @@ export async function loadDefinition(docApi, selectedRecord=null) {
     conditions:byVersion(loaded.CONDITIONS).filter(active),
     rules:normalizeRules(loaded),
     choiceFilters:loaded.FILTRES_CHOIX.filter(active),
-    campaigns:byVersion(loaded.CAMPAGNES).filter(active),
+    campaigns:byVersion(loaded.CAMPAGNES),
     responses:loaded.REPONSES,
     responseElements:loaded.ELEMENTS_REPONSE,
     responseValues:loaded.VALEURS_REPONSE,
@@ -1578,7 +1610,7 @@ function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.(
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
 async function refreshPersistenceRows(){for(const [key,table] of [["responses","REPONSES"],["responseElements","ELEMENTS_REPONSE"],["responseValues","VALEURS_REPONSE"],["responseSelections","SELECTIONS_REPONSE"]]) state.definition[key]=rowsFromTable(await grist.docApi.fetchTable(table));}
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
-function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");if(access){const c=cs.find(x=>String(x.Jeton_acces??"").trim()===access);if(c)return c;}const requested=requestedParam("Campagne_");if(requested){const c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested);if(c)return c;}const candidate=state.selectedRecord?.Campagne_Code;if(candidate!=null){const raw=codeOf(candidate);const c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw);if(c)return c;}if(cs.length===1)return cs[0];throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");}
+function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");let c=null;if(access)c=cs.find(x=>String(x.Jeton_acces??"").trim()===access)||null;const requested=requestedParam("Campagne_");if(!c&&requested)c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested)||null;const candidate=state.selectedRecord?.Campagne_Code;if(!c&&candidate!=null){const raw=codeOf(candidate);c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw)||null;}if(!c&&cs.length===1)c=cs[0];if(!c)throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");const gate=campaignAccessState(c);if(!gate.allowed&&!state.previewMode)throw new Error(gate.message);return c;}
 async function ensureResponse(){
   if(state.response&&state.principalElement)return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
