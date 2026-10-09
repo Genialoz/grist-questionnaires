@@ -480,7 +480,7 @@ export function visibleFicheQuestions(type, def, answers={}) {
   const questions=authoritative.length ? authoritative : (type.questions ?? []);
   applySingleChoiceAutomation(def,answers);
   return questions
-    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && !isDisplayBlock(q) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
+    .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && displayBlockKind(q)!=="toc" && displayBlockKind(q)!=="indicators" && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
     .map(q=>({...q,options:optionsFor(q,def,answers)}));
 }
 
@@ -855,6 +855,10 @@ function updateMatrixTotals(root=document){
 
 function renderFicheField(q, answers, forcedReadOnly=false) {
   const qc=codeOf(q.Question_Code);
+  if(displayBlockKind(q)==="description"){
+    const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,{...state.answers,...answers});
+    return `<div class="content-description fiche-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${escapeHtml(title)}</div>`:""}${text?`<div class="content-description-text">${escapeHtml(text).replace(/\n/g,"<br>")}</div>`:""}</div>`;
+  }
   return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
