@@ -135,24 +135,40 @@ function hasRealResponseContext(){return Boolean(requestedParam("Acces_")||reque
 function storedPreviewVersion(){
   try{return String(localStorage.getItem("gristionnaire.previewVersion")||"").trim()}catch{return ""}
 }
+const PREVIEW_GRANT_KEY="gristionnaire.previewGrant";
+const PREVIEW_GRANT_MAX_AGE_MS=30000;
+let previewGrantCache;
+function consumeAdminPreviewGrant(){
+  if(previewGrantCache!==undefined)return previewGrantCache;
+  previewGrantCache=null;
+  try{
+    const raw=localStorage.getItem(PREVIEW_GRANT_KEY);
+    localStorage.removeItem(PREVIEW_GRANT_KEY);
+    if(!raw)return null;
+    const grant=JSON.parse(raw),ts=Number(grant?.ts||0),version=String(grant?.version||"").trim();
+    if(!version||!ts||Date.now()-ts<0||Date.now()-ts>PREVIEW_GRANT_MAX_AGE_MS)return null;
+    previewGrantCache={version,ts,source:String(grant?.source||"admin")};
+    return previewGrantCache;
+  }catch{return null}
+}
 function hasExplicitResponseParams(){
   return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));
 }
 function isInternalGristPreviewContext(){
-  // Le widget p/38 ouvert depuis Grist n'est pas un lien répondant singlePage.
-  // Les vrais liens générés (PERSONNALISE et LIEN_UNIQUE) utilisent singlePage.
-  return Boolean(storedPreviewVersion()) && !hasExplicitResponseParams() && String(requestedParam("style")||"").toLowerCase()!=="singlepage";
+  // Les paramètres de l'URL Grist (Acces_, style...) ne sont pas transmis de
+  // façon fiable à l'iframe du widget. Un aperçu admin doit donc être autorisé
+  // par un ticket court et à usage unique créé juste avant l'ouverture.
+  return Boolean(consumeAdminPreviewGrant()) && !hasExplicitResponseParams();
 }
 function isAdminPreviewContext(){
-  return /^(?:1|true|oui)$/i.test(String(requestedParam("AdminPreview_")||"").trim());
+  return Boolean(consumeAdminPreviewGrant());
 }
 function requestedPreviewVersion(){
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
   if(explicit)return explicit;
-  if(isAdminPreviewContext()||isInternalGristPreviewContext())return storedPreviewVersion();
-  return "";
+  return consumeAdminPreviewGrant()?.version||"";
 }
-function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_")||isAdminPreviewContext());}
+function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_")||consumeAdminPreviewGrant());}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
   // A single PERSONNALISE campaign exposed by ACLs is therefore authoritative:
