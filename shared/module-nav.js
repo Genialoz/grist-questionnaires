@@ -13,6 +13,16 @@
     ['Simulation',`${BASE}/p/54?style=singlePage`]
   ];
 
+  function grantQuestionnairePreview(){
+    try{
+      const version=String(localStorage.getItem('gristionnaire.previewVersion')||'').trim();
+      if(!version)return false;
+      localStorage.setItem('gristionnaire.previewGrant',JSON.stringify({version,ts:Date.now(),source:'module-nav'}));
+      return true;
+    }catch{return false}
+  }
+
+
   const nav=document.createElement('nav');
   nav.className='gristionnaire-module-nav';
   nav.setAttribute('aria-label','Navigation Gristionnaire');
@@ -46,6 +56,7 @@
   select.addEventListener('change',()=>{
     if(!select.value) return;
     if(select.value.includes('/p/38?style=singlePage&AdminPreview_=1')){
+      grantQuestionnairePreview();
       window.open(select.value,'_blank','noopener');
       select.value='';
       return;
@@ -69,6 +80,7 @@
       a.target='_blank';
       a.rel='noopener noreferrer';
       a.title='Ouvrir le Questionnaire dans un nouvel onglet';
+      a.addEventListener('click',grantQuestionnairePreview);
     }else{
       a.target='_top';
     }
