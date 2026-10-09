@@ -4,7 +4,7 @@
   const HOME='https://genialoz.github.io/grist-questionnaires/navigation/';
   const modules=[
     ['Concepteur',`${BASE}/p/39?style=singlePage`],
-    ['Questionnaire',`${BASE}/p/38?style=singlePage`],
+    ['Questionnaire',`${BASE}/p/38?style=singlePage&AdminPreview_=1`],
     ['Dashboard — Construction',`${BASE}/p/47?style=singlePage`],
     ['Dashboard — Consultation',`${BASE}/p/50?style=singlePage`],
     ['Bibliothèques',`${BASE}/p/52?style=singlePage`],
@@ -45,7 +45,7 @@
   });
   select.addEventListener('change',()=>{
     if(!select.value) return;
-    if(select.value.includes('/p/38?style=singlePage')){
+    if(select.value.includes('/p/38?style=singlePage&AdminPreview_=1')){
       window.open(select.value,'_blank','noopener');
       select.value='';
       return;
@@ -58,7 +58,7 @@
   quick.className='gristionnaire-module-nav__quick';
   [
     ['Concepteur',`${BASE}/p/39?style=singlePage`],
-    ['Questionnaire',`${BASE}/p/38?style=singlePage`],
+    ['Questionnaire',`${BASE}/p/38?style=singlePage&AdminPreview_=1`],
     ['Simulation',`${BASE}/p/54?style=singlePage`],
     ['Dashboard',`${BASE}/p/50?style=singlePage`]
   ].forEach(([name,url])=>{
