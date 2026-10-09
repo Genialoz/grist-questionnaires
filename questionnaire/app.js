@@ -245,13 +245,13 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   if(!version && previewVersion){
     version=versions.find(v=>codeOf(v.Version_Code)===previewVersion || String(v.id)===previewVersion) ?? null;
   }
-  const candidate = selectedRecord && (selectedRecord.Version_Code ?? selectedRecord.version_Code ?? selectedRecord.id);
-  if (!version && candidate != null) {
-    const c=codeOf(candidate);
-    version=versions.find(v => codeOf(v.Version_Code)===c || String(v.id)===c) ?? null;
-  }
-  version ??= versions.find(v => /brouillon|active|publi/i.test(String(v.Statut ?? ""))) ?? versions[0] ?? null;
-  if (!version) throw new Error("Aucune version de questionnaire disponible.");
+  // Sécurité : ne jamais choisir une version par défaut quand aucun contexte
+  // répondant ou aperçu admin n'a été résolu. Sur les pages Grist, le LinkKey
+  // (Acces_) peut être invisible au widget ; un fallback vers versions[0] ferait
+  // alors réapparaître un questionnaire via un ancien lien révoqué.
+  // Les contextes légitimes ont déjà résolu `version` ci-dessus : reprise,
+  // campagne visible par ACL ou ticket d’aperçu administrateur.
+  if (!version) throw new Error("Ce lien n’est plus valide ou la campagne n’est plus accessible.");
   const vc=codeOf(version.Version_Code);
   const byVersion = rows => rows.filter(r => !("Version_Code" in r) || resolveRefCode(r.Version_Code, versions, "Version_Code")===vc);
   const versionQuestions=byVersion(loaded.QUESTIONS).filter(active);
