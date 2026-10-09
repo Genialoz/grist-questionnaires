@@ -160,6 +160,13 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   const accessCampaign=requestedAccess
     ? (loaded.CAMPAGNES ?? []).find(c=>active(c) && String(c.Jeton_acces??"").trim()===requestedAccess)
     : null;
+  // Un lien répondant portant explicitement Acces_ est autoritaire.
+  // Si son jeton ne correspond plus à une campagne active (campagne supprimée,
+  // désactivée ou lien révoqué), il ne faut surtout pas retomber sur une version
+  // disponible / l'aperçu interne : l'ancien lien doit être définitivement invalide.
+  if(requestedAccess && !accessCampaign){
+    throw new Error("Ce lien n’est plus valide ou la campagne a été supprimée.");
+  }
   const accessVersion=accessCampaign?.Version_Code;
   if(!version && accessVersion!=null && accessVersion!==""){
     const c=resolveRefCode(accessVersion,versions,"Version_Code");
