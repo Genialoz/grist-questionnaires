@@ -98,3 +98,43 @@
 .results-reset-zone .btn-danger{flex:0 0 auto}
 .btn-danger:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:760px){.results-reset-zone{align-items:stretch;flex-direction:column}.results-reset-zone .btn-danger{width:100%}}
+
+
+/* V1.6 — ergonomie responsive des fenêtres et actions */
+.app-dialog{max-width:calc(100vw - 24px)}
+.wide-dialog{width:min(1120px,calc(100vw - 24px))}
+.preview-dialog{width:min(1120px,calc(100vw - 24px))}
+.dialog-shell{min-width:0}
+.dialog-head>div{min-width:0}
+.dialog-head h2,.dialog-head p{overflow-wrap:anywhere}
+
+/* Résultats / suivi : les actions restent toujours visibles. */
+#results-dashboard>div[style*="overflow:auto"]{max-width:100%;overscroll-behavior-inline:contain}
+#results-dashboard table{min-width:860px}
+#results-dashboard th,#results-dashboard td{vertical-align:middle}
+#results-dashboard .result-actions-cell{min-width:190px;width:190px}
+.result-row-actions{display:flex;gap:6px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.result-row-actions .secondary-btn{white-space:nowrap;flex:0 0 auto}
+#results-dashboard .form-actions{justify-content:flex-start}
+#results-dashboard .form-actions button{max-width:100%;white-space:normal}
+
+/* Les cartes et entêtes des autres grandes fenêtres peuvent revenir à la ligne. */
+.questionnaire-card,.campaign-card-head{min-width:0;flex-wrap:wrap}
+.questionnaire-card>div:first-child,.campaign-card-head>div:first-child{min-width:0;flex:1 1 260px}
+.questionnaire-card-actions{flex:1 1 auto;min-width:0}
+.questionnaire-card-actions button{white-space:normal}
+
+@media(max-width:760px){
+  .dialog-shell,.app-dialog form{padding:14px}
+  .wide-dialog,.preview-dialog,.app-dialog{width:calc(100vw - 12px);max-width:calc(100vw - 12px);max-height:calc(100vh - 12px)}
+  .dialog-head{gap:10px}
+  .two-cols{grid-template-columns:1fr}
+  .form-actions{justify-content:stretch}
+  .form-actions button{flex:1 1 180px;min-width:0;white-space:normal}
+  .questionnaire-card{align-items:flex-start;flex-direction:column}
+  .questionnaire-card-actions{width:100%;justify-content:flex-start}
+  .campaign-card-head{align-items:flex-start;flex-direction:column}
+  #results-dashboard .result-actions-cell{min-width:160px;width:160px}
+  .result-row-actions{justify-content:flex-start}
+  .result-row-actions .secondary-btn{flex:1 1 100%;width:100%}
+}
