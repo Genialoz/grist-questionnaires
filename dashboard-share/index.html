@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="fr">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Ouverture du tableau de bord</title></head>
+<body>
+<p>Ouverture du tableau de bord…</p>
+<script>
+(()=>{
+  const TARGET="https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire/p/50?style=singlePage";
+  const token=String(new URLSearchParams(location.search).get("token")||"").trim();
+  if(!/^Dashboard_[A-Za-z0-9_-]+$/.test(token)){document.body.innerHTML="<p>Ce lien de tableau de bord n’est pas valide.</p>";return;}
+  try{localStorage.setItem("gristionnaire.dashboardShareGrant",JSON.stringify({token,ts:Date.now(),source:"share-link"}));}
+  catch(_){document.body.innerHTML="<p>Impossible d’ouvrir ce tableau de bord dans ce navigateur.</p>";return;}
+  location.replace(TARGET);
+})();
+</script>
+</body>
+</html>
