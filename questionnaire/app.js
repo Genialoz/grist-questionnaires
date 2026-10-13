@@ -8,7 +8,38 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
+const state = { definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
+
+
+function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
+function navigateToPage(vm,targetIndex,{record=true}={}){
+  if(!vm?.pages?.length||targetIndex<0||targetIndex>=vm.pages.length||targetIndex===state.pageIndex)return false;
+  if(record){
+    const key=pageHistoryKey(vm.pages[state.pageIndex]);
+    if(key&&state.pageHistory[state.pageHistory.length-1]!==key)state.pageHistory.push(key);
+  }
+  state.pageIndex=targetIndex;
+  return true;
+}
+function navigateToPreviousPage(vm){
+  while(state.pageHistory.length){
+    const key=state.pageHistory.pop();
+    const targetIndex=vm.pages.findIndex(p=>pageHistoryKey(p)===key);
+    if(targetIndex>=0&&targetIndex!==state.pageIndex){state.pageIndex=targetIndex;return true;}
+  }
+  if(state.pageIndex>0){state.pageIndex--;return true;}
+  return false;
+}
+function canNavigatePrevious(vm){
+  if(state.pageHistory.some(key=>vm.pages.some(p=>pageHistoryKey(p)===key)))return true;
+  return state.pageIndex>0;
+}
+function beginActionFeedback(message){state.actionFeedback=message;state.actionFeedbackKind="busy";state.actionFeedbackToken++;}
+function clearActionFeedback(){state.actionFeedback="";state.actionFeedbackKind="";state.actionFeedbackToken++;}
+function showActionSuccess(message,delay=1400){
+  state.actionFeedback=message;state.actionFeedbackKind="success";const token=++state.actionFeedbackToken;render();
+  globalThis.setTimeout?.(()=>{if(state.actionFeedbackToken===token){state.actionFeedback="";state.actionFeedbackKind="";render();}},delay);
+}
 
 function active(row) {
   const value = Object.prototype.hasOwnProperty.call(row ?? {}, "Actif") ? row.Actif : row?.Active;
@@ -1099,7 +1130,8 @@ function render() {
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
   const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}</style>`;
-  root.innerHTML=themeCss+`<div class="card">
+  const actionFeedbackHtml=state.actionFeedback?`<div class="questionnaire-action-feedback ${state.actionFeedbackKind==="success"?"is-success":"is-busy"}" role="status" aria-live="polite">${state.actionFeedbackKind==="success"?'<span class="action-feedback-check" aria-hidden="true">✓</span>':'<span class="action-feedback-spinner" aria-hidden="true"></span>'}<span>${escapeHtml(state.actionFeedback)}</span></div>`:"";
+  root.innerHTML=themeCss+actionFeedbackHtml+`<div class="card">
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
@@ -1130,9 +1162,11 @@ function render() {
     automaticNextLabel=targetLabel?`Retour à ${targetLabel}`:"Retour";
   }
   const nextButtonLabel=customNextLabel||automaticNextLabel;
+  const prevDisabled=!canNavigatePrevious(vm)||state.actionFeedbackKind==="busy";
+  const nextDisabled=state.actionFeedbackKind==="busy"||(locked&&state.pageIndex===vm.pages.length-1);
   nav.innerHTML=locked
-    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${state.pageIndex===vm.pages.length-1?" disabled":""}>Suivant</button></div></div>`
-    : `<button class="btn" id="prev"${state.pageIndex===0?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next">${escapeHtml(nextButtonLabel)}</button>`;
+    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button></div></div>`
+    : `<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
@@ -1153,8 +1187,8 @@ function render() {
     const targetSection=e.currentTarget.dataset.tocSection||"";const targetIndicator=e.currentTarget.dataset.tocIndicator||"";
     if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
     if(targetPage!==state.pageIndex){
-      if(!locked && !state.previewMode && !(await savePrincipal()))return;
-      state.pageIndex=targetPage; render();
+      if(!locked && !state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement et chargement de la page…":"Chargement de la page…");render();if(!(await savePrincipal())){clearActionFeedback();render();return;}}
+      navigateToPage(vm,targetPage);clearActionFeedback();render();
     }
     if(targetIndicator)requestAnimationFrame(()=>document.getElementById(`indicator-${CSS.escape(targetIndicator)}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
     else if(targetSection)requestAnimationFrame(()=>document.getElementById(`section-${CSS.escape(targetSection)}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
@@ -1162,8 +1196,8 @@ function render() {
   }));
   root.querySelector("[data-validate-toc]")?.addEventListener("click",()=>{if(!locked)finalizeFromToc(vm);});
   root.querySelector("[data-return-toc]")?.addEventListener("click",async()=>{
-    if(!locked && !state.previewMode && !(await savePrincipal()))return;
-    state.pageIndex=positionedTocPage;render();
+    if(!locked && !state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement et retour au sommaire…":"Retour au sommaire…");render();if(!(await savePrincipal())){clearActionFeedback();render();return;}}
+    navigateToPage(vm,positionedTocPage);clearActionFeedback();render();
     requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
   });
   root.querySelectorAll("[data-copy-resume]").forEach(el=>el.addEventListener("click",()=>copyResumeLink(false)));
@@ -1213,8 +1247,13 @@ function render() {
   status.querySelector("[data-save-quit]")?.addEventListener("click",()=>saveAndQuit());
   nav.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
   nav.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
-  document.querySelector("#prev")?.addEventListener("click",async()=>{if(locked||state.previewMode){state.pageIndex--;render();return;}if(await savePrincipal()){state.pageIndex--;render()}});
-  document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){state.pageIndex++;render();}return;}nextPage(vm,page)});
+  document.querySelector("#prev")?.addEventListener("click",async()=>{
+    if(locked||state.previewMode){navigateToPreviousPage(vm);render();return;}
+    beginActionFeedback(state.principalDirty?"Enregistrement et retour à la page précédente…":"Retour à la page précédente…");render();
+    if(await savePrincipal()){navigateToPreviousPage(vm);clearActionFeedback();render();}
+    else{clearActionFeedback();render();}
+  });
+  document.querySelector("#next")?.addEventListener("click",()=>{if(locked){if(state.pageIndex<vm.pages.length-1){navigateToPage(vm,state.pageIndex+1);render();}return;}nextPage(vm,page)});
 
 }
 
@@ -1376,7 +1415,7 @@ async function saveCurrentFiche() {
     return;
   }
   try {
-    state.saving=true; render();
+    beginActionFeedback("Enregistrement de la fiche…");state.saving=true; render();
     const beforeCount=(state.fiches[type.code]??[]).length;
     await persistFiche(type,state.ficheEditor);
     if(keepOpenForSubFiches){
@@ -1386,9 +1425,9 @@ async function saveCurrentFiche() {
     }else{
       state.ficheEditor=null;
     }
-    state.saving=false; render();
+    state.saving=false; showActionSuccess("Fiche enregistrée");
     if(keepOpenForSubFiches) scrollToEditor(`[data-fiche-editor="${CSS.escape(type.code)}"] .subfiches`);
-  } catch(e) { state.saving=false; showSaveError(e); render(); }
+  } catch(e) { state.saving=false; clearActionFeedback();showSaveError(e); render(); }
 }
 
 async function saveCurrentSubFiche() {
@@ -1424,10 +1463,10 @@ async function saveCurrentSubFiche() {
     state.subFicheEditor=null;render();return;
   }
   try {
-    state.saving=true; render();
+    beginActionFeedback("Enregistrement de la sous-fiche…");state.saving=true; render();
     await persistFiche(type,editor);
-    state.subFicheEditor=null; state.saving=false; render(); scrollToEditor(`[data-subfiche-group="${CSS.escape(editor.typeCode)}"]`);
-  } catch(e) { state.saving=false; showSaveError(e); render(); }
+    state.subFicheEditor=null; state.saving=false; showActionSuccess("Sous-fiche enregistrée"); scrollToEditor(`[data-subfiche-group="${CSS.escape(editor.typeCode)}"]`);
+  } catch(e) { state.saving=false; clearActionFeedback();showSaveError(e); render(); }
 }
 
 function onMatrixAnswer(e){
@@ -1494,12 +1533,12 @@ export function validateVisiblePage(page, answers={}) {
 async function finalizeFromToc(vm) {
   state.statusMessage="";
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de valider le questionnaire."));return;}
-  if(!state.previewMode && !await savePrincipal()) return;
+  if(!state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement avant validation…":"Préparation de la validation…");render();if(!await savePrincipal()){clearActionFeedback();render();return;}}
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
-  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
+  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){state.saveError="";state.statusMessage="Aperçu : le questionnaire peut être validé — aucune réponse n’a été enregistrée.";render();return;}
-  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
-  catch(e){state.saving=false;showSaveError(e);render();}
+  try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
+  catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();}
 }
 
 async function nextPage(vm,page) {
@@ -1528,21 +1567,24 @@ async function nextPage(vm,page) {
     firstInvalid?.scrollIntoView?.({behavior:"smooth",block:"center"});
     return;
   }
-  if (!state.previewMode && !await savePrincipal()) return;
+  if(!state.previewMode){
+    beginActionFeedback(state.principalDirty?"Enregistrement et chargement de la page…":"Chargement de la page…");render();
+    if(!await savePrincipal()){clearActionFeedback();render();return;}
+  }
   const navMode=String(page.Navigation_apres||"").trim();
   if(navMode==="retour_page"){
     const targetRaw=codeOf(page.Page_cible_Code);
     const targetIndex=vm.pages.findIndex(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw));
-    if(targetIndex<0){showSaveError(new Error("La page cible configurée n’est pas visible actuellement."));return;}
-    state.pageIndex=targetIndex;state.saveError="";render();return;
+    if(targetIndex<0){clearActionFeedback();showSaveError(new Error("La page cible configurée n’est pas visible actuellement."));return;}
+    navigateToPage(vm,targetIndex);state.saveError="";clearActionFeedback();render();return;
   }
   const mustFinalize=navMode==="validation_finale" || state.pageIndex>=vm.pages.length-1;
-  if(!mustFinalize){state.pageIndex++;render();return;}
+  if(!mustFinalize){navigateToPage(vm,state.pageIndex+1);clearActionFeedback();render();return;}
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
-  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
-  if(state.previewMode){state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
-  try { state.saving=true; render(); await finalizeResponse(); state.saving=false; state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
-  catch(e){state.saving=false;showSaveError(e);render();}
+  if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
+  if(state.previewMode){clearActionFeedback();state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
+  try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
+  catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();}
 }
 
 
@@ -1631,7 +1673,9 @@ async function copyResumeLink(afterSave=false){
 }
 async function saveAndQuit(){
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant d’enregistrer."));return;}
-  if(await savePrincipal()){render();temporaryButtonFeedback("[data-save-quit]","✓ Réponse enregistrée");}
+  beginActionFeedback("Enregistrement du questionnaire…");render();
+  if(await savePrincipal()){showActionSuccess("Questionnaire enregistré");temporaryButtonFeedback("[data-save-quit]","✓ Réponse enregistrée");}
+  else{clearActionFeedback();render();}
 }
 function uniqueCode(prefix){return `${prefix}_${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}_${Math.random().toString(36).slice(2)}`}`;}
 function rowIdByCode(rows,col,code){return (rows??[]).find(r=>codeOf(r[col])===codeOf(code))?.id ?? null;}
@@ -1759,7 +1803,7 @@ async function savePrincipal(){try{
   applyCampaignPersonalization();
   state.saving=false;
   return true;
-}catch(e){state.saving=false;showSaveError(e);render();return false;}}
+}catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();return false;}}
 async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await refreshPersistenceRows();if(editor.parentElementId){const parent=state.definition.responseElements.find(e=>String(e.id)===String(editor.parentElementId));if(isTrue(parent?.Lecture_seule_import))throw new Error("La fiche parente préremplie est en lecture seule.");}const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];if(fiche?.readOnlyImport)throw new Error("Cette fiche préremplie est en lecture seule.");let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
   await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
