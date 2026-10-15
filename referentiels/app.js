@@ -20,11 +20,43 @@ function downloadBlob(blob,name){const a=document.createElement("a");a.href=URL.
 function modelRows(r){const head=isTrue(r.Hierarchique)?["Code","Libelle","Parent_Code","Ordre","Actif"]:["Code","Libelle","Ordre","Actif"];const ex=isTrue(r.Hierarchique)?[["DIRECTION_A","Direction A","",1,"Oui"],["BUREAU_A1","Bureau A1","DIRECTION_A",2,"Oui"]]:[["A","Première valeur",1,"Oui"],["B","Deuxième valeur",2,"Oui"]];return [head,...ex]}
 function downloadModel(r){downloadBlob(writeWorkbook([{name:"Valeurs",rows:modelRows(r)}]),`modele_referentiel_${r.Referentiel_Code}.xlsx`)}
 function exportRef(r){const rows=valueTree(refValues(r)),head=isTrue(r.Hierarchique)?["Code","Libelle","Parent_Code","Ordre","Actif"]:["Code","Libelle","Ordre","Actif"],data=rows.map(v=>isTrue(r.Hierarchique)?[v.Code,v.Libelle,v._parent,v.Ordre,isTrue(v.Actif)?"Oui":"Non"]:[v.Code,v.Libelle,v.Ordre,isTrue(v.Actif)?"Oui":"Non"]);downloadBlob(writeWorkbook([{name:"Valeurs",rows:[head,...data]}]),`referentiel_${r.Referentiel_Code}.xlsx`)}
-async function parseImport(file,r,mode){const wb=await readWorkbook(file),sheet=wb.sheets[0],rows=sheet?.rows||[];if(rows.length<2)throw new Error("Le fichier ne contient aucune donnée.");const headers=rows[0].map(x=>String(x??"").trim()),idx=n=>headers.findIndex(h=>h.toLowerCase()===n.toLowerCase()),need=["Code","Libelle"],errors=[];for(const n of need)if(idx(n)<0)errors.push(`Colonne obligatoire manquante : ${n}.`);if(isTrue(r.Hierarchique)&&idx("Parent_Code")<0)errors.push("Colonne obligatoire manquante : Parent_Code.");const data=rows.slice(1).filter(a=>a.some(x=>String(x??"").trim()!=="")).map((a,i)=>({line:i+2,Code:normalizeCode(a[idx("Code")]),Libelle:String(a[idx("Libelle")]??"").trim(),Parent_Code:idx("Parent_Code")>=0?normalizeCode(a[idx("Parent_Code")]):"",Ordre:idx("Ordre")>=0&&String(a[idx("Ordre")]??"").trim()!==""?Number(a[idx("Ordre")]):i+1,Actif:idx("Actif")>=0?boolVal(a[idx("Actif")],true):true}));const seen=new Set();for(const x of data){if(!x.Code)errors.push(`Ligne ${x.line} : Code vide.`);else if(seen.has(x.Code))errors.push(`Code en double dans le fichier : ${x.Code}.`);seen.add(x.Code);if(!x.Libelle)errors.push(`Ligne ${x.line} (${x.Code||"?"}) : Libelle vide.`);if(!Number.isFinite(x.Ordre))errors.push(`Ligne ${x.line} (${x.Code||"?"}) : Ordre invalide.`)}if(isTrue(r.Hierarchique)){for(const x of data)if(x.Parent_Code&&!seen.has(x.Parent_Code))errors.push(`Ligne ${x.line} (${x.Code}) : parent ${x.Parent_Code} absent du fichier.`);const by=new Map(data.map(x=>[x.Code,x]));for(const x of data){let p=x.Parent_Code,vis=new Set([x.Code]);while(p){if(vis.has(p)){errors.push(`Hiérarchie circulaire détectée autour de ${x.Code}.`);break}vis.add(p);p=by.get(p)?.Parent_Code||""}}}const current=refValues(r),byCode=new Map(current.map(v=>[normalizeCode(v.Code),v])),newCount=data.filter(x=>!byCode.has(x.Code)).length,updateCount=data.length-newCount,removeCount=mode==="sync"?current.filter(v=>!seen.has(normalizeCode(v.Code))).length:0;return{rows:data,errors:[...new Set(errors)],newCount,updateCount,removeCount,mode}}
+async function parseImport(file,r,mode){const wb=await readWorkbook(file),sheet=wb.sheets[0],rows=sheet?.rows||[];if(rows.length<2)throw new Error("Le fichier ne contient aucune donnée.");const headers=rows[0].map(x=>String(x??"").trim()),idx=n=>headers.findIndex(h=>h.toLowerCase()===n.toLowerCase()),need=["Code","Libelle"],errors=[];for(const n of need)if(idx(n)<0)errors.push(`Colonne obligatoire manquante : ${n}.`);if(isTrue(r.Hierarchique)&&idx("Parent_Code")<0)errors.push("Colonne obligatoire manquante : Parent_Code.");const data=rows.slice(1).filter(a=>a.some(x=>String(x??"").trim()!=="")).map((a,i)=>({line:i+2,Code:normalizeCode(a[idx("Code")]),Libelle:String(a[idx("Libelle")]??"").trim(),Parent_Code:idx("Parent_Code")>=0?normalizeCode(a[idx("Parent_Code")]):"",Ordre:idx("Ordre")>=0&&String(a[idx("Ordre")]??"").trim()!==""?Number(a[idx("Ordre")]):i+1,Actif:idx("Actif")>=0?boolVal(a[idx("Actif")],true):true}));const seen=new Set();for(const x of data){if(!x.Code)errors.push(`Ligne ${x.line} : Code vide.`);else if(seen.has(x.Code))errors.push(`Code en double dans le fichier : ${x.Code}.`);seen.add(x.Code);if(!x.Libelle)errors.push(`Ligne ${x.line} (${x.Code||"?"}) : Libelle vide.`);if(!Number.isFinite(x.Ordre))errors.push(`Ligne ${x.line} (${x.Code||"?"}) : Ordre invalide.`)}if(isTrue(r.Hierarchique))errors.push(...hierarchyPlan(r,data,mode).errors);const current=refValues(r),byCode=new Map(current.map(v=>[normalizeCode(v.Code),v])),newCount=data.filter(x=>!byCode.has(x.Code)).length,updateCount=data.length-newCount,removeCount=mode==="sync"?current.filter(v=>!seen.has(normalizeCode(v.Code))).length:0;return{rows:data,errors:[...new Set(errors)],newCount,updateCount,removeCount,mode}}
 function bindImport(r){$("#analyze-import").onclick=async()=>{const file=$("#import-file").files[0];if(!file){status("Choisissez d’abord un fichier.",true);return}try{S.preview=await parseImport(file,r,$("#import-mode").value);$("#import-preview").innerHTML=previewHtml(S.preview);const b=$("#run-import");if(b)b.onclick=()=>runImport(r,S.preview)}catch(e){status(`Analyse impossible : ${e?.message||e}`,true)}}}
 function stableValueCode(r,code,used){const base=`VR_${String(r.Referentiel_Code||"REF").replace(/[^A-Za-z0-9]+/g,"_")}_${String(code).replace(/[^A-Za-z0-9]+/g,"_")}`.slice(0,90);let x=base,n=2;while(used.has(x))x=`${base}_${n++}`;used.add(x);return x}
 function computeLevels(rows){const by=new Map(rows.map(x=>[x.Code,x])),memo=new Map();const lev=x=>{if(memo.has(x.Code))return memo.get(x.Code);const n=x.Parent_Code&&by.has(x.Parent_Code)?lev(by.get(x.Parent_Code))+1:0;memo.set(x.Code,n);return n};rows.forEach(lev);return memo}
-async function runImport(r,p){if(p.errors.length)return;const msg=p.mode==="sync"?`Synchroniser ce référentiel ? ${p.removeCount} valeur(s) absente(s) du fichier seront supprimées.`:`Importer ${p.rows.length} valeur(s) ?`;if(!confirm(msg))return;try{const current=refValues(r),byCode=new Map(current.map(v=>[normalizeCode(v.Code),v])),used=new Set(S.values.map(v=>String(v.ValeurRef_Code||""))),levels=computeLevels(p.rows),actions=[];for(const x of p.rows){const old=byCode.get(x.Code);if(old){if(p.mode!=="add")actions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(old.id),{Code:x.Code,Libelle:x.Libelle,Ordre:x.Ordre,Actif:x.Actif,Niveau:levels.get(x.Code)||0}])}else actions.push(["AddRecord","VALEURS_REFERENTIELS",null,{ValeurRef_Code:stableValueCode(r,x.Code,used),Referentiel_Code:Number(r.id),Code:x.Code,Libelle:x.Libelle,Ordre:x.Ordre,Actif:x.Actif,Niveau:levels.get(x.Code)||0}])}if(p.mode==="sync"){const keep=new Set(p.rows.map(x=>x.Code));for(const old of current)if(!keep.has(normalizeCode(old.Code)))actions.push(["RemoveRecord","VALEURS_REFERENTIELS",Number(old.id)])}if(actions.length)await grist.docApi.applyUserActions(actions);await load();const fresh=S.refs.find(x=>String(x.id)===String(r.id)),freshVals=refValues(fresh),freshByCode=new Map(freshVals.map(v=>[normalizeCode(v.Code),v])),parentActions=[];for(const x of p.rows){const row=freshByCode.get(x.Code);if(!row)continue;const parent=x.Parent_Code?freshByCode.get(x.Parent_Code):null;parentActions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(row.id),{Parent_Code:parent?Number(parent.id):null,Niveau:levels.get(x.Code)||0}])}if(parentActions.length)await grist.docApi.applyUserActions(parentActions);S.preview=null;await load();status(`Import terminé : ${p.rows.length} ligne(s) traitée(s).`)}catch(e){status(`Import impossible : ${e?.message||e}`,true)}}
+function hierarchyPlan(r,rows,mode){
+  const current=refValues(r),byId=new Map(current.map(v=>[String(v.id),v])),oldByCode=new Map(current.map(v=>[normalizeCode(v.Code),v]));
+  const final=new Map(mode==="sync"?[]:current.map(v=>[normalizeCode(v.Code),{Code:normalizeCode(v.Code),Parent_Code:normalizeCode(byId.get(String(codeOf(v.Parent_Code)))?.Code)||"",_missingParent:!!codeOf(v.Parent_Code)&&!byId.has(String(codeOf(v.Parent_Code)))}]));
+  for(const x of rows)if(mode!=="add"||!oldByCode.has(x.Code))final.set(x.Code,x);
+  const errors=[],visiting=new Set(),levels=new Map();
+  function visit(x){if(levels.has(x.Code))return levels.get(x.Code);if(visiting.has(x.Code)){errors.push(`Hiérarchie circulaire détectée autour de ${x.Code}.`);return 0}visiting.add(x.Code);let n=0;if(x._missingParent)errors.push(`Parent introuvable pour ${x.Code}.`);if(x.Parent_Code){const parent=final.get(x.Parent_Code);if(!parent)errors.push(`Parent ${x.Parent_Code} de ${x.Code} absent de la hiérarchie finale.`);else n=visit(parent)+1}visiting.delete(x.Code);levels.set(x.Code,n);return n}
+  if(isTrue(r.Hierarchique))for(const x of final.values())visit(x);else for(const x of final.values())levels.set(x.Code,0);
+  return {rows:[...final.values()],levels,errors:[...new Set(errors)]};
+}
+async function assertValuesUnused(values){
+  if(!values.length)return;
+  const [answers,selections]=await Promise.all([fetchRows("VALEURS_REPONSE"),fetchRows("SELECTIONS_REPONSE")]);
+  const used=values.filter(v=>{const keys=new Set([String(v.id),String(codeOf(v.ValeurRef_Code)||"")].filter(Boolean));return answers.some(a=>keys.has(String(codeOf(a.Valeur_reference_Code))))||selections.some(a=>keys.has(String(codeOf(a.ValeurRef_Code))))});
+  if(used.length)throw new Error(`Valeur(s) utilisée(s) dans des réponses : ${used.map(v=>v.Code).join(", ")}. Conservez-les et désactivez-les (Actif = Non) pour préserver les réponses.`);
+}
+async function runImport(r,p){
+  if(p.errors.length)return;const msg=p.mode==="sync"?`Synchroniser ce référentiel ? ${p.removeCount} valeur(s) absente(s) du fichier seront supprimées.`:`Importer ${p.rows.length} valeur(s) ?`;if(!confirm(msg))return;
+  try{
+    S.values=await fetchRows("VALEURS_REFERENTIELS");
+    const current=refValues(r),byCode=new Map(current.map(v=>[normalizeCode(v.Code),v])),plan=hierarchyPlan(r,p.rows,p.mode);
+    if(plan.errors.length)throw new Error(plan.errors.join(" "));
+    const keep=new Set(p.rows.map(x=>x.Code)),removed=p.mode==="sync"?current.filter(v=>!keep.has(normalizeCode(v.Code))):[];
+    await assertValuesUnused(removed);
+    const used=new Set(S.values.map(v=>String(v.ValeurRef_Code||""))),actions=[];
+    for(const x of p.rows){const old=byCode.get(x.Code);if(old&&p.mode==="add")continue;const fields={Code:x.Code,Libelle:x.Libelle,Ordre:x.Ordre,Actif:x.Actif,Niveau:plan.levels.get(x.Code)||0};if(old)actions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(old.id),fields]);else actions.push(["AddRecord","VALEURS_REFERENTIELS",null,{ValeurRef_Code:stableValueCode(r,x.Code,used),Referentiel_Code:Number(r.id),...fields}])}
+    for(const old of removed)actions.push(["RemoveRecord","VALEURS_REFERENTIELS",Number(old.id)]);
+    if(actions.length)await grist.docApi.applyUserActions(actions);
+    S.values=await fetchRows("VALEURS_REFERENTIELS");
+    const freshByCode=new Map(refValues(r).map(v=>[normalizeCode(v.Code),v])),importCodes=new Set(p.rows.filter(x=>p.mode!=="add"||!byCode.has(x.Code)).map(x=>x.Code)),parentActions=[];
+    for(const x of plan.rows){const row=freshByCode.get(x.Code);if(!row)continue;const fields={};if(importCodes.has(x.Code)){fields.Parent_Code=x.Parent_Code?Number(freshByCode.get(x.Parent_Code).id):null;fields.Niveau=plan.levels.get(x.Code)||0}else if(p.mode!=="add"&&Number(row.Niveau)!==plan.levels.get(x.Code))fields.Niveau=plan.levels.get(x.Code)||0;if(Object.keys(fields).length)parentActions.push(["UpdateRecord","VALEURS_REFERENTIELS",Number(row.id),fields])}
+    if(parentActions.length)await grist.docApi.applyUserActions(parentActions);S.preview=null;await load();status(`Import terminé : ${p.rows.length} ligne(s) traitée(s).`);
+  }catch(e){status(`Import impossible : ${e?.message||e}`,true)}
+}
 
 
 
@@ -54,10 +86,8 @@ async function saveValue(e){
   }catch(err){status(`Enregistrement impossible : ${err?.message||err}`,true)}
 }
 async function deleteValue(r,v){
-  if(!v)return;const children=refValues(r).filter(x=>String(codeOf(x.Parent_Code))===String(v.id));
-  if(children.length){status(`Suppression impossible : ${children.length} valeur(s) ont « ${v.Code} » comme parent. Modifiez ou supprimez d’abord ces valeurs.`,true);return}
-  if(!confirm(`Supprimer la valeur « ${v.Code} — ${v.Libelle} » ?`))return;
-  try{await grist.docApi.applyUserActions([["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]]);await load();status(`Valeur ${v.Code} supprimée.`)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true)}
+  if(!v)return;if(!confirm(`Supprimer la valeur « ${v.Code} — ${v.Libelle} » ?`))return;
+  try{S.values=await fetchRows("VALEURS_REFERENTIELS");const children=refValues(r).filter(x=>String(codeOf(x.Parent_Code))===String(v.id));if(children.length)throw new Error(`${children.length} valeur(s) ont « ${v.Code} » comme parent. Modifiez ou supprimez d’abord ces valeurs.`);await assertValuesUnused([v]);await grist.docApi.applyUserActions([["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]]);await load();status(`Valeur ${v.Code} supprimée.`)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true)}
 }
 
 function questionUsesReferential(q,r){
@@ -71,6 +101,7 @@ async function deleteReferential(r){
   if(code==="REF_STRUCTURES"||source(r)==="STRUCTURES"){
     status("Ce référentiel est lié à STRUCTURES et ne peut pas être supprimé depuis ce widget.",true);return;
   }
+  try{S.questions=await fetchRows("QUESTIONS");S.values=await fetchRows("VALEURS_REFERENTIELS")}catch(e){status(`Suppression impossible : ${e?.message||e}`,true);return}
   const uses=referentialUsages(r);
   if(uses.length){
     const labels=uses.slice(0,8).map(q=>String(q.Libelle||q.Question||q.Variable||q.Question_Code||`Question ${q.id}`));
@@ -82,7 +113,8 @@ async function deleteReferential(r){
   if(typed===null)return;
   if(String(typed).trim()!==code){status("Suppression annulée : le code saisi ne correspond pas.",true);return;}
   try{
-    const actions=vals.map(v=>["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]);
+    S.questions=await fetchRows("QUESTIONS");S.values=await fetchRows("VALEURS_REFERENTIELS");if(referentialUsages(r).length)throw new Error("Ce référentiel est utilisé par des questions.");const freshValues=refValues(r);await assertValuesUnused(freshValues);
+    const actions=freshValues.map(v=>["RemoveRecord","VALEURS_REFERENTIELS",Number(v.id)]);
     actions.push(["RemoveRecord","REFERENTIELS",Number(r.id)]);
     await grist.docApi.applyUserActions(actions);
     S.selected=null;S.preview=null;await load();status(`Référentiel ${code} supprimé.`);
