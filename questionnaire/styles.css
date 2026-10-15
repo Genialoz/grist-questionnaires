@@ -162,3 +162,6 @@ textarea { min-height:110px; resize:vertical; }
 .questionnaire-action-feedback.is-busy + .card{pointer-events:none}
 @media(max-width:600px){.questionnaire-action-feedback{bottom:14px;max-width:calc(100vw - 28px);border-radius:10px;text-align:center}}
 @media(prefers-reduced-motion:reduce){.action-feedback-spinner{animation:none}}
+
+/* Présentation par défaut ; les couleurs configurées restent prioritaires. */
+body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.55}#app{max-width:980px;padding:28px 24px 48px}.card{border-radius:18px;box-shadow:0 8px 32px #25233d07}.section,.repeatable{border-radius:13px}.field{margin-bottom:22px}input:not([type=checkbox]):not([type=radio]),select,textarea{border-radius:9px;min-height:42px}button,.btn{border-radius:9px;min-height:42px}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #8e86e5;outline-offset:3px}.progress{border-radius:20px;overflow:hidden}@media(max-width:600px){#app{padding:16px 12px 32px}.card{padding:18px}}
