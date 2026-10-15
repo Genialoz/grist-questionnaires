@@ -1,6 +1,7 @@
 import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion, cleanNumber, sumNumbers} from "../shared/grist-common.js";
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 import {writeWorkbook} from "./xlsx-lite.js";
+import {effectiveQuestion,matrixValidationErrors,validateConfiguredQuestion} from "./validation.js";
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","FILTRES_TYPES_FICHES",
@@ -491,7 +492,7 @@ function renderSubFiches(parentType,parentFiche,readOnly=false){
     const canAdd=!readOnly&&!parentFiche.readOnlyImport&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
     const ed=state.subFicheEditor?.typeCode===type.code&&String(state.subFicheEditor.parentElementId)===String(parentFiche.elementId)?state.subFicheEditor:null;
     const editedFiche=ed&&ed.index!=null?list[ed.index]:null,editorLocked=readOnly||Boolean(editedFiche?.readOnlyImport);
-    const editorHtml=ed?`<div class="fiche-editor subfiche-editor${editorLocked?" imported-readonly-card":""}" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${editorLocked?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers,editorLocked||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]))).join("")}${editorLocked?`<div class="import-readonly-note">Sous-fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>${editorLocked?"Fermer":"Annuler"}</button>${editorLocked?"":`<button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button>`}</div></div>`:"";
+    const editorHtml=ed?`<div class="fiche-editor subfiche-editor${editorLocked?" imported-readonly-card":""}" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${editorLocked?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers,editorLocked||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers})).join("")}${editorLocked?`<div class="import-readonly-note">Sous-fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>${editorLocked?"Fermer":"Annuler"}</button>${editorLocked?"":`<button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button>`}</div></div>`:"";
     return `<section class="repeatable subfiche-group" data-subfiche-group="${escapeHtml(type.code)}"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:""}</span></div>${cards||`<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
   }).join("")}</div>`;
 }
@@ -512,7 +513,7 @@ export function visibleFicheQuestions(type, def, answers={}) {
   applySingleChoiceAutomation(def,answers);
   return questions
     .filter(q=>!isTrue(q.Masquee) && !isTrue(q.Est_ligne_matrice) && displayBlockKind(q)!=="toc" && displayBlockKind(q)!=="indicators" && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
-    .map(q=>({...q,options:optionsFor(q,def,answers)}));
+    .map(q=>({...effectiveQuestion(q,def,answers),options:optionsFor(q,def,answers)}));
 }
 
 export function buildViewModel(def, answers={}) {
@@ -529,7 +530,7 @@ export function buildViewModel(def, answers={}) {
           !isTrue(q.Est_ligne_matrice)
         ))
           .filter(q=>!isTrue(q.Masquee) && conditionVisible(q.Condition_affichage_Code,def,answers,diagnostics) && !shouldAutoHideSingleChoice(q,def,answers))
-          .map(q=>({...q, options:optionsFor(q,def,answers)}));
+          .map(q=>({...effectiveQuestion(q,def,answers), options:optionsFor(q,def,answers)}));
         return {...section,questions};
       });
     return {...page,sections,repeatableTypes:buildRepeatableTypes(def,pc)};
@@ -819,8 +820,8 @@ function matrixCols(q,def){
   return sortByOrder((def.matrixColumns??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.ColonneMatrice_Code),label:first(c,["Libelle","Libellé","ColonneMatrice_Code"],codeOf(c.ColonneMatrice_Code)),required:isTrue(c.Obligatoire),min:c.Minimum,max:c.Maximum,decimals:c.Decimales,maxLength:c.Longueur_max}));
 }
 function matrixValue(answers,qc,rc,cc){return answers?.[qc]?.[rc]?.[cc] ?? "";}
-function renderMatrix(q,answers=state.answers,ficheMode=false,forcedReadOnly=false){
-  const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition);
+function renderMatrix(q,answers=state.answers,ficheMode=false,forcedReadOnly=false,conditionAnswers=answers){
+  const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition).map(row=>effectiveQuestion(row,state.definition,conditionAnswers)), cols=matrixCols(q,state.definition);
   const ro=isTrue(q.Lecture_seule)||responseIsLocked()||forcedReadOnly||(!ficheMode&&isTrue(state.principalReadOnlyQuestions?.[qc]));
   if(!rows.length||!cols.length) return `<div class="matrix-empty">Matrice à configurer : ${!rows.length?"aucune ligne":"aucune colonne"}.</div>`;
   const multiHeader=["number","text"].includes(kind)&&isTrue(q.Matrice_entetes_multiniveaux);
@@ -867,14 +868,11 @@ function dataTotalColumns(q){try{const v=JSON.parse(q?.TD_Total_Columns||"[]");r
 function parseDataNumber(v){if(typeof v==="number")return Number.isFinite(v)?v:null;let x=String(v??"").trim().replace(/\s/g,"").replace(/€/g,"");if(!x)return null;if(x.includes(",")&&x.includes(".")){if(x.lastIndexOf(",")>x.lastIndexOf("."))x=x.replace(/\./g,"").replace(",",".");else x=x.replace(/,/g,"")}else x=x.replace(",",".");const n=Number(x);return Number.isFinite(n)?n:null}
 function renderDataTable(q,answers){const src=String(q.TD_Table_Source||""),all=state.definition?.dataTables?.[src]||[],cols=dataTableColumns(q);if(!src||!cols.length)return `<div class="data-table-empty">Tableau de données non configuré.</div>`;let rows=all;if(String(q.TD_Mode||"all")==="personalized"){const value=dataContextValue(q,answers),sourceQuestion=String(q.TD_Context_Source||"campaign")==="question"?(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===String(q.TD_Context_Question||"")):(()=>{const rec=state.selectedRecord||{},campaign=(state.definition?.campaigns||[]).length===1?(state.definition.campaigns||[])[0]:null,raw=rec.Question_personnalisation_Code??campaign?.Question_personnalisation_Code;return(state.definition?.questions||[]).find(x=>String(x.id)===String(codeOf(raw))||codeOf(x.Question_Code)===String(codeOf(raw)))})();const allowed=hierarchyMatchSet(value,String(q.TD_Hierarchy_Mode||"exact"),sourceQuestion),key=String(q.TD_Key_Column||"");rows=value&&key?all.filter(r=>allowed.has(String(codeOf(r[key])??r[key]??""))):[]}if(!rows.length)return `<div class="data-table-empty">${escapeHtml(q.TD_NoData_Message||"Aucune donnée à afficher.")}</div>`;const totalCols=dataTotalColumns(q),showTotal=Boolean(q.TD_Show_Total);const totalRow=showTotal?`<tr class="data-total-row">${cols.map((c,i)=>{if(totalCols.includes(c.id)){const nums=rows.map(r=>parseDataNumber(r[c.id])).filter(n=>n!==null);return `<td><strong>${escapeHtml(sumNumbers(nums))}</strong></td>`}return `<td>${i===0?`<strong>${escapeHtml(q.TD_Total_Label||"Total")}</strong>`:""}</td>`}).join("")}</tr>`:"";return `<div class="readonly-data-table"><table><thead><tr>${cols.map(c=>`<th>${escapeHtml(c.label||c.id)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${escapeHtml(r[c.id]??"")}</td>`).join("")}</tr>`).join("")}${totalRow}</tbody></table></div>`}
 
-function renderQuestionControl(q,answers=state.answers,ficheMode=false,forcedReadOnly=false){return isDataTableQuestion(q)?renderDataTable(q,answers):matrixKind(q)?renderMatrix(q,answers,ficheMode,forcedReadOnly):renderControl(q,answers,ficheMode,forcedReadOnly);}
+function renderQuestionControl(q,answers=state.answers,ficheMode=false,forcedReadOnly=false,conditionAnswers=answers){return isDataTableQuestion(q)?renderDataTable(q,answers):matrixKind(q)?renderMatrix(q,answers,ficheMode,forcedReadOnly,conditionAnswers):renderControl(q,answers,ficheMode,forcedReadOnly);}
 function matrixErrors(q,answers={}){
-  const errors=[]; const qc=codeOf(q.Question_Code), kind=matrixKind(q), rows=matrixRows(q,state.definition), cols=matrixCols(q,state.definition), data=answers?.[qc]??{};
-  for(const r of rows){const rc=codeOf(r.Question_Code), row=data[rc]??{};
-    if(kind==="radio"||kind==="checkbox"){const empty=kind==="checkbox"?!(Array.isArray(row)&&row.length):!row; if(isRequiredQuestion(r)&&empty)errors.push(`${first(r,["Libelle","Libellé","Titre"],rc)} : réponse obligatoire.`); continue;}
-    for(const c of cols){const v=row?.[c.code]??""; if((isRequiredQuestion(r)||c.required)&&(v===""||v==null))errors.push(`${first(r,["Libelle","Libellé","Titre"],rc)} / ${c.label} : champ obligatoire.`); if(v!==""&&kind==="number"){const n=Number(v);if(!Number.isFinite(n))errors.push(`${c.label} : nombre invalide.`);else{if(c.min!==""&&c.min!=null&&n<Number(c.min))errors.push(`${c.label} : minimum ${c.min}.`);if(c.max!==""&&c.max!=null&&n>Number(c.max))errors.push(`${c.label} : maximum ${c.max}.`);}}}
-  } return errors;
+  return matrixValidationErrors(q,answers?.[codeOf(q.Question_Code)],state.definition??{},answers);
 }
+
 function updateMatrixTotals(root=document){
   root.querySelectorAll('[data-matrix]').forEach(w=>{const qc=w.dataset.matrix;const vals=[...w.querySelectorAll('input[data-matrix-question]')].filter(i=>i.type==='number');const n=i=>{const x=Number(i.value);return Number.isFinite(x)?x:0};
     w.querySelectorAll('[data-matrix-row-total]').forEach(el=>{const rc=el.dataset.matrixRowTotal.split(':').slice(1).join(':');el.textContent=String(cleanNumber(vals.filter(i=>i.dataset.matrixRow===rc).reduce((a,i)=>a+n(i),0)));});
@@ -884,13 +882,13 @@ function updateMatrixTotals(root=document){
 }
 
 
-function renderFicheField(q, answers, forcedReadOnly=false) {
+function renderFicheField(q, answers, forcedReadOnly=false,conditionAnswers=answers) {
   const qc=codeOf(q.Question_Code);
   if(displayBlockKind(q)==="description"){
     const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,{...state.answers,...answers});
     return `<div class="content-description fiche-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${escapeHtml(title)}</div>`:""}${text?`<div class="content-description-text">${escapeHtml(text).replace(/\n/g,"<br>")}</div>`:""}</div>`;
   }
-  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly,conditionAnswers)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
   if(!questionCode)return "";
@@ -971,15 +969,15 @@ export function validateFiche(type,def,answers={},principalAnswers={}) {
   const conditionAnswers={...principalAnswers,...answers};
   for (const q of visibleFicheQuestions(type,def,conditionAnswers)) {
     const code=codeOf(q.Question_Code);
-    if(matrixKind(q)){const mx=matrixErrors(q,answers);if(mx.length)errors[code]=mx.join(" ");}
-    else {const error=validateQuestion(q,answers[code],true); if (error) errors[code]=error;}
+    const error=validateConfiguredQuestion(q,answers[code],def,conditionAnswers); if (error) errors[code]=error;
   }
   return errors;
 }
 
-export function ficheCompleteness(type,def,fiche={},principalAnswers={}) {
+export function ficheCompleteness(type,def,fiche={},principalAnswers={},allFiches={}) {
   const errors=validateFiche(type,def,fiche.answers ?? {},principalAnswers);
-  const complete=Object.keys(errors).length===0;
+  const treeErrors=validateWholeResponse(def,{pages:[{sections:[],repeatableTypes:[{...type,minimum:0,maximum:null}]}]},principalAnswers,{...allFiches,[type.code]:[fiche]},validateQuestion,visibleFicheQuestions);
+  const complete=Object.keys(errors).length===0&&Object.keys(treeErrors.fiches).length===0;
   return complete ? {state:"complete",label:"Complet",complete:true} : {state:"incomplete",label:"À compléter",complete:false};
 }
 
@@ -1009,10 +1007,10 @@ export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def,list);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{}),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport;return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${fiche.readOnlyImport?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{},targetState.fiches),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport;return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${fiche.readOnlyImport?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
   const empty=list.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
   const editedFiche=editor&&editor.index!==null?list[editor.index]:null,editorReadOnly=readOnly||Boolean(editedFiche?.readOnlyImport);
-  const editorHtml=editor ? `<div class="fiche-editor${editorReadOnly?" imported-readonly-card":""}" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editorReadOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers,editorReadOnly||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]))).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],editorReadOnly) : pendingSubFiches(type)}${editorReadOnly?`<div class="import-readonly-note">Fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${editorReadOnly?"Fermer":"Annuler"}</button>${editorReadOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const editorHtml=editor ? `<div class="fiche-editor${editorReadOnly?" imported-readonly-card":""}" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editorReadOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers,editorReadOnly||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...(targetState.answers??{}),...editor.answers})).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],editorReadOnly) : pendingSubFiches(type)}${editorReadOnly?`<div class="import-readonly-note">Fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${editorReadOnly?"Fermer":"Annuler"}</button>${editorReadOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
   const canShowAdd=!readOnly && !editor && type.allowAdd;
   const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
@@ -1082,7 +1080,7 @@ function render() {
   const questionHasRequiredPart=q=>{
     if(isDisplayBlock(q)||isDataTableQuestion(q))return false;
     if(isRequiredQuestion(q))return true;
-    if(matrixKind(q))return matrixRows(q,state.definition).some(r=>isRequiredQuestion(r))||matrixCols(q,state.definition).some(c=>c.required);
+    if(matrixKind(q))return matrixRows(q,state.definition).some(r=>isRequiredQuestion(effectiveQuestion(r,state.definition,state.answers)))||matrixCols(q,state.definition).some(c=>c.required);
     return false;
   };
   const sectionCompletionCore=section=>{
@@ -1090,7 +1088,7 @@ function render() {
     if(!answerable.length)return null;
     const required=answerable.filter(questionHasRequiredPart);
     if(!required.length)return {state:"pending",label:"En attente",hasRequired:false};
-    const errors=required.some(q=>matrixKind(q)?matrixErrors(q,state.answers).length>0:Boolean(validateQuestion(q,state.answers[codeOf(q.Question_Code)],true)));
+    const errors=required.some(q=>Boolean(validateConfiguredQuestion(q,state.answers[codeOf(q.Question_Code)],state.definition,state.answers)));
     return errors?{state:"pending",label:"En attente",hasRequired:true}:{state:"complete",label:"Complété",hasRequired:true};
   };
   const confirmationCompletion=(holder,base,questions=[])=>{
@@ -1108,11 +1106,10 @@ function render() {
   const sectionCompletion=section=>isTrue(section?.Afficher_badge_completion)?confirmationCompletion(section,sectionCompletionCore(section),section.questions??[]):null;
   const repeatableCompletion=type=>{
     const list=state.fiches[type.code]??[];
-    const hasRequired=type.minimum>0;
-    if(!hasRequired)return list.length?{state:"complete",label:"Complété",hasRequired:false}:{state:"pending",label:"En attente",hasRequired:false};
-    if(list.length<type.minimum)return {state:"pending",label:"En attente",hasRequired:true};
-    for(const fiche of list){if(Object.keys(validateFiche(type,state.definition,fiche.answers??{},state.answers)).length)return {state:"pending",label:"En attente",hasRequired:true};}
-    return {state:"complete",label:"Complété",hasRequired:true};
+    const errors=validateWholeResponse(state.definition,{pages:[{sections:[],repeatableTypes:[type]}]},state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+    if(Object.keys(errors.fiches).length)return {state:"pending",label:"En attente",hasRequired:true};
+    const hasRequired=type.minimum>0||list.length>0&&(type.children??[]).some(child=>child.minimum>0);
+    return list.length||hasRequired?{state:"complete",label:"Complété",hasRequired}:{state:"pending",label:"En attente",hasRequired:false};
   };
   const pageCompletion=page=>{
     if(!isTrue(page?.Afficher_badge_completion))return null;
@@ -1519,13 +1516,12 @@ function onAnswer(e) {
   if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) renderPreservingInputFocus(e.target);
 }
 
-export function validateVisiblePage(page, answers={}) {
+export function validateVisiblePage(page, answers={},definition=state.definition??{}) {
   const errors={};
   for (const section of page.sections) for (const q of section.questions) {
     if(isDisplayBlock(q)) continue;
     const code=codeOf(q.Question_Code);
-    if(matrixKind(q)){const mx=matrixErrors(q,answers);if(mx.length)errors[code]=mx.join(" ");}
-    else {const error=validateQuestion(q,answers[code],true); if (error) errors[code]=error;}
+    const error=validateConfiguredQuestion(q,answers[code],definition,answers); if(error)errors[code]=error;
   }
   return errors;
 }

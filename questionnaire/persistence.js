@@ -1,4 +1,5 @@
 import {codeOf, isTrue, sortByOrder} from "../shared/grist-common.js";
+import {validateConfiguredQuestion} from "./validation.js";
 
 const EMPTY={Valeur_texte:null,Valeur_nombre:null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};
 function qtype(q){return String(q?.Type_question ?? q?.Type ?? "").trim().toLowerCase();}
@@ -75,8 +76,32 @@ export function hydrateResponse(rows,definition,reponseCode){
 export function assertRevision(expected,actual){if(Number(expected??0)!==Number(actual??0)){const e=new Error("Une version plus récente de cette réponse existe. Rechargez le questionnaire avant de continuer.");e.code="revision_conflict";throw e;} return true;}
 export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions){
   const errors={principal:{},fiches:{}};
-  for(const p of viewModel.pages) for(const s of p.sections) for(const q of s.questions){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();if(t==="description"||t==="sommaire")continue;const c=codeOf(q.Question_Code),m=validateQuestion(q,answers[c],true);if(m)errors.principal[c]=m;}
-  for(const p of viewModel.pages) for(const t of p.repeatableTypes??[]){const list=fiches[t.code]??[]; if(list.length<t.minimum)errors.fiches[t.code]=`Vous devez saisir au moins ${t.minimum} ${t.minimum>1?t.labelPlural.toLowerCase():t.labelSingular.toLowerCase()}.`; else if(t.maximum!=null && list.length>t.maximum)errors.fiches[t.code]=`Vous ne pouvez pas saisir plus de ${t.maximum} ${t.maximum>1?t.labelPlural.toLowerCase():t.labelSingular.toLowerCase()}.`; list.forEach((f,i)=>{for(const q of visibleFicheQuestions(t,definition,{...answers,...f.answers})){const c=codeOf(q.Question_Code),m=validateQuestion(q,f.answers[c],true);if(m)(errors.fiches[`${t.code}:${i}`]??={})[c]=m;}});}
+  for(const p of viewModel.pages)for(const s of p.sections)for(const q of s.questions){
+    const c=codeOf(q.Question_Code),m=validateConfiguredQuestion(q,answers[c],definition,answers,validateQuestion);
+    if(m)errors.principal[c]=m;
+  }
+  const identity=f=>String(f?.elementId??f?.elementCode??'');
+  const walk=(types,parent=null,context=answers,path=new Set())=>{
+    for(const type of types??[]){
+      if(path.has(type.code)){errors.fiches[type.code]='La hiérarchie des fiches contient une boucle.';continue;}
+      const nextPath=new Set(path);nextPath.add(type.code);
+      const all=fiches[type.code]??[],parentKey=identity(parent);
+      const list=parent?all.filter(f=>String(f.parentElementId??'')===parentKey||(parent.elementCode&&String(f.parentElementCode??'')===String(parent.elementCode))):all;
+      const countKey=parent?`${type.code}@${parentKey}`:type.code;
+      const singular=String(type.labelSingular||'fiche').toLowerCase(),plural=String(type.labelPlural||'fiches').toLowerCase();
+      if(list.length<type.minimum)errors.fiches[countKey]=`Vous devez saisir au moins ${type.minimum} ${type.minimum>1?plural:singular}.`;
+      else if(type.maximum!=null&&list.length>type.maximum)errors.fiches[countKey]=`Vous ne pouvez pas saisir plus de ${type.maximum} ${type.maximum>1?plural:singular}.`;
+      for(const f of list){
+        const merged={...context,...(f.answers??{})},index=all.indexOf(f),key=`${type.code}:${index}`;
+        for(const q of visibleFicheQuestions(type,definition,merged)){
+          const c=codeOf(q.Question_Code),m=validateConfiguredQuestion(q,f.answers?.[c],definition,merged,validateQuestion);
+          if(m)(errors.fiches[key]??={})[c]=m;
+        }
+        walk(type.children,f,merged,nextPath);
+      }
+    }
+  };
+  for(const p of viewModel.pages)walk(p.repeatableTypes);
   return errors;
 }
 
