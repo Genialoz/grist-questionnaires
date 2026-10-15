@@ -186,11 +186,14 @@ function consumeAdminPreviewGrant(){
 function hasExplicitResponseParams(){
   return Boolean(requestedParam("Acces_")||requestedParam("Reprise_")||requestedParam("Reprise")||requestedParam("Reponse_")||requestedParam("Campagne_"));
 }
+function hasDirectPreviewChoice(){
+  return Boolean(state.directPreviewVersion)&&!hasExplicitResponseParams()&&String(requestedParam("style")||"").toLowerCase()!=="singlepage";
+}
 function isInternalGristPreviewContext(){
   // Les paramètres de l'URL Grist (Acces_, style...) ne sont pas transmis de
   // façon fiable à l'iframe du widget. Un aperçu admin doit donc être autorisé
   // par un ticket court et à usage unique créé juste avant l'ouverture.
-  return Boolean(consumeAdminPreviewGrant()) && !hasExplicitResponseParams();
+  return (hasDirectPreviewChoice()||Boolean(consumeAdminPreviewGrant())) && !hasExplicitResponseParams();
 }
 function isAdminPreviewContext(){
   return Boolean(consumeAdminPreviewGrant());
@@ -198,9 +201,10 @@ function isAdminPreviewContext(){
 function requestedPreviewVersion(){
   const explicit=requestedParam("Apercu_")||requestedParam("Preview_");
   if(explicit)return explicit;
+  if(hasDirectPreviewChoice())return state.directPreviewVersion;
   return consumeAdminPreviewGrant()?.version||"";
 }
-function hasExplicitPreviewContext(){return Boolean(requestedParam("Apercu_")||requestedParam("Preview_")||consumeAdminPreviewGrant());}
+function hasExplicitPreviewContext(){return Boolean(hasDirectPreviewChoice()||requestedParam("Apercu_")||requestedParam("Preview_")||consumeAdminPreviewGrant());}
 function hasAclPersonalizedCampaignContext(def){
   // Acces_ is an ACL LinkKey and is not guaranteed to be exposed to the iframe.
   // A single PERSONNALISE campaign exposed by ACLs is therefore authoritative:
@@ -220,6 +224,17 @@ export async function loadDefinition(docApi, selectedRecord=null) {
   }
   let versions=loaded.VERSIONS_QUESTIONNAIRES.filter(active);
   let version=null;
+  // Opening the Grist page directly has no navigation ticket. Offer an explicit
+  // read-only choice only in a multi-campaign management context, never as a
+  // fallback for a singlePage/respondent link or an ACL-filtered empty campaign.
+  const directEntry=!hasExplicitResponseParams()&&String(requestedParam("style")||"").toLowerCase()!=="singlepage"&&(loaded.CAMPAGNES??[]).length>1;
+  if(directEntry&&!requestedPreviewVersion()&&versions.length){
+    const error=new Error("Choisissez la version du questionnaire à prévisualiser.");
+    error.code="preview_selection_required";
+    error.versions=versions.map(v=>({id:v.id,code:codeOf(v.Version_Code),title:String(v.Titre||v.Nom||v.Version_Code||`Version ${v.id}`),number:v.Numero_version}));
+    throw error;
+  }
+  if(directEntry&&hasDirectPreviewChoice())version=versions.find(v=>codeOf(v.Version_Code)===state.directPreviewVersion||String(v.id)===state.directPreviewVersion)??null;
   // Une reprise désigne une réponse précise : sa version est prioritaire sur tout
   // contexte de campagne, de session ou de sélection Grist.
   const resumeToken=requestedResumeToken();
@@ -1829,6 +1844,23 @@ function ensureUniqueLinkPrivateResume(){
   try{const u=new URL(url);u.searchParams.set("style","singlePage");globalThis.top.location.href=u.toString();return true}catch{setPendingUniqueResumeToken("");return false}
 }
 
+function renderDirectPreviewChooser(versions){
+  const root=document.querySelector("#form-root"),status=document.querySelector("#status"),nav=document.querySelector("#navigation"),remembered=storedPreviewVersion();
+  status.innerHTML='<div class="status-info">Ouverture directe du widget Questionnaire.</div>';
+  nav.innerHTML="";
+  root.innerHTML=`<section class="card"><h1>Aperçu du questionnaire</h1><p>Choisissez la version à afficher. Cet aperçu n’enregistre aucune réponse. Pour participer à une campagne, utilisez son lien de diffusion.</p><form id="direct-preview-form"><label for="direct-preview-version">Questionnaire / version</label><select id="direct-preview-version" name="version" required>${versions.map(v=>`<option value="${escapeHtml(v.code||String(v.id))}" ${(v.code===remembered||String(v.id)===remembered)?"selected":""}>${escapeHtml(v.title)}${v.number?` — version ${escapeHtml(String(v.number))}`:""}</option>`).join("")}</select><p><button type="submit" class="btn btn-primary">Ouvrir l’aperçu</button></p></form></section>`;
+  document.querySelector("#direct-preview-form").onsubmit=async event=>{
+    event.preventDefault();
+    const version=document.querySelector("#direct-preview-version").value;
+    if(!versions.some(v=>(v.code||String(v.id))===version))return;
+    state.directPreviewVersion=version;state.pageIndex=0;state.pageHistory=[];
+    state.answers={};state.fiches={};state.response=null;state.principalElement=null;state.selectedRecord=null;
+    state.principalDirty=false;state.principalReadOnlyQuestions={};state.ficheEditor=null;state.subFicheEditor=null;
+    setPendingUniqueResumeToken("");
+    await boot();
+  };
+}
+
 async function boot() {
   try {
     if (!window.grist) throw new Error("API Grist indisponible. Ouvrez ce widget depuis Grist.");
@@ -1852,6 +1884,7 @@ async function boot() {
     if(!state.previewMode)applyCampaignPersonalization();
     render();
   } catch(e) {
+    if(e?.code==="preview_selection_required"){renderDirectPreviewChooser(e.versions);return;}
     document.querySelector("#status").innerHTML=`<div class="status-error">${escapeHtml(e.message ?? e)}</div>`;
     document.querySelector("#form-root").innerHTML="";
   }
