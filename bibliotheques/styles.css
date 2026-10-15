@@ -1,8 +1,8 @@
-body{margin:0;background:#f5f6f8;color:#20242a;font-family:Arial,sans-serif}.lib-app{max-width:1250px;margin:auto;padding:24px}.lib-app>header{display:flex;justify-content:space-between;gap:20px;align-items:center}.lib-app h1{margin:0 0 5px}.lib-app p{margin:0;color:#667085}.tabs{display:flex;gap:8px;margin:22px 0}.tabs button,.lib-app button{border:1px solid #cfd4dc;background:#fff;border-radius:8px;padding:9px 13px;cursor:pointer}.tabs button.active,.primary{background:#315a8b!important;color:#fff;border-color:#315a8b!important}.toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar input{min-width:280px;padding:9px;border:1px solid #cfd4dc;border-radius:7px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid #dde1e7;border-radius:11px;padding:16px}.card h3{margin:0 0 7px}.meta,.muted{color:#667085;font-size:13px}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.badge{background:#eef2f6;border-radius:999px;padding:4px 8px;font-size:12px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.details{margin-top:12px;border-top:1px solid #eee;padding-top:10px}.group{margin:8px 0;padding:9px;background:#f7f8fa;border-radius:7px}.success,.error{padding:10px 12px;border-radius:8px;margin:12px 0}.success{background:#ecfdf3}.error{background:#fff1f0;color:#9f1d16}.empty{padding:30px;text-align:center;color:#667085;background:#fff;border:1px dashed #ccd2da;border-radius:10px}.model{border-left:4px solid #315a8b}
+body{margin:0;background:#f5f6f8;color:#20242a;font-family:Arial,sans-serif}.lib-app{max-width:1250px;margin:auto;padding:24px}.lib-app>header{display:flex;justify-content:space-between;gap:20px;align-items:center}.lib-app h1{margin:0 0 5px}.lib-app p{margin:0;color:#667085}.tabs{display:flex;gap:8px;margin:22px 0}.tabs button,.lib-app button{border:1px solid #cfd4dc;background:#fff;border-radius:8px;padding:9px 13px;cursor:pointer}.tabs button.active,.primary{background:#5146c8;color:#fff;border-color:#5146c8}.toolbar{display:flex;gap:10px;margin-bottom:14px}.toolbar input{min-width:280px;padding:9px;border:1px solid #cfd4dc;border-radius:7px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(310px,1fr));gap:14px}.card{background:#fff;border:1px solid #dde1e7;border-radius:11px;padding:16px}.card h3{margin:0 0 7px}.meta,.muted{color:#667085;font-size:13px}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}.badge{background:#eef2f6;border-radius:999px;padding:4px 8px;font-size:12px}.actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:14px}.details{margin-top:12px;border-top:1px solid #eee;padding-top:10px}.group{margin:8px 0;padding:9px;background:#f7f8fa;border-radius:7px}.success,.error{padding:10px 12px;border-radius:8px;margin:12px 0}.success{background:#ecfdf3}.error{background:#fff1f0;color:#9f1d16}.empty{padding:30px;text-align:center;color:#667085;background:#fff;border:1px dashed #ccd2da;border-radius:10px}.model{border-left:4px solid #315a8b}
 
 .section-title{margin-top:30px}.grouping-toolbar{justify-content:space-between}.danger{color:#b42318!important;border-color:#e4b4b0!important}.setup-warning{background:#fff8e6;border:1px solid #efcf83;border-radius:10px;padding:14px;margin-bottom:14px}.lib-dialog{border:0;border-radius:12px;width:min(720px,92vw);padding:0;box-shadow:0 18px 50px #0003}.lib-dialog::backdrop{background:#0005}.lib-dialog form{padding:20px;display:grid;gap:13px}.dialog-head{display:flex;justify-content:space-between;align-items:start}.dialog-head h2{margin:0}.dialog-head button{font-size:20px}.lib-dialog label{display:grid;gap:5px;font-weight:600}.lib-dialog input,.lib-dialog textarea{padding:9px;border:1px solid #cfd4dc;border-radius:7px;font:inherit}.lib-dialog textarea{min-height:70px}.groups-title{display:flex;justify-content:space-between;align-items:center}.group-edit{display:grid;grid-template-columns:1fr 2fr auto;gap:8px;align-items:start;background:#f7f8fa;padding:10px;border-radius:8px;margin:8px 0}.group-edit textarea{min-height:62px}.dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:5px}
 
-/* V1.4 — sections de regroupements repliables */
+/* V1.4 â€” sections de regroupements repliables */
 .grouping-section{margin-top:16px;border:1px solid #dfe4ea;border-radius:14px;background:#fff;overflow:hidden}
 .grouping-section>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:15px 17px;cursor:pointer;list-style:none;background:#fafbfc}
 .grouping-section>summary::-webkit-details-marker{display:none}
@@ -13,3 +13,31 @@ body{margin:0;background:#f5f6f8;color:#20242a;font-family:Arial,sans-serif}.lib
 .grouping-section-body>.grid{margin-top:0}
 .section-chevron{transition:transform .18s ease}
 .grouping-section[open] .section-chevron{transform:rotate(180deg)}
+
+/* Module catalogue workspace */
+body.ui-admin[data-module="bibliotheques"] .lib-app{max-width:1500px;margin:auto;padding:28px}
+body.ui-admin[data-module="bibliotheques"] .tabs{display:flex;gap:8px;border:0;margin:24px 0}
+body.ui-admin[data-module="bibliotheques"] .tabs button{border-radius:10px;padding:12px 20px}
+body.ui-admin[data-module="bibliotheques"] .tabs button.active,body.ui-admin[data-module="bibliotheques"] #only-models.active{background:var(--ui-accent-soft);color:var(--ui-accent);border-color:var(--ui-accent)}
+body.ui-admin[data-module="bibliotheques"] .catalog-heading h2{margin-bottom:6px;font-size:22px}
+body.ui-admin[data-module="bibliotheques"] .catalog-heading p{color:var(--ui-muted)}
+body.ui-admin[data-module="bibliotheques"] .toolbar{padding:18px;background:var(--ui-surface);border:1px solid var(--ui-border);border-radius:14px;align-items:end;gap:12px}
+body.ui-admin[data-module="bibliotheques"] .search-label{flex:1;display:grid;gap:7px;font-size:12px;font-weight:650}
+body.ui-admin[data-module="bibliotheques"] .search-label input{width:100%;box-sizing:border-box}
+body.ui-admin[data-module="bibliotheques"] .catalog-workspace{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px;align-items:start}
+body.ui-admin[data-module="bibliotheques"] .grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,270px),1fr));gap:16px}
+body.ui-admin[data-module="bibliotheques"] .card{background:white;border:1px solid var(--ui-border);border-radius:15px;padding:20px;box-shadow:0 3px 14px #1c243705}
+body.ui-admin[data-module="bibliotheques"] .card.model{border-top:3px solid var(--ui-accent)}
+body.ui-admin[data-module="bibliotheques"] .card h3{font-size:18px;line-height:1.4}
+body.ui-admin[data-module="bibliotheques"] .badges{gap:6px;margin:16px 0}
+body.ui-admin[data-module="bibliotheques"] .badge{background:var(--ui-accent-soft);color:var(--ui-accent);border-radius:6px;padding:6px 8px}
+body.ui-admin[data-module="bibliotheques"] #model-preview{position:sticky;top:18px;background:white;border:1px solid var(--ui-border);border-radius:15px;padding:24px;line-height:1.6}
+body.ui-admin[data-module="bibliotheques"] .eyebrow{font-size:11px;font-weight:750;letter-spacing:.12em;color:var(--ui-accent)}
+body.ui-admin[data-module="bibliotheques"] .catalog-list{grid-template-columns:1fr}
+body.ui-admin[data-module="bibliotheques"] .grouping-section{background:white;border:1px solid var(--ui-border);border-radius:14px;margin:18px 0;overflow:hidden}
+body.ui-admin[data-module="bibliotheques"] .grouping-section>summary{padding:20px}
+body.ui-admin[data-module="bibliotheques"] .lib-dialog{border:1px solid var(--ui-border);border-radius:18px;box-shadow:0 24px 90px #1c243730;padding:26px;max-height:85vh}
+body.ui-admin[data-module="bibliotheques"] button{min-height:39px;border-radius:8px}
+@media(max-width:950px){body.ui-admin[data-module="bibliotheques"] .catalog-workspace{grid-template-columns:1fr}body.ui-admin[data-module="bibliotheques"] #model-preview{position:static}body.ui-admin[data-module="bibliotheques"] .toolbar{flex-wrap:wrap}body.ui-admin[data-module="bibliotheques"] .search-label{flex-basis:100%}}
+@media(max-width:550px){body.ui-admin[data-module="bibliotheques"] .lib-app{padding:14px}}
+body.ui-admin[data-module="bibliotheques"] button.primary{background:var(--ui-accent);border-color:var(--ui-accent);color:white}
