@@ -7,7 +7,7 @@ export function intBetween(rng,min,max){min=Math.ceil(Number(min));max=Math.floo
 export function decimalBetween(rng,min,max,decimals=0){let lo=Number(min),hi=Number(max);if(!Number.isFinite(lo))lo=0;if(!Number.isFinite(hi))hi=100;if(hi<lo)[lo,hi]=[hi,lo];const d=Math.max(0,Math.min(6,Number(decimals)||0)),p=10**d;return Math.round((lo+rng()*(hi-lo))*p)/p}
 export function matrixKind(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();if(!t.includes("matrice"))return"";if(t.includes("checkbox"))return"checkbox";if(t.includes("radio"))return"radio";if(t.includes("nombre")||t.includes("numérique")||t.includes("numerique"))return"number";if(t.includes("texte"))return"text";return""}
 export function isMultiQuestion(q){const t=String(q?.Type_question??"").toLowerCase();return t.includes("case")||t.includes("checkbox")||((t.includes("liste")||t.includes("déroul")||t.includes("deroul"))&&isTrue(q.Selection_multiple))}
-export function isDisplayBlock(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return t==="description"||t==="sommaire"||t.includes("tableau de données")||t.includes("tableau de donnees")}
+export function isDisplayBlock(q){const t=String(q?.Type_question??q?.Type??"").trim().toLowerCase();return t==="description"||t==="sommaire"||t==="indicateurs"||t==="tableau_donnees"||t.includes("tableau de données")||t.includes("tableau de donnees")}
 export function resolveRow(value,rows,codeField){const raw=codeOf(value);return(rows??[]).find(r=>String(r.id)===raw||codeOf(r?.[codeField])===raw)||null}
 export function activeChoices(q,ctx){return sortByOrder((ctx.choices??[]).filter(c=>c.Actif!==false&&resolveRow(c.Question_Code,[q],"Question_Code")))}
 function choicesFor(q,ctx){const qid=String(q.id),qc=codeOf(q.Question_Code);return sortByOrder((ctx.choices??[]).filter(c=>c.Actif!==false&&[String(codeOf(c.Question_Code)),String(c.Question_Code)].some(v=>v===qid||v===qc)))}
@@ -25,7 +25,7 @@ export function fakeSimpleValue(q,ctx,rng,index=1,mode="realiste"){
   if(t.includes("bool")||t.includes("oui/non"))return rng()>=0.5;
   return fakeText(q,rng,index)
 }
-export function conditionVisible(q,ctx,answers){const raw=codeOf(q.Condition_affichage_Code);if(!raw)return true;const condition=resolveRow(q.Condition_affichage_Code,ctx.conditions??[],"Condition_Code");if(!condition||condition.Active===false)return true;return evaluateCondition(condition,ctx.rules??[],answers)}
+export function conditionVisible(q,ctx,answers){const raw=codeOf(q.Condition_affichage_Code);if(!raw)return true;const condition=resolveRow(q.Condition_affichage_Code,ctx.conditions??[],"Condition_Code");if(!condition||condition.Active===false)return true;const rules=(ctx.rules??[]).map(rule=>({...rule,Condition_Code:codeOf(resolveRow(rule.Condition_Code,ctx.conditions??[],"Condition_Code")?.Condition_Code)||rule.Condition_Code,Question_source_Code:codeOf(resolveRow(rule.Question_source_Code,ctx.questions??[],"Question_Code")?.Question_Code)||rule.Question_source_Code}));return evaluateCondition(condition,rules,answers)}
 export function generateAnswers(questions,ctx,rng,index=1,mode="realiste"){
   const answers={};
   for(const q of sortByOrder((questions??[]).filter(q=>q.Active!==false&&!isTrue(q.Est_ligne_matrice)&&!isDisplayBlock(q)))){
