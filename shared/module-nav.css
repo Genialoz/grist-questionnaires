@@ -4,8 +4,8 @@
   display:flex;
   align-items:center;
   gap:8px;
-  padding:8px 12px;
-  background:#fff;
+  padding:10px 20px;
+  background:#ffffffee;
   border-bottom:1px solid #e5e7eb;
   font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   color:#1f2937;
@@ -14,10 +14,10 @@
 .gristionnaire-module-nav__link{
   display:inline-flex;
   align-items:center;
-  min-height:34px;
+  min-height:38px;
   padding:6px 10px;
   border:1px solid #d1d5db;
-  border-radius:8px;
+  border-radius:10px;
   background:#fff;
   color:#1f2937;
   text-decoration:none;
@@ -32,10 +32,10 @@
 .gristionnaire-module-nav__select{
   min-width:190px;
   max-width:320px;
-  height:34px;
+  height:38px;
   padding:4px 30px 4px 9px;
   border:1px solid #d1d5db;
-  border-radius:8px;
+  border-radius:10px;
   background:#fff;
   color:#111827;
   font-size:13px;
@@ -55,3 +55,7 @@
   .gristionnaire-module-nav__label{display:none}
   .gristionnaire-module-nav__select{flex:1 1 200px;min-width:160px}
 }
+
+.gristionnaire-module-nav__home{color:#5146c8;background:#eeecfc;border-color:#dedbf8}
+.gristionnaire-module-nav__link:hover{color:#5146c8;background:#eeecfc;border-color:#d8d3f5}
+.gristionnaire-module-nav :focus-visible{outline:3px solid #8e86e5;outline-offset:2px}

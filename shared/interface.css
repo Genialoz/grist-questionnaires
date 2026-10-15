@@ -1,0 +1,18 @@
+/* Gristionnaire â€” langage visuel commun, sans dÃ©pendance externe. */
+:root{--ui-bg:#f4f6fb;--ui-surface:#fff;--ui-text:#1c2437;--ui-muted:#64708a;--ui-border:#dce2ec;--ui-accent:#5146c8;--ui-accent-soft:#eeecfc;--ui-danger:#b83446}
+body.ui-admin{margin:0;background:var(--ui-bg);color:var(--ui-text);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height:1.5}
+body.ui-admin :where(button,input,select,textarea){font:inherit}
+body.ui-admin :where(button,a,input,select,textarea,summary):focus-visible{outline:3px solid #8e86e5;outline-offset:3px}
+body.ui-admin :where(button){transition:background .15s,border-color .15s,box-shadow .15s}
+body.ui-admin :where(button:disabled){cursor:not-allowed;opacity:.5}
+body.ui-admin :where(input:not([type=checkbox]):not([type=radio]),select,textarea){border:1px solid var(--ui-border);border-radius:9px;padding:9px 11px;background:#fff;color:var(--ui-text);max-width:100%}
+body.ui-admin :where(input[type=checkbox],input[type=radio]){accent-color:var(--ui-accent)}
+body.ui-admin :where(h1,h2,h3){color:var(--ui-text);line-height:1.25;letter-spacing:-.025em}
+body.ui-admin :where(dialog){border:1px solid var(--ui-border);border-radius:18px;box-shadow:0 24px 80px #1c243733;max-width:calc(100vw - 32px)}
+body.ui-admin dialog::backdrop{background:#1c243766;backdrop-filter:blur(3px)}
+body.ui-admin :where(table){border-collapse:collapse}
+body.ui-admin :where(th){background:#f7f8fc;color:var(--ui-muted);font-weight:650}
+body.ui-admin :where(th,td){border-color:var(--ui-border)}
+body.ui-admin :where(.hint,.muted){color:var(--ui-muted)}
+body.ui-admin :where(.eyebrow){color:var(--ui-accent);font-size:11px;font-weight:750;text-transform:uppercase;letter-spacing:.13em;margin:0 0 8px}
+@media(prefers-reduced-motion:reduce){body.ui-admin *,body.ui-admin *::before,body.ui-admin *::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
