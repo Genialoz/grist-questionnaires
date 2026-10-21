@@ -551,14 +551,22 @@ async function duplicateQuestion(source){
  const sourceOrder=Number(source.Ordre)||0,sourceFiche=codeOf(source.TypeFiche_Code)||"";
  const siblings=(S.data.QUESTIONS||[]).filter(q=>String(q.id)!==String(source.id)&&vm(q)&&!isMatrixLine(q)&&sameRef(q.Section_Code,source.Section_Code)&&String(codeOf(q.TypeFiche_Code)||"")===String(sourceFiche)&&(Number(q.Ordre)||0)>sourceOrder);
  if(siblings.length)await applyDesignerActions(siblings.map(q=>["UpdateRecord","QUESTIONS",Number(q.id),{Ordre:(Number(q.Ordre)||0)+1}]));
- const vals=cloneRecordValues(source,["Question_Code","Ordre","Question_parente_Code","Condition_affichage_Code","Condition_obligation_Code"]);
+ const vals=cloneRecordValues(source,["Question_Code","Ordre","Question_parente_Code","Condition_affichage_Code","Condition_obligation_Code","Version_Code","Page_Code","Section_Code","TypeFiche_Code"]);
  vals.Question_Code=duplicateVariableCode(source);vals.Ordre=sourceOrder+1;vals.Version_Code=v.id;
+ // Réinjecte explicitement les références de placement sous forme d'IDs Grist.
+ // Selon le contexte, Grist peut restituer une référence sous forme d'ID, de code ou d'objet ;
+ // recopier la valeur brute peut créer une question qui n'apparaît plus au bon endroit dans l'arborescence.
+ const resolveRefId=(raw,table,codeCol)=>{const x=codeOf(raw);if(!x)return null;const found=(table||[]).find(r=>String(r.id)===String(x)||String(codeOf(r[codeCol])||"")===String(x));return found?Number(found.id):null};
+ const pageId=resolveRefId(source.Page_Code,S.data.PAGES,"Page_Code"),sectionId=resolveRefId(source.Section_Code,S.data.SECTIONS,"Section_Code"),ficheId=resolveRefId(source.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code");
+ vals.Page_Code=pageId;vals.Section_Code=sectionId;vals.TypeFiche_Code=ficheId;
  // Les conditions de la question ne sont pas clonées : elles peuvent dépendre d’autres questions.
  if(field(source,["Question_parente_Code"]))vals.Question_parente_Code=null;
  const titleKey=field(source,["Libelle","Libellé","Question","Titre"]);if(titleKey)vals[titleKey]=`${source[titleKey]||label(source,"question")} — copie`;
  const newCode=vals.Question_Code;
  await applyDesignerActions([["AddRecord","QUESTIONS",null,vals]]);await reload();
  const created=(S.data.QUESTIONS||[]).find(q=>codeOf(q.Question_Code)===newCode);if(!created)throw new Error("Question dupliquée mais introuvable après relecture.");
+ const createdPageId=resolveRefId(created.Page_Code,S.data.PAGES,"Page_Code"),createdSectionId=resolveRefId(created.Section_Code,S.data.SECTIONS,"Section_Code"),createdFicheId=resolveRefId(created.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code");
+ if(String(createdPageId||"")!==String(pageId||"")||String(createdSectionId||"")!==String(sectionId||"")||String(createdFicheId||"")!==String(ficheId||""))throw new Error("La question a été créée mais son rattachement à la page, section ou fiche n'a pas été conservé.");
  const actions=[],choicePairs=[];
  for(const c of choicesFor(source)){const cv=cloneRecordValues(c,["Choix_Code","Question_Code","Condition_Code"]),newChoiceCode=unique("CHOIX");cv.Choix_Code=newChoiceCode;cv.Question_Code=Number(created.id);cv.Condition_Code=null;actions.push(["AddRecord","CHOIX_QUESTIONS",null,cv]);choicePairs.push({sourceChoice:c,newChoiceCode})}
  for(const f of choiceFiltersFor(source)){const fv=cloneRecordValues(f,["FiltreChoix_Code","Question_Code"]);fv.FiltreChoix_Code=unique("FCH");fv.Question_Code=Number(created.id);actions.push(["AddRecord","FILTRES_CHOIX",null,fv])}
