@@ -91,40 +91,57 @@ function treeNodeDepth(el){
 function treeCollapseKey(el){return `${S.version||""}:${el.dataset.type}:${el.dataset.id}`}
 function bindTreeCollapse(){
  const root=$("#tree"),items=[...root.querySelectorAll(":scope > .tree-item")];
- const entries=items.map(el=>({el,depth:treeNodeDepth(el),key:treeCollapseKey(el)}));
- // L'arborescence actuelle est une liste plate : calculer les descendants sans
- // changer l'ordre ou déplacer les boutons utilisés par le glisser-déposer.
- for(let i=0;i<entries.length;i++){
-  const entry=entries[i];
-  if(entry.el.classList.contains("tree-orphan"))continue;
-  if(!["page","section","fiche"].includes(entry.el.dataset.type))continue;
-  let end=i+1;
-  while(end<entries.length&&entries[end].depth>entry.depth&&!entries[end].el.classList.contains("tree-orphan"))end++;
-  if(end===i+1)continue;
-  const toggle=document.createElement("button");
-  toggle.type="button";
-  toggle.className="tree-collapse-toggle";
-  toggle.dataset.collapseKey=entry.key;
-  toggle.title=collapsedTreeNodes.has(entry.key)?"Déplier les éléments":"Replier les éléments";
-  toggle.setAttribute("aria-label",toggle.title);
-  toggle.setAttribute("aria-expanded",String(!collapsedTreeNodes.has(entry.key)));
-  toggle.textContent=collapsedTreeNodes.has(entry.key)?"▸":"▾";
-  entry.el.insertAdjacentElement("afterend",toggle);
-  toggle.onclick=()=>{if(collapsedTreeNodes.has(entry.key))collapsedTreeNodes.delete(entry.key);else collapsedTreeNodes.add(entry.key);renderTree()};
+ // Construire de vrais conteneurs descendants, plutôt que masquer séparément
+ // chaque ligne d'une liste plate (fragile avec les styles du Concepteur).
+ const fragment=document.createDocumentFragment(),stack=[];
+ const heading=root.querySelector(".tree-orphans-heading");
+ for(const el of items){
+  const orphan=el.classList.contains("tree-orphan");
+  const depth=orphan?0:treeNodeDepth(el);
+  if(orphan){
+   stack.length=0;
+   if(heading&&heading.parentElement===root)fragment.appendChild(heading);
+  }
+  while(stack.length&&stack[stack.length-1].depth>=depth)stack.pop();
+  const parent=stack.length?stack[stack.length-1].children:fragment;
+  const node=document.createElement("div");
+  node.className="tree-node";
+  node.appendChild(el);
+  parent.appendChild(node);
+  if(!orphan&&["page","section","fiche"].includes(el.dataset.type)){
+   const children=document.createElement("div");
+   children.className="tree-node-children";
+   node.appendChild(children);
+   const key=treeCollapseKey(el);
+   const toggle=document.createElement("button");
+   toggle.type="button";
+   toggle.className="tree-collapse-toggle";
+   toggle.dataset.collapseKey=key;
+   toggle.onclick=(event)=>{
+    event.stopPropagation();
+    if(collapsedTreeNodes.has(key))collapsedTreeNodes.delete(key);
+    else collapsedTreeNodes.add(key);
+    renderTree();
+   };
+   node.insertBefore(toggle,children);
+   const collapsed=collapsedTreeNodes.has(key);
+   toggle.textContent=collapsed?"▸":"▾";
+   toggle.title=collapsed?"Déplier les éléments":"Replier les éléments";
+   toggle.setAttribute("aria-label",toggle.title);
+   toggle.setAttribute("aria-expanded",String(!collapsed));
+   children.hidden=collapsed;
+   children.style.display=collapsed?"none":"";
+   stack.push({depth,children});
+  }
  }
- // Un seul parcours gère également les replis imbriqués (page > section > fiche > sous-fiche).
- const toggles=new Map([...root.querySelectorAll(".tree-collapse-toggle")].map(el=>[el.dataset.collapseKey,el]));
- const hiddenAt=[];
- for(const entry of entries){
-  if(entry.el.classList.contains("tree-orphan"))hiddenAt.length=0;
-  while(hiddenAt.length&&hiddenAt[hiddenAt.length-1].depth>=entry.depth)hiddenAt.pop();
-  const hidden=hiddenAt.some(parent=>parent.hidden);
-  entry.el.hidden=hidden;
-  entry.el.style.display=hidden?"none":"";
-  const toggle=toggles.get(entry.key);
-  if(toggle){toggle.hidden=hidden;toggle.style.display=hidden?"none":"";}
-  if(["page","section","fiche"].includes(entry.el.dataset.type))hiddenAt.push({depth:entry.depth,hidden:hidden||collapsedTreeNodes.has(entry.key)});
- }
+ root.appendChild(fragment);
+ // Supprimer les chevrons inutiles sur les conteneurs sans descendants.
+ root.querySelectorAll(".tree-node-children").forEach(children=>{
+  if(children.childElementCount)return;
+  const node=children.parentElement;
+  node.querySelector(":scope > .tree-collapse-toggle")?.remove();
+  children.remove();
+ });
 }
 function renderTree(){const {pages,sections,questions,fiches}=current();let h="";for(const p of pages){const pc=codeOf(p.Page_Code);h+=item("page",p,label(p,"page"),"tree-page");for(const s of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(s.Section_Code);h+=item("section",s,label(s,"section"),"tree-section");const sq=questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc);for(const q of sq.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")))h+=item("question",q,label(q,"question"),"tree-question");const ft=new Set(sq.map(q=>ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")).filter(Boolean));const parents=fiches.filter(f=>!isSubFiche(f)&&(ft.has(codeOf(f.TypeFiche_Code))||fiches.some(sf=>ficheParentCode(sf)===codeOf(f.TypeFiche_Code)&&ft.has(codeOf(sf.TypeFiche_Code)))));for(const f of parents){h+=item("fiche",f,label(f,"fiche"),"tree-fiche");const fc=codeOf(f.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===fc))h+=item("question",q,label(q,"question"),"tree-question fiche-question");for(const sf of fiches.filter(x=>ficheParentCode(x)===fc)){h+=item("fiche",sf,label(sf,"fiche"),"tree-fiche subfiche");const sfc=codeOf(sf.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===sfc))h+=item("question",q,label(q,"question"),"tree-question fiche-question subfiche-question")}}}}
  // Sécurité d'affichage : une question de la version courante ne doit jamais être

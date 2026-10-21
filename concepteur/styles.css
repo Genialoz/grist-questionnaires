@@ -383,3 +383,9 @@ body[data-module="concepteur"] #tree .tree-collapse-toggle{
 }
 body[data-module="concepteur"] #tree .tree-collapse-toggle:hover{background:#f0ebf7;border-color:#b7b0ef}
 body[data-module="concepteur"] #tree .tree-item:has(+ .tree-collapse-toggle){padding-right:38px}
+
+/* Les descendants d'une page/section/fiche sont de vrais groupes repliables. */
+body[data-module="concepteur"] #tree .tree-node{position:relative;min-width:0}
+body[data-module="concepteur"] #tree .tree-node-children[hidden]{display:none!important}
+body[data-module="concepteur"] #tree .tree-node > .tree-collapse-toggle{position:absolute;top:8px;right:14px;margin:0}
+body[data-module="concepteur"] #tree .tree-node > .tree-item{padding-right:38px}
