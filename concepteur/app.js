@@ -482,7 +482,18 @@ async function duplicateContainerWithContent(type,source){
   ficheSet.add(String(source.id));
   if(!isSubFiche(source))for(const sf of (S.data.TYPES_FICHES||[]).filter(x=>vm(x)&&ficheParentCode(x)===codeOf(source.TypeFiche_Code)))ficheSet.add(String(sf.id));
  }
- let questions=(S.data.QUESTIONS||[]).filter(q=>vm(q)&&(type==="fiche"?ficheSet.has(String(codeOf(q.TypeFiche_Code)||"")):sectionSet.has(String(codeOf(q.Section_Code)||""))));
+ // Sélection robuste des questions du bloc. Une page peut contenir des questions
+ // rattachées directement à la page (sans section) ou via une section.
+ // Les références Grist sont comparées sur leurs identifiants de lignes, pas sur
+ // leurs libellés affichés, afin d'éviter les copies de conteneur sans questions.
+ const pageIdSet=new Set(pageSet), sectionIdSet=new Set(sectionSet), ficheIdSet=new Set(ficheSet);
+ let questions=(S.data.QUESTIONS||[]).filter(q=>{
+  if(!vm(q))return false;
+  const qp=String(codeOf(q.Page_Code)||""), qs=String(codeOf(q.Section_Code)||""), qf=String(codeOf(q.TypeFiche_Code)||"");
+  if(type==="page")return pageIdSet.has(qp)||sectionIdSet.has(qs);
+  if(type==="section")return sectionIdSet.has(qs);
+  return ficheIdSet.has(qf);
+ });
  // Les lignes de matrice et questions de précision utilisent les mêmes section/fiche et sont donc incluses.
  if(type!=="fiche"){
   const referenced=new Set(questions.map(q=>String(codeOf(q.TypeFiche_Code)||"")).filter(Boolean));
@@ -501,6 +512,7 @@ async function duplicateContainerWithContent(type,source){
  for(const old of fiches){const vals=cloneRecordValues(old,["TypeFiche_Code","Parent_Code","Question_titre_Code","Question_resume_Code","Ordre"]);vals.TypeFiche_Code=unique("FICHE");vals.Version_Code=v.id;vals.Parent_Code=null;vals.Question_titre_Code=null;if(Array.isArray(old.Question_resume_Code))vals.Question_resume_Code=["L"];vals.Ordre=type==="fiche"&&String(old.id)===String(source.id)?maxOrder((S.data.TYPES_FICHES||[]).filter(x=>vm(x)&&Boolean(isSubFiche(x))===Boolean(isSubFiche(old)))):Number(old.Ordre)||0;const t=type==="fiche"&&String(old.id)===String(source.id)?duplicateTitleValue(old,"fiche"):null;if(t)vals[t.key]=t.value;await applyDesignerActions([["AddRecord","TYPES_FICHES",null,vals]]);await reload();const created=(S.data.TYPES_FICHES||[]).find(x=>codeOf(x.TypeFiche_Code)===vals.TypeFiche_Code);if(!created)throw new Error("Fiche copiée mais introuvable.");maps.fiche.set(String(old.id),created.id)}
  // 2. Questions sans dépendances, afin d'obtenir tous les nouveaux identifiants.
  for(const old of questions){const vals=cloneRecordValues(old,["Question_Code","Version_Code","Page_Code","Section_Code","TypeFiche_Code","Question_parente_Code","Condition_affichage_Code","Condition_obligation_Code"]);vals.Question_Code=duplicateQuestionCodeForBlock(old,reservedQ);vals.Version_Code=v.id;if(codeOf(old.Page_Code))vals.Page_Code=maps.page.get(String(codeOf(old.Page_Code)))||Number(codeOf(old.Page_Code));if(codeOf(old.Section_Code))vals.Section_Code=maps.section.get(String(codeOf(old.Section_Code)))||Number(codeOf(old.Section_Code));if(codeOf(old.TypeFiche_Code))vals.TypeFiche_Code=maps.fiche.get(String(codeOf(old.TypeFiche_Code)))||Number(codeOf(old.TypeFiche_Code));vals.Question_parente_Code=null;vals.Condition_affichage_Code=null;vals.Condition_obligation_Code=null;await applyDesignerActions([["AddRecord","QUESTIONS",null,vals]]);await reload();const created=(S.data.QUESTIONS||[]).find(x=>codeOf(x.Question_Code)===vals.Question_Code);if(!created)throw new Error(`Question « ${label(old,"question")} » copiée mais introuvable.`);maps.question.set(String(old.id),created.id)}
+ if(maps.question.size!==questions.length)throw new Error(`Duplication incomplète : ${maps.question.size} question(s) créée(s) sur ${questions.length} attendue(s).`);
  // 3. Choix, colonnes de matrice et filtres de fiche/question.
  for(const old of sourceChoices){const vals=cloneRecordValues(old,["Choix_Code","Question_Code","Condition_Code"]);const nc=unique("CHOIX");vals.Choix_Code=nc;vals.Question_Code=maps.question.get(String(codeOf(old.Question_Code)));vals.Condition_Code=null;maps.choice.set(String(codeOf(old.Choix_Code)),nc);await applyDesignerActions([["AddRecord","CHOIX_QUESTIONS",null,vals]])}
  for(const old of (S.data.COLONNES_MATRICE||[]).filter(c=>maps.question.has(String(codeOf(c.Question_Code))))){const vals=cloneRecordValues(old,["ColonneMatrice_Code","Question_Code"]);vals.ColonneMatrice_Code=unique("COLMAT");vals.Question_Code=maps.question.get(String(codeOf(old.Question_Code)));await applyDesignerActions([["AddRecord","COLONNES_MATRICE",null,vals]])}
@@ -520,6 +532,10 @@ async function duplicateContainerWithContent(type,source){
  for(const old of questions){const ch={};if(codeOf(old.Question_parente_Code))ch.Question_parente_Code=maps.question.get(String(codeOf(old.Question_parente_Code)))||null;if(codeOf(old.Condition_affichage_Code))ch.Condition_affichage_Code=maps.condition.get(String(codeOf(old.Condition_affichage_Code)))||null;if(codeOf(old.Condition_obligation_Code))ch.Condition_obligation_Code=maps.condition.get(String(codeOf(old.Condition_obligation_Code)))||null;const td=codeOf(old.TD_Context_Question);if(td&&maps.question.has(String(td)))ch.TD_Context_Question=maps.question.get(String(td));if(Object.keys(ch).length)updates.push(["UpdateRecord","QUESTIONS",maps.question.get(String(old.id)),ch])}
  if(updates.length)await applyDesignerActions(updates);
  await reload();
+ // Vérification après relecture : toutes les nouvelles questions doivent exister.
+ const createdQuestionIds=new Set([...maps.question.values()].map(String));
+ const persistedQuestionCount=(S.data.QUESTIONS||[]).filter(q=>createdQuestionIds.has(String(q.id))).length;
+ if(persistedQuestionCount!==questions.length)throw new Error(`Duplication incomplète après relecture : ${persistedQuestionCount} question(s) retrouvée(s) sur ${questions.length} attendue(s).`);
  // Conditions portées par les modalités.
  const choiceUpdates=[];for(const old of sourceChoices){const newCode=maps.choice.get(String(codeOf(old.Choix_Code)));if(!newCode)continue;const createdChoice=(S.data.CHOIX_QUESTIONS||[]).find(c=>String(codeOf(c.Choix_Code))===String(newCode));if(!createdChoice)continue;const oldCond=String(codeOf(old.Condition_Code)||"");if(oldCond&&maps.condition.has(oldCond))choiceUpdates.push(["UpdateRecord","CHOIX_QUESTIONS",Number(createdChoice.id),{Condition_Code:maps.condition.get(oldCond)}])}if(choiceUpdates.length){await applyDesignerActions(choiceUpdates);await reload()}
  // Sélectionne la nouvelle racine.
