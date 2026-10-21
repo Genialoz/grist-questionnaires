@@ -120,8 +120,9 @@ function bindTreeCollapse(){
   while(hiddenAt.length&&hiddenAt[hiddenAt.length-1].depth>=entry.depth)hiddenAt.pop();
   const hidden=hiddenAt.some(parent=>parent.hidden);
   entry.el.hidden=hidden;
+  entry.el.style.display=hidden?"none":"";
   const toggle=toggles.get(entry.key);
-  if(toggle)toggle.hidden=hidden;
+  if(toggle){toggle.hidden=hidden;toggle.style.display=hidden?"none":"";}
   if(["page","section","fiche"].includes(entry.el.dataset.type))hiddenAt.push({depth:entry.depth,hidden:hidden||collapsedTreeNodes.has(entry.key)});
  }
 }
