@@ -83,33 +83,51 @@ function renderTree(){const {pages,sections,questions,fiches}=current();let h=""
  // inaccessible parce que son rattachement ne correspond pas aux filtres imbriqués.
  // Les questions déjà affichées restent à leur emplacement habituel.
  const shownQuestionIds=new Set([...h.matchAll(/data-type="question" data-id="(\d+)"/g)].map(m=>m[1]));
- // Une question de fiche peut avoir conservé une ancienne section après une copie.
- // Utiliser la section d'une question déjà affichée de la même fiche (ou de sa
- // fiche parente) pour lui redonner un emplacement, sans modifier les données Grist.
+ // Retrouver l'emplacement avec les références réelles, sans dépendre de
+ // l'existence d'une autre question visible dans la même fiche.
+ // Une fiche sans question initialement classée n'était jamais créée par le
+ // parcours ci-dessus : on l'affiche sous la section de sa question.
  const unmatchedFicheQuestions=questions.filter(q=>!isMatrixLine(q)&&!shownQuestionIds.has(String(q.id))&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code"));
  for(const q of unmatchedFicheQuestions){
   const ficheCode=ref(q.TypeFiche_Code,fiches,"TypeFiche_Code");
   const fiche=fiches.find(f=>codeOf(f.TypeFiche_Code)===ficheCode);
-  if(!fiche)continue;
-  const parentCode=ficheParentCode(fiche);
-  const relatedCodes=new Set([ficheCode,parentCode].filter(Boolean));
-  const anchor=questions.find(other=>shownQuestionIds.has(String(other.id))&&relatedCodes.has(ref(other.TypeFiche_Code,fiches,"TypeFiche_Code")));
-  // Pas d'ancrage fiable : conserver le diagnostic « sans emplacement ».
-  if(!anchor)continue;
-  const sectionCode=ref(anchor.Section_Code,S.data.SECTIONS,"Section_Code");
+  const sectionCode=ref(q.Section_Code,S.data.SECTIONS,"Section_Code");
   const section=sections.find(sec=>codeOf(sec.Section_Code)===sectionCode);
-  if(!section)continue;
-  const treeFiche=fiches.find(f=>codeOf(f.TypeFiche_Code)===ficheCode);
-  const treeFicheId=treeFiche?.id;
-  // Insérer sous le conteneur fiche effectivement présent dans l'arbre.
-  // Les items suivants restent inchangés et l'élément ne sera pas dupliqué.
-  const ficheMarker=treeFicheId?`data-type="fiche" data-id="${treeFicheId}"`:"";
-  const pos=ficheMarker?h.indexOf(ficheMarker):-1;
-  if(pos<0)continue;
-  const nextButton=h.indexOf('</button>',pos);
-  if(nextButton<0)continue;
-  const insertion=nextButton+'</button>'.length;
-  h=h.slice(0,insertion)+item("question",q,label(q,"question"),"tree-question fiche-question tree-recovered")+h.slice(insertion);
+  if(!fiche||!section)continue; // Conserver l'avertissement si références invalides.
+  const sectionMarker=`data-type="section" data-id="${section.id}"`;
+  const sectionPos=h.indexOf(sectionMarker);
+  if(sectionPos<0)continue; // La page de la section n'est pas visible.
+  const ficheMarker=`data-type="fiche" data-id="${fiche.id}"`;
+  let fichePos=h.indexOf(ficheMarker,sectionPos);
+  // Ne pas réutiliser une fiche affichée sous une autre section.
+  const nextSection=h.indexOf('data-type="section"',sectionPos+sectionMarker.length);
+  if(fichePos<0||(nextSection>=0&&fichePos>nextSection)){
+   const parentCode=ficheParentCode(fiche);
+   const parent=fiches.find(f=>codeOf(f.TypeFiche_Code)===parentCode);
+   const sectionEnd=h.indexOf('</button>',sectionPos);
+   if(sectionEnd<0)continue;
+   let position=sectionEnd+'</button>'.length;
+   // Pour une sous-fiche, rétablir aussi sa fiche parente si nécessaire.
+   if(parent){
+    const parentMarker=`data-type="fiche" data-id="${parent.id}"`;
+    let parentPos=h.indexOf(parentMarker,sectionPos);
+    if(parentPos<0||(nextSection>=0&&parentPos>nextSection)){
+     const parentHtml=item("fiche",parent,label(parent,"fiche"),"tree-fiche tree-recovered");
+     h=h.slice(0,position)+parentHtml+h.slice(position);
+     position+=parentHtml.length;
+    }else{
+     const parentEnd=h.indexOf('</button>',parentPos);
+     position=parentEnd+'</button>'.length;
+    }
+   }
+   const ficheHtml=item("fiche",fiche,label(fiche,"fiche"),`tree-fiche ${parent?"subfiche ":""}tree-recovered`);
+   h=h.slice(0,position)+ficheHtml+h.slice(position);
+   fichePos=position;
+  }
+  const ficheEnd=h.indexOf('</button>',fichePos);
+  if(ficheEnd<0)continue;
+  const insertion=ficheEnd+'</button>'.length;
+  h=h.slice(0,insertion)+item("question",q,label(q,"question"),`tree-question fiche-question ${isSubFiche(fiche)?"subfiche-question ":""}tree-recovered`)+h.slice(insertion);
   shownQuestionIds.add(String(q.id));
  }
  const unmatched=questions.filter(q=>!isMatrixLine(q)&&!shownQuestionIds.has(String(q.id)));
