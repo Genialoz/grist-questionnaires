@@ -576,9 +576,19 @@ async function duplicateQuestion(source){
  }
  if(actions.length)await applyDesignerActions(actions);
  await reload();let fresh=(S.data.QUESTIONS||[]).find(q=>codeOf(q.Question_Code)===newCode);if(!fresh)throw new Error("Copie introuvable après finalisation.");
+ // Une question peut être créée en base tout en restant absente de l'arborescence si Grist
+ // a normalisé une référence de placement différemment. Vérifie la visibilité réelle et,
+ // si nécessaire, répare explicitement tous les rattachements avant d'annoncer le succès.
+ const questionVisibleInTree=q=>{if(!q)return false;const cq=current().questions.find(x=>String(x.id)===String(q.id));if(!cq)return false;const sec=sectionForQuestion(cq);if(!sec)return false;const expectedFiche=ficheId?String(codeOf((S.data.TYPES_FICHES||[]).find(f=>String(f.id)===String(ficheId))?.TypeFiche_Code)||""):"";const actualFiche=String(ref(cq.TypeFiche_Code,S.data.TYPES_FICHES,"TypeFiche_Code")||"");return String(sec.id)===String(sectionId||"")&&actualFiche===expectedFiche};
+ if(!questionVisibleInTree(fresh)){
+  const repair={Version_Code:Number(v.id),Section_Code:sectionId||null,Page_Code:pageId||null,TypeFiche_Code:ficheId||null};
+  if(field(fresh,["Active"]))repair.Active=active(source);
+  await applyDesignerActions([["UpdateRecord","QUESTIONS",Number(fresh.id),repair]]);await reload();fresh=(S.data.QUESTIONS||[]).find(q=>String(q.id)===String(fresh.id))||(S.data.QUESTIONS||[]).find(q=>codeOf(q.Question_Code)===newCode);
+ }
+ if(!questionVisibleInTree(fresh))throw new Error(`La question a bien été créée (${newCode}) mais reste absente de l'arborescence après réparation. Page=${pageId||"-"}, section=${sectionId||"-"}, fiche=${ficheId||"-"}.`);
  // Duplique aussi les questions de précision liées aux modalités de la question source.
  for(const pair of choicePairs){const sourcePrecision=precisionQuestionFor(source,pair.sourceChoice);if(!sourcePrecision)continue;const newChoice=(S.data.CHOIX_QUESTIONS||[]).find(c=>codeOf(c.Choix_Code)===pair.newChoiceCode);if(!newChoice)continue;const precisionTitle=label(sourcePrecision,"question"),precisionRequired=String(sourcePrecision.Mode_obligation||"")==="Obligatoire",precisionVariable=suggestPrecisionCode(fresh);await createPrecisionQuestion(fresh,newChoice,precisionTitle,precisionRequired,precisionVariable);await reload();fresh=(S.data.QUESTIONS||[]).find(q=>codeOf(q.Question_Code)===newCode)||fresh}
- S.selected={type:"question",row:fresh};renderTree();renderEditor();requestAnimationFrame(()=>document.querySelector(`.tree-item[data-type="question"][data-id="${fresh.id}"]`)?.scrollIntoView({block:"nearest",behavior:"smooth"}));status("Question dupliquée. Vérifiez ses conditions si nécessaire.");
+ if(!questionVisibleInTree(fresh))throw new Error(`La question dupliquée (${newCode}) existe mais n'est plus visible après finalisation.`);S.selected={type:"question",row:fresh};renderTree();renderEditor();requestAnimationFrame(()=>{const el=document.querySelector(`.tree-item[data-type="question"][data-id="${fresh.id}"]`);if(el){el.scrollIntoView({block:"nearest",behavior:"smooth"});el.focus()}});status("Question dupliquée et affichée dans l’arborescence.");
 }
 function questionChildren(q){return (S.data.QUESTIONS||[]).filter(x=>String(codeOf(x.Question_parente_Code)||"")===String(q.id))}
 function externalRulesUsingQuestion(q){return (S.data.REGLES_CONDITION||[]).filter(r=>[r.Question_source_Code,r.Question_comparaison_Code].some(v=>String(codeOf(v)||"")===String(q.id))).filter(r=>{const c=conditionByRef(r.Condition_Code);if(!c)return true;const own=[conditionByRef(q.Condition_affichage_Code),conditionByRef(q.Condition_obligation_Code)].filter(Boolean).map(x=>String(x.id));const choiceConds=choicesFor(q).map(x=>conditionByRef(x.Condition_Code)).filter(Boolean).map(x=>String(x.id));return ![...own,...choiceConds].includes(String(c.id))})}
