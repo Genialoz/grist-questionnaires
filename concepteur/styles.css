@@ -389,3 +389,11 @@ body[data-module="concepteur"] #tree .tree-node{position:relative;min-width:0}
 body[data-module="concepteur"] #tree .tree-node-children[hidden]{display:none!important}
 body[data-module="concepteur"] #tree .tree-node > .tree-collapse-toggle{position:absolute;top:8px;right:14px;margin:0}
 body[data-module="concepteur"] #tree .tree-node > .tree-item{padding-right:38px}
+
+/* Sommaire : classement des pages par boutons, sans numérotation manuelle. */
+.toc-order-row{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.toc-order-label{flex:1;min-width:0;overflow-wrap:anywhere}
+.toc-order-actions{display:flex;gap:4px;flex:none}
+.toc-order-actions button{min-width:32px;min-height:30px;border:1px solid #cdd3e0;border-radius:6px;background:#fff;cursor:pointer}
+.toc-order-actions button:hover:not(:disabled){background:#eeecfc}
+.toc-order-actions button:disabled{opacity:.35;cursor:default}
