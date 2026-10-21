@@ -371,3 +371,15 @@ body[data-module="concepteur"] .tree-inactive-toggle{margin-top:5px}
   body[data-module="concepteur"] #designer[data-view="canvas"] .workspace>.canvas-panel,
   body[data-module="concepteur"] #designer[data-view="properties"] .workspace>.properties-panel{display:block}
 }
+
+/* Repli de l’arborescence : bouton indépendant de la sélection et du glisser-déposer. */
+body[data-module="concepteur"] #tree{position:relative}
+body[data-module="concepteur"] #tree .tree-item[hidden],
+body[data-module="concepteur"] #tree .tree-collapse-toggle[hidden]{display:none!important}
+body[data-module="concepteur"] #tree .tree-collapse-toggle{
+ display:block;position:relative;margin:-30px 13px 9px auto;width:25px;height:25px;
+ padding:0;border:1px solid #d9ddeb;border-radius:6px;background:#fff;
+ color:#4b5572;cursor:pointer;font-size:17px;line-height:20px;z-index:1;
+}
+body[data-module="concepteur"] #tree .tree-collapse-toggle:hover{background:#f0ebf7;border-color:#b7b0ef}
+body[data-module="concepteur"] #tree .tree-item:has(+ .tree-collapse-toggle){padding-right:38px}

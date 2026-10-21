@@ -78,6 +78,53 @@ function current(){const visible=r=>vm(r)&&(S.showInactive||active(r));return {p
 function ficheParentCode(f){return ref(f?.Parent_Code,S.data.TYPES_FICHES,"TypeFiche_Code")}
 function isSubFiche(f){return Boolean(ficheParentCode(f))}
 function item(t,r,txt,cls){const on=S.selected?.type===t&&String(S.selected.row.id)===String(r.id);let kindLabel=t==="page"?"Page":t==="section"?"Section":t==="fiche"?(isSubFiche(r)?"Sous-fiche":"Fiche"):"Question";if(t==="question"){const dk=displayBlockKind(r);if(dk==="description")kindLabel="Texte";else if(dk==="sommaire")kindLabel="Sommaire";else if(dk==="indicateurs")kindLabel="Indicateurs"}const kindBadge=`<span class="tree-kind tree-kind-${esc(t)}">${esc(kindLabel)}</span>`;const inactiveBadge=!active(r)?'<span class="badge badge-inactive">Inactif</span>':"";const draggable=(t==="page"||t==="section"||t==="question")&&active(r);return `<button class="tree-item ${cls} ${on?"selected":""} ${!active(r)?"tree-inactive":""}" data-type="${t}" data-id="${r.id}" ${draggable?'draggable="true" title="Glisser-déposer pour réordonner"':""}><span class="tree-item-main">${kindBadge}<span class="tree-item-label">${esc(txt)}</span></span>${inactiveBadge}</button>`}
+// État purement visuel de l'arborescence : aucune modification des données Grist.
+const collapsedTreeNodes=new Set();
+function treeNodeDepth(el){
+ if(el.dataset.type==="page")return 0;
+ if(el.dataset.type==="section")return 1;
+ if(el.dataset.type==="fiche")return el.classList.contains("subfiche")?3:2;
+ if(el.classList.contains("subfiche-question"))return 4;
+ if(el.classList.contains("fiche-question"))return 3;
+ return 2;
+}
+function treeCollapseKey(el){return `${S.version||""}:${el.dataset.type}:${el.dataset.id}`}
+function bindTreeCollapse(){
+ const root=$("#tree"),items=[...root.querySelectorAll(":scope > .tree-item")];
+ const entries=items.map(el=>({el,depth:treeNodeDepth(el),key:treeCollapseKey(el)}));
+ // L'arborescence actuelle est une liste plate : calculer les descendants sans
+ // changer l'ordre ou déplacer les boutons utilisés par le glisser-déposer.
+ for(let i=0;i<entries.length;i++){
+  const entry=entries[i];
+  if(entry.el.classList.contains("tree-orphan"))continue;
+  if(!["page","section","fiche"].includes(entry.el.dataset.type))continue;
+  let end=i+1;
+  while(end<entries.length&&entries[end].depth>entry.depth&&!entries[end].el.classList.contains("tree-orphan"))end++;
+  if(end===i+1)continue;
+  const toggle=document.createElement("button");
+  toggle.type="button";
+  toggle.className="tree-collapse-toggle";
+  toggle.dataset.collapseKey=entry.key;
+  toggle.title=collapsedTreeNodes.has(entry.key)?"Déplier les éléments":"Replier les éléments";
+  toggle.setAttribute("aria-label",toggle.title);
+  toggle.setAttribute("aria-expanded",String(!collapsedTreeNodes.has(entry.key)));
+  toggle.textContent=collapsedTreeNodes.has(entry.key)?"▸":"▾";
+  entry.el.insertAdjacentElement("afterend",toggle);
+  toggle.onclick=()=>{if(collapsedTreeNodes.has(entry.key))collapsedTreeNodes.delete(entry.key);else collapsedTreeNodes.add(entry.key);renderTree()};
+ }
+ // Un seul parcours gère également les replis imbriqués (page > section > fiche > sous-fiche).
+ const toggles=new Map([...root.querySelectorAll(".tree-collapse-toggle")].map(el=>[el.dataset.collapseKey,el]));
+ const hiddenAt=[];
+ for(const entry of entries){
+  if(entry.el.classList.contains("tree-orphan"))hiddenAt.length=0;
+  while(hiddenAt.length&&hiddenAt[hiddenAt.length-1].depth>=entry.depth)hiddenAt.pop();
+  const hidden=hiddenAt.some(parent=>parent.hidden);
+  entry.el.hidden=hidden;
+  const toggle=toggles.get(entry.key);
+  if(toggle)toggle.hidden=hidden;
+  if(["page","section","fiche"].includes(entry.el.dataset.type))hiddenAt.push({depth:entry.depth,hidden:hidden||collapsedTreeNodes.has(entry.key)});
+ }
+}
 function renderTree(){const {pages,sections,questions,fiches}=current();let h="";for(const p of pages){const pc=codeOf(p.Page_Code);h+=item("page",p,label(p,"page"),"tree-page");for(const s of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(s.Section_Code);h+=item("section",s,label(s,"section"),"tree-section");const sq=questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc);for(const q of sq.filter(q=>!isMatrixLine(q)&&!ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")))h+=item("question",q,label(q,"question"),"tree-question");const ft=new Set(sq.map(q=>ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")).filter(Boolean));const parents=fiches.filter(f=>!isSubFiche(f)&&(ft.has(codeOf(f.TypeFiche_Code))||fiches.some(sf=>ficheParentCode(sf)===codeOf(f.TypeFiche_Code)&&ft.has(codeOf(sf.TypeFiche_Code)))));for(const f of parents){h+=item("fiche",f,label(f,"fiche"),"tree-fiche");const fc=codeOf(f.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===fc))h+=item("question",q,label(q,"question"),"tree-question fiche-question");for(const sf of fiches.filter(x=>ficheParentCode(x)===fc)){h+=item("fiche",sf,label(sf,"fiche"),"tree-fiche subfiche");const sfc=codeOf(sf.TypeFiche_Code);for(const q of sq.filter(q=>!isMatrixLine(q)&&ref(q.TypeFiche_Code,fiches,"TypeFiche_Code")===sfc))h+=item("question",q,label(q,"question"),"tree-question fiche-question subfiche-question")}}}}
  // Sécurité d'affichage : une question de la version courante ne doit jamais être
  // inaccessible parce que son rattachement ne correspond pas aux filtres imbriqués.
@@ -132,7 +179,7 @@ function renderTree(){const {pages,sections,questions,fiches}=current();let h=""
  }
  const unmatched=questions.filter(q=>!isMatrixLine(q)&&!shownQuestionIds.has(String(q.id)));
  if(unmatched.length){h+=`<div class="tree-orphans-heading" role="note">Questions sans emplacement visible (${unmatched.length}) — rattachement à vérifier</div>`;for(const q of unmatched)h+=item("question",q,label(q,"question"),"tree-question tree-orphan")}
- $("#tree").innerHTML=h||'<div class="empty-state">Aucune page.</div>';document.querySelectorAll(".tree-item").forEach(b=>b.onclick=()=>select(b.dataset.type,b.dataset.id));bindTreeDragDrop()}
+ $("#tree").innerHTML=h||'<div class="empty-state">Aucune page.</div>';document.querySelectorAll("#tree .tree-item").forEach(b=>b.onclick=()=>select(b.dataset.type,b.dataset.id));bindTreeCollapse();bindTreeDragDrop()}
 const rows=t=>({page:S.data.PAGES,section:S.data.SECTIONS,question:S.data.QUESTIONS,fiche:S.data.TYPES_FICHES}[t]||[]);
 
 let treeDrag=null;
