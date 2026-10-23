@@ -69,7 +69,7 @@ function previewDataColumns(q){try{return JSON.parse(String(q?.TD_Columns_Config
 function previewDataTableHtml(q,dataTables){const src=String(q?.TD_Table_Source||"").trim(),cols=previewDataColumns(q),rows=dataTables?.[src]||[];if(!src||!cols.length)return `<div class="preview-data-empty">Tableau de données non configuré.</div>`;if(String(q?.TD_Mode||"all")==="personalized")return `<div class="preview-data-empty">Aperçu personnalisé : le contexte du répondant sera appliqué dans le questionnaire réel.</div>`;if(!rows.length)return `<div class="preview-data-empty">${esc(q?.TD_NoData_Message||"Aucune donnée à afficher.")}</div>`;const totalCols=dataTotalColumns(q),showTotal=Boolean(q?.[DATA_CFG.total]);const totalRow=showTotal?`<tr class="data-total-row">${cols.map((c,i)=>{if(totalCols.includes(c.id)){const nums=rows.map(r=>parseDataNumber(r[c.id])).filter(n=>n!==null);return `<td><strong>${esc(nums.reduce((a,b)=>a+b,0))}</strong></td>`}return `<td>${i===0?`<strong>${esc(q?.[DATA_CFG.totalLabel]||"Total")}</strong>`:""}</td>`}).join("")}</tr>`:"";return `<div class="preview-data-table"><table><thead><tr>${cols.map(c=>`<th>${esc(c.label||c.id)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c.id]??"")}</td>`).join("")}</tr>`).join("")}${totalRow}</tbody></table></div>`}
 function previewDisplayBlockKind(q){const t=String(first(q,["Type_question","Type_reponse","Type","Format"],"")).trim().toLowerCase();return t==="description"?"description":t==="sommaire"?"toc":t==="indicateurs"?"indicators":""}
 function previewTocHtml(pages,sections,title="Sommaire",q=null){const saved=tocOrder(q),rank=new Map(saved.map((c,i)=>[String(c),i])),ordered=[...pages].sort((a,b)=>{const ai=rank.has(String(codeOf(a.Page_Code)))?rank.get(String(codeOf(a.Page_Code))):9999,bi=rank.has(String(codeOf(b.Page_Code)))?rank.get(String(codeOf(b.Page_Code))):9999;return ai-bi||Number(a.Ordre||0)-Number(b.Ordre||0)}),cols=Math.max(1,Math.min(3,Number(q?.Sommaire_Colonnes||1))),intro=first(q||{},["Aide","Description","Texte_aide"],"");return `<nav class="preview-toc toc-cols-${cols}">${title?`<div class="preview-toc-title">${esc(title)}</div>`:""}${intro?`<div class="preview-toc-intro">${esc(intro).replace(/\n/g,"<br>")}</div>`:""}<div class="preview-toc-grid">${ordered.map(p=>{const pc=codeOf(p.Page_Code),secs=sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc).filter(sec=>!(sec.Afficher_dans_sommaire===false||sec.Afficher_dans_sommaire===0||String(sec.Afficher_dans_sommaire).toLowerCase()==="false"));return `<div class="preview-toc-page"><strong>${esc(label(p,"page"))}</strong>${secs.length?`<div>${secs.map(sec=>`<span>${esc(label(sec,"section"))}</span>`).join("")}</div>`:""}</div>`}).join("")}</div></nav>`}
-function previewQuestionHtml(q,dataTables={},previewToc=""){const displayKind=previewDisplayBlockKind(q);if(displayKind==="toc")return previewToc||previewTocHtml(current().pages,current().sections,label(q,"question"),q);if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Question","Titre"],""),text=first(q,["Aide","Description","Texte_aide"],"");return `<div class="content-description preview-content-description">${title?`<div class="preview-question-label">${esc(title)}</div>`:""}${text?`<div class="preview-description-text">${esc(text).replace(/\n/g,"<br>")}</div>`:""}</div>`}if(displayKind==="indicators"){const title=first(q,["Libelle","Libellé","Question","Titre"],"Indicateurs"),n=indicatorSelectedCodes(q).length;return `<div class="preview-question"><div class="preview-question-label">📊 ${esc(title)}</div><div class="hint">${n} question(s) sélectionnée(s) · aperçu des statistiques disponible dans le widget Questionnaire</div></div>`}const type=String(first(q,["Type_question","Type_reponse","Type","Format"],"Texte"));if(isDataTableQuestion(q))return `<div class="preview-question"><div class="preview-question-label">${esc(label(q,"question"))}</div>${previewDataTableHtml(q,dataTables)}</div>`;return `<div class="preview-question"><div class="preview-question-label">${esc(label(q,"question"))}${String(first(q,["Mode_obligation"],"")).toLowerCase().includes("oblig")?' <span aria-hidden="true">*</span>':""}</div><div class="hint">${esc(type)}</div><div class="preview-fake-input"></div></div>`}
+function previewQuestionHtml(q,dataTables={},previewToc=""){const displayKind=previewDisplayBlockKind(q);if(displayKind==="toc")return previewToc||previewTocHtml(current().pages,current().sections,label(q,"question"),q);if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Question","Titre"],""),text=first(q,["Aide","Description","Texte_aide"],"");return `<div class="content-description preview-content-description">${title?`<div class="preview-question-label">${richTextHtml(title)}</div>`:""}${text?`<div class="preview-description-text">${richTextHtml(text)}</div>`:""}</div>`}if(displayKind==="indicators"){const title=first(q,["Libelle","Libellé","Question","Titre"],"Indicateurs"),n=indicatorSelectedCodes(q).length;return `<div class="preview-question"><div class="preview-question-label">📊 ${esc(title)}</div><div class="hint">${n} question(s) sélectionnée(s) · aperçu des statistiques disponible dans le widget Questionnaire</div></div>`}const type=String(first(q,["Type_question","Type_reponse","Type","Format"],"Texte"));if(isDataTableQuestion(q))return `<div class="preview-question"><div class="preview-question-label">${esc(label(q,"question"))}</div>${previewDataTableHtml(q,dataTables)}</div>`;return `<div class="preview-question"><div class="preview-question-label">${esc(label(q,"question"))}${String(first(q,["Mode_obligation"],"")).toLowerCase().includes("oblig")?' <span aria-hidden="true">*</span>':""}</div><div class="hint">${esc(type)}</div><div class="preview-fake-input"></div></div>`}
 async function renderRespondentPreview(){const v=versionRow();if(!v)return;const {pages,sections,questions}=current(),dataTables={};for(const q of questions.filter(isDataTableQuestion)){const src=String(q.TD_Table_Source||"").trim();if(src&&!dataTables[src]){try{dataTables[src]=rowsFromTable(await grist.docApi.fetchTable(src))}catch{dataTables[src]=[]}}}const logo=first(v,["Logo_Data","Logo_URL","Logo","Url_logo"],""),size=first(v,["Logo_Taille"],"moyen"),align=first(v,["Logo_Alignement"],"gauche"),title=first(v,["Titre","Titre_affiche","Nom"],label(questionnaireRow(),"questionnaire")),intro=first(v,["Introduction","Texte_introduction"],""),footer=first(v,["Pied_de_page","Pied_page","Footer"],"");const tocMode=first(v,["Mode_sommaire"],Boolean(first(v,["Afficher_sommaire","Sommaire"],false))?"toujours":"desactive");const hasPositionedToc=questions.some(q=>!isMatrixLine(q)&&previewDisplayBlockKind(q)==="toc");const tocMarkup=previewTocHtml(pages,sections,"Sommaire");const toc=!hasPositionedToc&&tocMode!=="desactive"?tocMarkup:"";let body="";for(const [pi,p] of pages.entries()){const pc=codeOf(p.Page_Code);body+=`<div class="preview-page"><h2>${esc(label(p,"page"))}</h2>${!hasPositionedToc&&tocMode==="accueil"&&pi>0?'<div class="preview-return-toc">← Retour au sommaire</div>':""}`;for(const sec of sections.filter(x=>ref(x.Page_Code,S.data.PAGES,"Page_Code")===pc)){const sc=codeOf(sec.Section_Code);body+=`<div class="preview-section"><h3>${esc(label(sec,"section"))}</h3>${questions.filter(q=>ref(q.Section_Code,S.data.SECTIONS,"Section_Code")===sc&&!isMatrixLine(q)).map(q=>previewQuestionHtml(q,dataTables,previewDisplayBlockKind(q)==="toc"?previewTocHtml(pages,sections,label(q,"question"),q):tocMarkup)).join("")}</div>`}body+="</div>"}$("#respondent-preview-content").innerHTML=`<div class="preview-sheet">${logo?`<div class="preview-logo logo-${esc(size)} align-${esc(align)}"><img src="${esc(logo)}" alt=""></div>`:""}<h1>${esc(title)}</h1>${intro?`<div class="preview-intro">${esc(intro)}</div>`:""}${toc}${body||'<div class="empty-state">Aucune page dans cette version.</div>'}${footer?`<div class="preview-footer">${esc(footer)}</div>`:""}</div>`;$("#respondent-preview-dialog").showModal()}
 
 function renderSelectors(){const qs=S.data.QUESTIONNAIRES.filter(questionnaireIsActive);if(!S.questionnaire){let remembered="";try{remembered=localStorage.getItem("gristionnaire.previewQuestionnaire")||""}catch{}S.questionnaire=qs.some(q=>codeOf(q.Questionnaire_Code)===remembered)?remembered:codeOf(qs[0]?.Questionnaire_Code)}$("#questionnaire-select").innerHTML=qs.map(q=>`<option value="${esc(codeOf(q.Questionnaire_Code))}" ${codeOf(q.Questionnaire_Code)===S.questionnaire?"selected":""}>${esc(label(q,"questionnaire"))}</option>`).join("");const vs=versions();if(!S.version){let rememberedVersion="";try{rememberedVersion=localStorage.getItem("gristionnaire.previewVersion")||""}catch{}if(vs.some(v=>codeOf(v.Version_Code)===rememberedVersion))S.version=rememberedVersion}if(!vs.some(v=>codeOf(v.Version_Code)===S.version))S.version=codeOf(vs[0]?.Version_Code);rememberRespondentPreview();$("#version-select").innerHTML=vs.map(v=>`<option value="${esc(codeOf(v.Version_Code))}" ${codeOf(v.Version_Code)===S.version?"selected":""}>${esc(label(v,"version"))}</option>`).join("");renderTree()}
@@ -321,6 +321,36 @@ function bindTreeDragDrop(){
 }
 
 function select(t,id){if(!confirmDraftDiscard())return;const r=rows(t).find(x=>String(x.id)===String(id));if(!r)return;S.selected={type:t,row:r};renderTree();renderEditor()}
+
+// HTML enrichi limité aux mises en forme autorisées. Les autres balises/attributs sont écartés.
+function richTextHtml(value){
+ const raw=String(value??"");
+ if(!/<[a-z][\s\S]*?>/i.test(raw))return esc(raw).replace(/\n/g,"<br>");
+ const template=document.createElement("template");template.innerHTML=raw;
+ const allowed=new Set(["B","STRONG","I","EM","U","BR","SPAN","FONT","DIV","P"]);
+ const allowedFonts=new Set(["Arial","Georgia","Verdana","Tahoma","Times New Roman","Courier New"]);
+ const render=node=>{
+  if(node.nodeType===3)return esc(node.textContent);
+  if(node.nodeType!==1)return "";
+  const tag=node.tagName;if(!allowed.has(tag))return ["SCRIPT","STYLE","IFRAME","SVG","MATH","IMG","OBJECT"].includes(tag)?"":Array.from(node.childNodes).map(render).join("");
+  if(tag==="BR")return "<br>";
+  const content=Array.from(node.childNodes).map(render).join("");
+  if(tag==="DIV"||tag==="P")return `<span>${content}</span><br>`;
+  if(tag==="FONT"||tag==="SPAN"){
+   const css=[];const font=(node.getAttribute("face")||node.style.fontFamily||"").replace(/["']/g,"").trim();
+   if(allowedFonts.has(font))css.push(`font-family:${font}`);
+   const size=Number(node.getAttribute("size"));if(size>=1&&size<=7&&Number.isInteger(size))css.push(`font-size:${[0,10,13,16,18,24,32,48][size]}px`);
+   const fontSize=node.style.fontSize;if(/^(?:1[0-9]|2[0-8])px$/.test(fontSize))css.push(`font-size:${fontSize}`);
+   const color=(node.getAttribute("color")||node.style.color||"").trim();
+   if(/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(color))css.push(`color:${color}`);
+   if(node.style.textDecorationLine==="underline")css.push("text-decoration:underline");
+   return `<span${css.length?` style="${css.join(";")}"`:""}>${content}</span>`;
+  }
+  return `<${tag.toLowerCase()}>${content}</${tag.toLowerCase()}>`;
+ };
+ return Array.from(template.content.childNodes).map(render).join("");
+}
+
 function input(name,title,value,type="text"){if(type==="textarea")return `<div class="form-field"><label>${esc(title)}<textarea name="${name}">${esc(value??"")}</textarea></label></div>`;return `<div class="form-field"><label>${esc(title)}<input name="${name}" type="${type}" value="${esc(value??"")}"></label></div>`}
 function selectHtml(name,title,value,opts){return `<div class="form-field"><label>${esc(title)}<select name="${name}">${opts.map(([v,l])=>`<option value="${esc(v)}"${String(value)===String(v)?" selected":""}>${esc(l)}</option>`).join("")}</select></label></div>`}
 function colorField(name,title,value=""){const v=String(value||"").trim();const picker=/^#[0-9a-f]{6}$/i.test(v)?v:"#ffffff";return `<div class="form-field"><label>${esc(title)}<div style="display:flex;gap:8px;align-items:center"><input type="color" data-color-picker="${esc(name)}" value="${esc(picker)}" style="width:48px;height:36px;padding:2px"><input name="${esc(name)}" value="${esc(v)}" placeholder="Hériter du thème" style="flex:1"><button type="button" class="secondary-btn" data-clear-color="${esc(name)}">Réinitialiser</button></div></label></div>`}
@@ -1039,11 +1069,44 @@ function bind(){ensureWordExportButton();const inactiveToggle=$("#show-inactive"
 async function start(){try{grist.ready({requiredAccess:"full"});await reload();await ensureQuestionHelpColumn();bind()}catch(e){status(`Impossible de charger le Concepteur : ${e?.message||e}`,true)}}start();
 
 // The existing editor owns the form, bindings and saves. Presentation only moves its nodes.
-function renderEditor(){renderEditorBase();if(typeof enhanceInspector!=="function")return;enhanceInspector(form=>{
+function bindRichTextEditors(){
+ const form=document.querySelector("#edit-form");if(!form)return;
+ const fieldNames=["title","description","fiche-singulier","fiche-pluriel"];
+ for(const name of fieldNames){
+  const source=form.elements.namedItem(name);
+  if(!source||source.dataset.richAttached)return;
+  source.dataset.richAttached="1";
+  const outer=document.createElement("div");outer.className="rich-text-wrap";
+  const toolbar=document.createElement("div");toolbar.className="rich-text-toolbar";
+  toolbar.setAttribute("aria-label","Mise en forme du texte sélectionné");
+  const editor=document.createElement("div");editor.className="rich-text-editor";
+  editor.contentEditable="true";editor.setAttribute("role","textbox");editor.setAttribute("aria-label",`Éditer ${name}`);
+  editor.setAttribute("aria-multiline","true");
+  editor.innerHTML=richTextHtml(source.value);
+  // La vraie valeur du formulaire demeure celle de l'input/textarea historique.
+  let savedRange=null;
+  const captureRange=()=>{const sel=window.getSelection();if(sel&&sel.rangeCount&&editor.contains(sel.anchorNode))savedRange=sel.getRangeAt(0).cloneRange()};
+  const restoreRange=()=>{editor.focus();if(savedRange){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(savedRange)}};
+  editor.addEventListener("keyup",captureRange);editor.addEventListener("mouseup",captureRange);
+  const sync=()=>{source.value=editor.innerHTML;source.dispatchEvent(new Event("input",{bubbles:true}))};
+  editor.addEventListener("input",sync);
+  editor.addEventListener("paste",e=>{e.preventDefault();document.execCommand("insertText",false,e.clipboardData.getData("text/plain"))});
+  const cmd=(label,command,value)=>{const button=document.createElement("button");button.type="button";button.className="rich-tool";button.textContent=label;button.title=label;button.addEventListener("mousedown",e=>e.preventDefault());button.onclick=()=>{restoreRange();document.execCommand(command,false,value??null);captureRange();sync()};toolbar.append(button)};
+  cmd("G","bold");cmd("I","italic");cmd("S̲","underline");
+  const font=document.createElement("select");font.title="Police de la sélection";
+  for(const f of ["Police","Arial","Georgia","Verdana","Tahoma","Times New Roman","Courier New"]){const o=document.createElement("option");o.value=f==="Police"?"":f;o.textContent=f;font.append(o)}
+  font.onchange=()=>{if(font.value){restoreRange();document.execCommand("fontName",false,font.value);captureRange();sync()}font.selectedIndex=0};toolbar.append(font);
+  const size=document.createElement("select");size.title="Taille de la sélection";
+  for(const [v,l] of [["","Taille"],["2","Petite"],["3","Normale"],["4","Grande"],["5","Très grande"]]){const o=document.createElement("option");o.value=v;o.textContent=l;size.append(o)}
+  size.onchange=()=>{if(size.value){restoreRange();document.execCommand("fontSize",false,size.value);captureRange();sync()}size.selectedIndex=0};toolbar.append(size);
+  outer.append(toolbar,editor);source.after(outer);source.classList.add("rich-text-source");
+ }
+}
+function renderEditor(){renderEditorBase();bindRichTextEditors();if(typeof enhanceInspector!=="function")return;enhanceInspector(form=>{
  const selected=S.selected;if(!selected)return;const {type,row}=selected;
  const title=form.querySelector('[name="title"]')?.value??form.querySelector('[name="fiche-singulier"]')?.value??label(row,type);
  const canvas=$("#canvas");let preview=canvas.querySelector('.designer-live-preview');if(!preview){preview=document.createElement('div');preview.className='designer-live-preview';canvas.append(preview);}
- const card=canvas.querySelector('.preview-card');if(card){const heading=card.querySelector('h2');if(heading)heading.textContent=title;}
+ const card=canvas.querySelector('.preview-card');if(card){const heading=card.querySelector('h2');if(heading)heading.innerHTML=richTextHtml(title);}
  const renderQuestion=q=>{const isSelected=type==='question'&&String(q.id)===String(row.id);const qt=isSelected?(form.querySelector('[name="qtype"]')?.value||questionType(q)):questionType(q);const draft={...q};if(isSelected){const tk=field(q,["Libelle","Libellé","Question","Titre"]),dk=field(q,["Aide","Description","Texte_aide"]);if(tk)draft[tk]=title;if(dk)draft[dk]=form.querySelector('[name="description"]')?.value??q[dk];}
  if(previewDisplayBlockKind(draft)||isDataTableQuestion(draft))return previewQuestionHtml(draft);
  const choices=isSelected?previewDraftLabels(form.querySelector('#choice-list'),'[data-choice-id],[data-new-choice]','[data-choice-order]'):null;

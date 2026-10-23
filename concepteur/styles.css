@@ -397,3 +397,12 @@ body[data-module="concepteur"] #tree .tree-node > .tree-item{padding-right:38px}
 .toc-order-actions button{min-width:32px;min-height:30px;border:1px solid #cdd3e0;border-radius:6px;background:#fff;cursor:pointer}
 .toc-order-actions button:hover:not(:disabled){background:#eeecfc}
 .toc-order-actions button:disabled{opacity:.35;cursor:default}
+
+/* Édition locale des libellés et descriptions enrichis */
+.rich-text-wrap{display:flex;flex-direction:column;gap:4px;margin-top:6px;min-width:0}
+.rich-text-source{display:none!important}
+.rich-text-toolbar{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.rich-text-toolbar .rich-tool{padding:4px 9px;border:1px solid #cbd5e1;background:#fff;border-radius:4px;cursor:pointer;font-size:13px}
+.rich-text-toolbar select{max-width:140px;width:auto;padding:4px;font-size:12px}
+.rich-text-editor{min-height:50px;max-height:220px;overflow:auto;border:1px solid #b8c3d4;border-radius:5px;padding:8px;background:#fff;white-space:pre-wrap;word-break:break-word}
+.rich-text-editor:focus{outline:2px solid #5a8dec;outline-offset:1px}
