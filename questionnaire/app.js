@@ -1216,11 +1216,14 @@ function render() {
     automaticNextLabel=targetLabel?`Retour à ${targetLabel}`:"Retour";
   }
   const nextButtonLabel=customNextLabel||automaticNextLabel;
+  const buttonMode=String(page.Navigation_boutons??"both").trim().toLowerCase();
+  const showPrevButton=!(["next","none"].includes(buttonMode));
+  const showNextButton=!(["previous","none"].includes(buttonMode));
   const prevDisabled=!canNavigatePrevious(vm)||state.actionFeedbackKind==="busy";
   const nextDisabled=state.actionFeedbackKind==="busy"||(locked&&state.pageIndex===vm.pages.length-1);
   nav.innerHTML=locked
-    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${richTextHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button></div></div>`
-    : `<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`;
+    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${richTextHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div>${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button>`:""}</div></div>`
+    : `${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`:""}`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
