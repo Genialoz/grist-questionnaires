@@ -390,7 +390,7 @@ export function optionsFor(q, def, answers={}) {
   const qc=codeOf(q.Question_Code);
   const local=sortByOrder(def.choices.filter(c=>resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc))
     .filter(c=>conditionVisible(c.Condition_Code,def,answers,[]))
-    .map(c=>({value:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code)),source:"choice",rowId:c.id,exclusive:isTrue(c.Exclusif)}));
+    .map(c=>({value:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code)),source:"choice",rowId:c.id,exclusive:isTrue(c.Exclusif),...columnPolicy(c)}));
   const rc=resolveRefCode(q.Referentiel_Code,def.referentials,"Referentiel_Code");
   let refs=[];
   if (rc) {
@@ -829,23 +829,35 @@ function matrixRows(q,def){
   const qc=codeOf(q.Question_Code);
   return sortByOrder((def.questions??[]).filter(r=>active(r)&&isTrue(r.Est_ligne_matrice)&&resolveRefCode(r.Question_parente_Code,def.questions,"Question_Code")===qc));
 }
+// Configuration commune à la campagne ; l'absence de paramètres conserve le comportement historique.
+function columnPolicy(c){
+ const visibility=String(c.Visibilite_colonne||"Visible").trim().toLowerCase();
+ const today=new Date(), day=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate())/1000;
+ const epoch=v=>{if(!v)return null;if(typeof v==="number")return v>1e12?v/1000:v;const ms=Date.parse(String(v));return Number.isFinite(ms)?ms/1000:null};
+ const opening=epoch(c.Date_ouverture_colonne), locking=epoch(c.Date_verrouillage_colonne);
+ const hidden=visibility.startsWith("masqu")||(opening!==null&&day<opening);
+ return {hidden,readOnly:isTrue(c.Lecture_seule_colonne)||(locking!==null&&day>=locking)};
+}
+function matrixConfiguredColumns(q,def){const qc=codeOf(q.Question_Code);const src=["radio","checkbox"].includes(matrixKind(q))?def.choices:def.matrixColumns;return sortByOrder((src??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc));}
+function columnCode(c,q){return ["radio","checkbox"].includes(matrixKind(q))?codeOf(c.Choix_Code):codeOf(c.ColonneMatrice_Code)}
+function columnIsProtected(q,code,def=state.definition){const c=matrixConfiguredColumns(q,def).find(x=>String(columnCode(x,q))===String(code));if(!c)return false;const p=columnPolicy(c);return p.hidden||p.readOnly;}
 function matrixCols(q,def){
   const qc=codeOf(q.Question_Code);
   if(["radio","checkbox"].includes(matrixKind(q))) return sortByOrder((def.choices??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.Choix_Code),label:first(c,["Libelle","Libellé","Valeur","Choix_Code"],codeOf(c.Choix_Code)),exclusive:isTrue(c.Exclusif)}));
-  return sortByOrder((def.matrixColumns??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.ColonneMatrice_Code),label:first(c,["Libelle","Libellé","ColonneMatrice_Code"],codeOf(c.ColonneMatrice_Code)),required:isTrue(c.Obligatoire),min:c.Minimum,max:c.Maximum,decimals:c.Decimales,maxLength:c.Longueur_max}));
+  return sortByOrder((def.matrixColumns??[]).filter(c=>active(c)&&resolveRefCode(c.Question_Code,def.questions,"Question_Code")===qc)).map(c=>({id:c.id,code:codeOf(c.ColonneMatrice_Code),label:first(c,["Libelle","Libellé","ColonneMatrice_Code"],codeOf(c.ColonneMatrice_Code)),required:isTrue(c.Obligatoire),min:c.Minimum,max:c.Maximum,decimals:c.Decimales,maxLength:c.Longueur_max,...columnPolicy(c)}));
 }
 function matrixValue(answers,qc,rc,cc){return answers?.[qc]?.[rc]?.[cc] ?? "";}
 function renderMatrix(q,answers=state.answers,ficheMode=false,forcedReadOnly=false,conditionAnswers=answers){
-  const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition).map(row=>effectiveQuestion(row,state.definition,conditionAnswers)), cols=matrixCols(q,state.definition);
+  const kind=matrixKind(q), qc=codeOf(q.Question_Code), rows=matrixRows(q,state.definition).map(row=>effectiveQuestion(row,state.definition,conditionAnswers)), cols=matrixCols(q,state.definition).filter(c=>!c.hidden);
   const ro=isTrue(q.Lecture_seule)||responseIsLocked()||forcedReadOnly||(!ficheMode&&isTrue(state.principalReadOnlyQuestions?.[qc]));
-  if(!rows.length||!cols.length) return `<div class="matrix-empty">Matrice à configurer : ${!rows.length?"aucune ligne":"aucune colonne"}.</div>`;
+  if(!rows.length||!cols.length) return `<div class="matrix-empty">${!rows.length?"Matrice à configurer : aucune ligne.":"Aucune colonne actuellement visible pour cette matrice."}</div>`;
   const multiHeader=["number","text"].includes(kind)&&isTrue(q.Matrice_entetes_multiniveaux);
   const separator=String(q.Matrice_separateur_niveaux||"-");
   const headerLevels=multiHeader?buildMatrixHeaderLevels(cols.map(c=>c.label),separator):null;
   const body=rows.map(r=>{const rc=codeOf(r.Question_Code); const cells=cols.map(c=>{const v=kind==="radio"?(answers?.[qc]?.[rc] ?? ""):matrixValue(answers,qc,rc,c.code); const base=`data-matrix-question="${escapeHtml(qc)}" data-matrix-row="${escapeHtml(rc)}" data-matrix-col="${escapeHtml(c.code)}"${ficheMode?' data-matrix-fiche="1"':''}`;
-    if(kind==="radio") return `<td><input type="radio" name="mx_${escapeHtml(qc)}_${escapeHtml(rc)}" ${base} value="${escapeHtml(c.code)}"${String(v)===String(c.code)?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;
-    if(kind==="checkbox"){const arr=Array.isArray(answers?.[qc]?.[rc])?answers[qc][rc]:[];return `<td><input type="checkbox" ${base} value="${escapeHtml(c.code)}" data-exclusive="${c.exclusive?"1":"0"}"${arr.map(String).includes(String(c.code))?" checked":""}${ro?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;}
-    const attrs=[c.min!==""&&c.min!=null?`min="${escapeHtml(c.min)}"`:"",c.max!==""&&c.max!=null?`max="${escapeHtml(c.max)}"`:"",kind==="number"&&c.decimals!==""&&c.decimals!=null?`step="${1/(10**Number(c.decimals))}"`:"",kind==="text"&&Number(c.maxLength)>0?`maxlength="${escapeHtml(c.maxLength)}"`:"",ro?"disabled":""].filter(Boolean).join(" ");
+    if(kind==="radio") return `<td><input type="radio" name="mx_${escapeHtml(qc)}_${escapeHtml(rc)}" ${base} value="${escapeHtml(c.code)}"${String(v)===String(c.code)?" checked":""}${ro||c.readOnly?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;
+    if(kind==="checkbox"){const arr=Array.isArray(answers?.[qc]?.[rc])?answers[qc][rc]:[];return `<td><input type="checkbox" ${base} value="${escapeHtml(c.code)}" data-exclusive="${c.exclusive?"1":"0"}"${arr.map(String).includes(String(c.code))?" checked":""}${ro||c.readOnly?" disabled":""}><span class="matrix-mobile-label">${escapeHtml(c.label)}</span></td>`;}
+    const attrs=[c.min!==""&&c.min!=null?`min="${escapeHtml(c.min)}"`:"",c.max!==""&&c.max!=null?`max="${escapeHtml(c.max)}"`:"",kind==="number"&&c.decimals!==""&&c.decimals!=null?`step="${1/(10**Number(c.decimals))}"`:"",kind==="text"&&Number(c.maxLength)>0?`maxlength="${escapeHtml(c.maxLength)}"`:"",ro||c.readOnly?"disabled":""].filter(Boolean).join(" ");
     return `<td><span class="matrix-mobile-label">${escapeHtml(c.label)}</span><input class="matrix-input" type="${kind}" ${base} ${attrs} value="${escapeHtml(v)}"></td>`;
   }).join("");
   const total=kind==="number"&&isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-row-total="${escapeHtml(qc)}:${escapeHtml(rc)}">0</td>`:"";
@@ -1485,6 +1497,7 @@ async function saveCurrentSubFiche() {
 
 function onMatrixAnswer(e){
   const el=e.target,qc=el.dataset.matrixQuestion,rc=el.dataset.matrixRow,cc=el.dataset.matrixCol;if(!qc||!rc||!cc)return;
+  const configured=(state.definition.questions??[]).find(q=>codeOf(q.Question_Code)===qc);if(configured&&columnIsProtected(configured,cc))return;
   if(!el.dataset.matrixFiche)state.principalDirty=true;
   const target=el.dataset.matrixFiche?(el.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor):null;
   const answers=target?target.answers:state.answers; answers[qc]??={};
@@ -1498,6 +1511,8 @@ function collectPrincipalMatrixAnswers(root=document, answers=state.answers){
   root.querySelectorAll('[data-matrix-question]:not([data-matrix-fiche="1"])').forEach(el=>{
     const qc=el.dataset.matrixQuestion, rc=el.dataset.matrixRow, cc=el.dataset.matrixCol;
     if(!qc||!rc||!cc) return;
+    const currentQuestion=(state.definition.questions??[]).find(q=>codeOf(q.Question_Code)===qc);
+    if(currentQuestion&&columnIsProtected(currentQuestion,cc))return;
     answers[qc]??={};
     const q=(state.definition.questions??[]).find(x=>codeOf(x.Question_Code)===qc);
     const kind=matrixKind(q);
@@ -1743,14 +1758,19 @@ async function writeMatrixAnswer(element,q,answers){
   for(const r of rows){const rc=codeOf(r.Question_Code),rv=data[rc];
     if(kind==="radio"||kind==="checkbox"){
       let valueRow=existing.find(v=>String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);if(!valueRow){await grist.docApi.applyUserActions([["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),Element_Code:element.id,Question_Code:r.id,Valeur_texte:null}]]);await refreshPersistenceRows();valueRow=state.definition.responseValues.find(v=>String(v.Element_Code)===String(element.id)&&String(v.Question_Code)===String(r.id)&&!v.ColonneMatrice_Code);}if(!valueRow)continue;
-      for(const x of (state.definition.responseSelections??[]).filter(x=>String(x.Valeur_Code)===String(valueRow.id)))actions.push(["RemoveRecord","SELECTIONS_REPONSE",x.id]);
-      const selected=kind==="checkbox"?(Array.isArray(rv)?rv:[]):(rv?[rv]:[]);
+      const previous=(state.definition.responseSelections??[]).filter(x=>String(x.Valeur_Code)===String(valueRow.id));
+      const protectedCodes=new Set(cols.filter(c=>c.hidden||c.readOnly).map(c=>String(c.code)));
+      const previousProtected=previous.filter(x=>{const col=cols.find(c=>String(c.id)===String(x.Choix_Code));return col&&protectedCodes.has(String(col.code))});
+      for(const x of previous){if(!previousProtected.includes(x))actions.push(["RemoveRecord","SELECTIONS_REPONSE",x.id]);}
+      let selected=kind==="checkbox"?(Array.isArray(rv)?rv:[]):(rv?[rv]:[]);
+      selected=selected.filter(code=>!protectedCodes.has(String(code)));
+      if(kind==="radio"&&previousProtected.length)selected=[];
       // Pour une matrice radio, conserver aussi le code technique dans VALEURS_REPONSE.
       // SELECTIONS_REPONSE reste la représentation relationnelle principale ; Valeur_texte
       // permet une réhydratation fiable après sauvegarde et reste vide pour les checkbox.
-      actions.push(["UpdateRecord","VALEURS_REPONSE",valueRow.id,{Valeur_texte:kind==="radio"?(selected[0]??null):null}]);
+      actions.push(["UpdateRecord","VALEURS_REPONSE",valueRow.id,{Valeur_texte:kind==="radio"?(previousProtected.length?(cols.find(c=>String(c.id)===String(previousProtected[0].Choix_Code))?.code??null):(selected[0]??null)):null}]);
       for(const c of selected){const col=cols.find(x=>String(x.code)===String(c));if(col)actions.push(["AddRecord","SELECTIONS_REPONSE",null,{Selection_Code:uniqueCode("SEL"),Valeur_Code:valueRow.id,Choix_Code:col.id,ValeurRef_Code:null,Structure_Code:null}]);}
-    }else for(const c of cols){const old=existing.find(v=>String(v.Question_Code)===String(r.id)&&String(v.ColonneMatrice_Code)===String(c.id));const val=rv?.[c.code]??"";const fields={Element_Code:element.id,Question_Code:r.id,ColonneMatrice_Code:c.id,Valeur_texte:kind==="text"?(val===""?null:String(val)):null,Valeur_nombre:kind==="number"&&(val!==""&&val!=null)?Number(val):null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(val!==""&&val!=null)actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
+    }else for(const c of cols){if(c.hidden||c.readOnly)continue;const old=existing.find(v=>String(v.Question_Code)===String(r.id)&&String(v.ColonneMatrice_Code)===String(c.id));const val=rv?.[c.code]??"";const fields={Element_Code:element.id,Question_Code:r.id,ColonneMatrice_Code:c.id,Valeur_texte:kind==="text"?(val===""?null:String(val)):null,Valeur_nombre:kind==="number"&&(val!==""&&val!=null)?Number(val):null,Valeur_date:null,Valeur_booleen:null,Valeur_reference_Code:null,Valeur_structure_Code:null};if(old)actions.push(["UpdateRecord","VALEURS_REPONSE",old.id,fields]);else if(val!==""&&val!=null)actions.push(["AddRecord","VALEURS_REPONSE",null,{Valeur_Code:uniqueCode("VAL"),Cle_creation_ACL:creationAclKey(),...fields}]);}
   }
   if(actions.length)await grist.docApi.applyUserActions(actions);
 }

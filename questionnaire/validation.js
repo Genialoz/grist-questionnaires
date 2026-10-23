@@ -29,7 +29,11 @@ export function matrixValidationErrors(question,value,definition={},answers={}){
   const code=codeOf(question.Question_Code),errors=[],data=value&&typeof value==='object'?value:{};
   const belongs=row=>refCode(row.Question_Code,definition.questions,'Question_Code')===code;
   const rows=sortByOrder((definition.questions??[]).filter(row=>active(row)&&isTrue(row.Est_ligne_matrice)&&refCode(row.Question_parente_Code,definition.questions,'Question_Code')===code));
-  const columns=sortByOrder(((kind==='radio'||kind==='checkbox')?definition.choices:definition.matrixColumns)??[]).filter(row=>active(row)&&belongs(row));
+  const today=new Date(),day=Date.UTC(today.getFullYear(),today.getMonth(),today.getDate())/1000;
+  const date=v=>{if(!v)return null;if(typeof v==='number')return v>1e12?v/1000:v;const n=Date.parse(String(v));return Number.isFinite(n)?n/1000:null};
+  const isAvailable=c=>!String(c.Visibilite_colonne||'').toLowerCase().startsWith('masqu')&&(date(c.Date_ouverture_colonne)===null||day>=date(c.Date_ouverture_colonne));
+  const columns=sortByOrder(((kind==='radio'||kind==='checkbox')?definition.choices:definition.matrixColumns)??[]).filter(row=>active(row)&&belongs(row)&&isAvailable(row));
+  if(!columns.length)return []; // Aucune cellule visible : ne pas bloquer la validation.
   let hasValue=false;
   for(const original of rows){
     const row=effectiveQuestion(original,definition,answers),rowCode=codeOf(row.Question_Code),rowValue=data[rowCode],label=String(row.Libelle??row.Libellé??row.Titre??rowCode);
@@ -43,7 +47,7 @@ export function matrixValidationErrors(question,value,definition={},answers={}){
     for(const column of columns){
       const cc=codeOf(column.ColonneMatrice_Code),v=rowValue?.[cc]??'',empty=v===''||v==null,colLabel=String(column.Libelle??column.Libellé??cc);
       if(!empty)hasValue=true;
-      if((isRequiredQuestion(row)||isTrue(column.Obligatoire))&&empty)errors.push(`${label} / ${colLabel} : champ obligatoire.`);
+      if(!isTrue(column.Lecture_seule_colonne)&&(isRequiredQuestion(row)||isTrue(column.Obligatoire))&&empty)errors.push(`${label} / ${colLabel} : champ obligatoire.`);
       if(empty)continue;
       if(kind==='number'){
         const n=Number(v);
