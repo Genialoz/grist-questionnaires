@@ -689,7 +689,7 @@ function finalValidationMessage(version={}){return String(version.Message_valida
 function showValidationFeedback(){
   document.querySelector("[data-validation-toast]")?.remove();
   const el=document.createElement("div");el.dataset.validationToast="1";el.setAttribute("role","status");
-  el.textContent=`✓ ${finalValidationMessage(state.definition?.version)}`;
+  el.innerHTML=`✓ ${richTextHtml(finalValidationMessage(state.definition?.version))}`;
   Object.assign(el.style,{position:"fixed",left:"50%",bottom:"28px",transform:"translateX(-50%)",zIndex:"9999",maxWidth:"min(680px,calc(100vw - 32px))",padding:"14px 18px",borderRadius:"10px",background:"#fff",border:"1px solid #b8c5b8",boxShadow:"0 6px 24px rgba(0,0,0,.18)",fontWeight:"600",textAlign:"center"});
   document.body.appendChild(el);setTimeout(()=>el.remove(),5000);
 }
@@ -1122,7 +1122,7 @@ function render() {
   const logoSize=first(vm.version,["Logo_Taille"],"moyen");
   const logoAlign=first(vm.version,["Logo_Alignement"],"gauche");
   const footer=first(vm.version,["Pied_de_page","Pied_page","Footer"],"");
-  status.innerHTML=(state.previewMode?`<div class="status-info">Mode aperçu — aucune réponse ne sera enregistrée.</div>`:"")+(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+(state.previewMode?"":resumeNotice());
+  status.innerHTML=(state.previewMode?`<div class="status-info">Mode aperçu — aucune réponse ne sera enregistrée.</div>`:"")+(state.saving?`<div class="status-info">Enregistrement…</div>`:"")+(state.statusMessage?`<div class="status-info">${state.validationJustCompleted?richTextHtml(state.statusMessage):escapeHtml(state.statusMessage)}</div>`:"")+(state.saveError?`<div class="status-error">${escapeHtml(state.saveError)}</div>`:"")+(state.previewMode?"":resumeNotice());
   const showProgress=isTrue(first(vm.version,["Afficher_progression","Afficher_barre_progression","Barre_progression"],true));
   const legacyShowToc=isTrue(first(vm.version,["Afficher_sommaire","Sommaire"],false));
   const tocMode=String(first(vm.version,["Mode_sommaire"],legacyShowToc?"toujours":"desactive"));
@@ -1219,7 +1219,7 @@ function render() {
   const prevDisabled=!canNavigatePrevious(vm)||state.actionFeedbackKind==="busy";
   const nextDisabled=state.actionFeedbackKind==="busy"||(locked&&state.pageIndex===vm.pages.length-1);
   nav.innerHTML=locked
-    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${escapeHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button></div></div>`
+    ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${richTextHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div><button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button></div></div>`
     : `<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button><button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`;
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
