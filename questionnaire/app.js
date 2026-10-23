@@ -86,6 +86,36 @@ function cssColor(value){const v=String(value||"").trim();return /^#[0-9a-f]{3,8
 function alignCss(v){const a=String(v||"").trim().toLowerCase();return a==="gauche"||a==="left"?"left":a==="centre"||a==="center"||a==="centré"?"center":a==="droite"||a==="right"?"right":""}
 function titleStyle(row,themeColor=""){const c=cssColor(row?.Couleur_titre)||cssColor(themeColor),parts=[],align=alignCss(row?.Alignement_titre);if(align)parts.push(`text-align:${align}`);if(c)parts.push(`color:${c}`);if(row?.Titre_gras)parts.push("font-weight:700");if(row?.Titre_souligne)parts.push("text-decoration:underline");const kind=String(row?.Style_titre||"").toLowerCase();if(kind==="encadre")parts.push("border:1px solid currentColor","padding:10px 14px","border-radius:8px");if(kind==="bandeau")parts.push("padding:10px 14px","border-radius:8px","background:color-mix(in srgb, currentColor 12%, transparent)");return parts.join(";")}
 function labelStyle(q){const parts=[],c=cssColor(q?.Couleur_libelle),align=alignCss(q?.Alignement_libelle);if(align)parts.push(`text-align:${align}`,"display:block");if(c)parts.push(`color:${c}`);if(q?.Libelle_gras)parts.push("font-weight:700");if(q?.Libelle_italique)parts.push("font-style:italic");if(q?.Libelle_souligne)parts.push("text-decoration:underline");return parts.join(";")}
+
+// HTML enrichi limité aux mises en forme autorisées. Les autres balises/attributs sont écartés.
+function richTextHtml(value){
+ const raw=String(value??"");
+ if(!/<[a-z][\s\S]*?>/i.test(raw))return escapeHtml(raw).replace(/\n/g,"<br>");
+ const template=document.createElement("template");template.innerHTML=raw;
+ const allowed=new Set(["B","STRONG","I","EM","U","BR","SPAN","FONT","DIV","P"]);
+ const allowedFonts=new Set(["Arial","Georgia","Verdana","Tahoma","Times New Roman","Courier New"]);
+ const render=node=>{
+  if(node.nodeType===3)return escapeHtml(node.textContent);
+  if(node.nodeType!==1)return "";
+  const tag=node.tagName;if(!allowed.has(tag))return ["SCRIPT","STYLE","IFRAME","SVG","MATH","IMG","OBJECT"].includes(tag)?"":Array.from(node.childNodes).map(render).join("");
+  if(tag==="BR")return "<br>";
+  const content=Array.from(node.childNodes).map(render).join("");
+  if(tag==="DIV"||tag==="P")return `<span>${content}</span><br>`;
+  if(tag==="FONT"||tag==="SPAN"){
+   const css=[];const font=(node.getAttribute("face")||node.style.fontFamily||"").replace(/["']/g,"").trim();
+   if(allowedFonts.has(font))css.push(`font-family:${font}`);
+   const size=Number(node.getAttribute("size"));if(size>=1&&size<=7&&Number.isInteger(size))css.push(`font-size:${[0,10,13,16,18,24,32,48][size]}px`);
+   const fontSize=node.style.fontSize;if(/^(?:1[0-9]|2[0-8])px$/.test(fontSize))css.push(`font-size:${fontSize}`);
+   const color=(node.getAttribute("color")||node.style.color||"").trim();
+   if(/^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i.test(color))css.push(`color:${color}`);
+   if(node.style.textDecorationLine==="underline")css.push("text-decoration:underline");
+   return `<span${css.length?` style="${css.join(";")}"`:""}>${content}</span>`;
+  }
+  return `<${tag.toLowerCase()}>${content}</${tag.toLowerCase()}>`;
+ };
+ return Array.from(template.content.childNodes).map(render).join("");
+}
+
 function escapeHtml(v="") { return String(v).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function debugPush(type,data={}){
   state.debugEvents.push({heure:new Date().toLocaleTimeString(),type,...data});
@@ -596,7 +626,7 @@ function individualExportModel(){
 }
 function exportDate(v){if(v==null||v==="")return "";const n=Number(v),d=Number.isFinite(n)?new Date(n<1e12?n*1000:n):new Date(v);return isNaN(d)?String(v):d.toLocaleString("fr-FR");}
 function individualPrintHtml(){
-  const m=individualExportModel(),pages=m.vm.pages.map(page=>{const sections=page.sections.map(sec=>{const qs=sec.questions.map(q=>exportQuestionHtml(q,state.answers)).join("");const st=first(sec,["Titre","Libelle","Libellé","Nom"],"");return (qs?`<section>${st?`<h3>${escapeHtml(st)}</h3>`:""}${qs}</section>`:"")}).join("");const fiches=(page.repeatableTypes??[]).map(type=>{const list=(state.fiches[type.code]??[]).filter(f=>!f.parentElementId);if(!list.length)return "";return `<section><h3>${escapeHtml(type.labelPlural)}</h3>${list.map((f,i)=>exportFicheHtml(type,f,i)).join("")}</section>`}).join("");if(!sections&&!fiches)return "";return `<div class="page"><h2>${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>${sections}${fiches}</div>`}).join("");
+  const m=individualExportModel(),pages=m.vm.pages.map(page=>{const sections=page.sections.map(sec=>{const qs=sec.questions.map(q=>exportQuestionHtml(q,state.answers)).join("");const st=first(sec,["Titre","Libelle","Libellé","Nom"],"");return (qs?`<section>${st?`<h3>${escapeHtml(st)}</h3>`:""}${qs}</section>`:"")}).join("");const fiches=(page.repeatableTypes??[]).map(type=>{const list=(state.fiches[type.code]??[]).filter(f=>!f.parentElementId);if(!list.length)return "";return `<section><h3>${escapeHtml(type.labelPlural)}</h3>${list.map((f,i)=>exportFicheHtml(type,f,i)).join("")}</section>`}).join("");if(!sections&&!fiches)return "";return `<div class="page"><h2>${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>${sections}${fiches}</div>`}).join("");
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(m.title)}</title><style>@page{size:A4;margin:15mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#222;line-height:1.35}h1{font-size:22pt;margin:0 0 4mm}h2{font-size:16pt;border-bottom:2px solid #444;padding-bottom:2mm;margin-top:9mm}h3{font-size:13pt;margin:6mm 0 3mm}h4{font-size:11.5pt;margin:0 0 3mm}.meta{background:#f3f4f6;padding:4mm;border-radius:2mm;margin:0 0 7mm}.q{break-inside:avoid;page-break-inside:avoid;margin:0 0 4mm}.ql{font-weight:700;margin-bottom:1mm;break-after:avoid;page-break-after:avoid}.qa{padding:2.5mm 3mm;background:#f7f7f7;border-left:3px solid #777;white-space:normal;break-inside:avoid;page-break-inside:avoid}.fiche{break-inside:auto;page-break-inside:auto;border:1px solid #bbb;border-radius:2mm;padding:4mm;margin:0 0 5mm}.fiche h4{break-after:avoid;page-break-after:avoid}.sub{margin:4mm 0 0 5mm;border-left:2px solid #bbb;padding-left:4mm}table{width:100%;border-collapse:collapse;margin-top:2mm;font-size:9.5pt;break-inside:auto;page-break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #bbb;padding:2mm;text-align:left;vertical-align:top}thead th{background:#eee}.empty{font-style:italic;color:#666}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(m.title)}</h1><div class="meta">${m.campaignTitle?`<div><strong>Campagne :</strong> ${escapeHtml(m.campaignTitle)}</div>`:""}<div><strong>Réponse :</strong> ${escapeHtml(m.responseCode)}</div><div><strong>Statut :</strong> ${escapeHtml(m.status)}</div>${m.validated?`<div><strong>Validation :</strong> ${escapeHtml(exportDate(m.validated))}</div>`:""}${m.modified?`<div><strong>Dernière modification :</strong> ${escapeHtml(exportDate(m.modified))}</div>`:""}</div>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));<\/script></body></html>`;
 }
 function exportMyPdf(){try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
@@ -913,9 +943,9 @@ function renderFicheField(q, answers, forcedReadOnly=false,conditionAnswers=answ
   const qc=codeOf(q.Question_Code);
   if(displayBlockKind(q)==="description"){
     const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,{...state.answers,...answers});
-    return `<div class="content-description fiche-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${escapeHtml(title)}</div>`:""}${text?`<div class="content-description-text">${escapeHtml(text).replace(/\n/g,"<br>")}</div>`:""}</div>`;
+    return `<div class="content-description fiche-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;
   }
-  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly,conditionAnswers)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly,conditionAnswers)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
   if(!questionCode)return "";
@@ -1161,13 +1191,13 @@ function render() {
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
     ${showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
-    <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${escapeHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
+    <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
     ${page.sections.map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
-      return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${escapeHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${escapeHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${escapeHtml(title)}</div>`:""}${text?`<div class="content-description-text">${escapeHtml(text).replace(/\n/g,"<br>")}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${escapeHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${escapeHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${richTextHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${richTextHtml(sectionDescription)}</div>`:""}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
