@@ -75,14 +75,25 @@ export function enhanceChoiceLists(){
   const isMatrixColumn=id==='matrix-input-column-list'||(id==='choice-list'&&matrix);
   if(isMatrixColumn){
    const bulk=document.createElement('div');bulk.className='compact-bulk-policy';
-   const applyButton=(title,handler)=>{const b=document.createElement('button');b.type='button';b.className='secondary-btn';b.textContent=title;b.onclick=()=>{for(const row of list.querySelectorAll(':scope > .choice-row')){if(!row.querySelector('.compact-bulk-check')?.checked||row.dataset.deleted==='1')continue;const el=handler(row);if(el){el.dispatchEvent(new Event('change',{bubbles:true}));}}};bulk.append(b)};
+   const selectionInfo=document.createElement('span');selectionInfo.className='compact-bulk-selection';selectionInfo.setAttribute('role','status');
+   const actionButtons=[];
+   const selectedRows=()=>[...list.querySelectorAll(':scope > .choice-row')].filter(row=>row.dataset.deleted!=='1'&&row.querySelector('.compact-bulk-check')?.checked);
+   const refreshSelection=()=>{const count=selectedRows().length;selectionInfo.textContent=`${count} colonne${count>1?'s':''} sélectionnée${count>1?'s':''}`;actionButtons.forEach(button=>button.disabled=count===0)};
+   const applyButton=(title,handler)=>{const b=document.createElement('button');b.type='button';b.className='secondary-btn';b.textContent=title;b.onclick=()=>{for(const row of selectedRows()){const el=handler(row);if(el)el.dispatchEvent(new Event('change',{bubbles:true}));}refreshSelection()};bulk.append(b);actionButtons.push(b)};
    applyButton('Rendre visibles',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Visible';return select});
    applyButton('Masquer',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Masquée';return select});
    applyButton('Lecture seule',row=>{const check=row.querySelector('[data-choice-readonly],[data-matrix-readonly]');if(check)check.checked=true;return check});
    applyButton('Rendre modifiables',row=>{const check=row.querySelector('[data-choice-readonly],[data-matrix-readonly]');if(check)check.checked=false;return check});
-   const selectAll=document.createElement('button');selectAll.type='button';selectAll.className='secondary-btn';selectAll.textContent='Sélectionner les visibles';selectAll.onclick=()=>list.querySelectorAll(':scope > .choice-row').forEach(row=>{const c=row.querySelector('.compact-bulk-check');if(c)c.checked=!row.hidden&&row.dataset.deleted!=='1'});bulk.prepend(selectAll);
+   const selectAll=document.createElement('button');selectAll.type='button';selectAll.className='secondary-btn';selectAll.textContent='Sélectionner les lignes affichées';selectAll.onclick=()=>{list.querySelectorAll(':scope > .choice-row').forEach(row=>{const c=row.querySelector('.compact-bulk-check');if(c&&row.dataset.deleted!=='1'&&!row.hidden)c.checked=true});refreshSelection()};
+   const clearSelection=document.createElement('button');clearSelection.type='button';clearSelection.className='secondary-btn';clearSelection.textContent='Tout désélectionner';clearSelection.onclick=()=>{list.querySelectorAll('.compact-bulk-check').forEach(c=>{c.checked=false});refreshSelection()};
+   bulk.prepend(selectionInfo,selectAll,clearSelection);
    list.before(bulk);
+   list.addEventListener('change',e=>{if(e.target.matches('.compact-bulk-check'))refreshSelection()});
+   // Newly added or deleted rows also update the action availability.
+   new MutationObserver(refreshSelection).observe(list,{childList:true,subtree:false,attributes:true,attributeFilter:['data-deleted']});
+   refreshSelection();
   }
+
   // Reorder existing records using the same Ordre inputs already saved by app.js.
   // Newly inserted (not yet saved) rows are intentionally excluded: the Grist
   // AddRecord path assigns their order on creation.
