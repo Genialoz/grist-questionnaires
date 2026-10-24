@@ -473,3 +473,10 @@ body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .c
 body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-card button {
   max-width:100%;white-space:normal;text-align:left;
 }
+
+/* Ergonomie V5.3 : aide contextuelle dans l’onglet Apparence */
+body[data-module="concepteur"] .appearance-intro{padding:12px 14px;background:var(--ui-accent-soft,#f1effc);border:1px solid var(--ui-border,#dce2ec);border-radius:9px;font-size:12px;line-height:1.5;color:var(--ui-text,#1c2437)}
+body[data-module="concepteur"] .appearance-intro p{margin:5px 0 0;color:var(--ui-muted,#64708a)}
+body[data-module="concepteur"] .appearance-explain{line-height:1.5;margin:0 0 12px;opacity:1;color:var(--ui-muted,#64708a)}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="appearance"] .two-cols{grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:9px}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="appearance"] .check{overflow-wrap:anywhere}

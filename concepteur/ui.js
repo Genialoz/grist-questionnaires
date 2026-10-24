@@ -24,6 +24,13 @@ export function enhanceInspector(updatePreview){
  [...form.children].forEach(child=>{if(child.classList.contains('form-actions'))return;panels[classify(child)].append(child)});
  const show=group=>{groups.forEach(g=>{panels[g].hidden=g!==group});bar.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===group)))};
  groups.forEach(group=>{const b=document.createElement('button');b.type='button';b.dataset.group=group;b.textContent=labels[group];b.setAttribute('aria-controls','inspector-'+group);b.setAttribute('aria-pressed','false');b.onclick=()=>show(group);bar.append(b);panels[group].id='inspector-'+group;if(!panels[group].children.length){const empty=document.createElement('p');empty.className='hint';empty.textContent='Aucun réglage spécifique pour cet élément.';panels[group].append(empty)}});
+ // Guidance visuelle uniquement : les champs existants restent dans le formulaire.
+ if(panels.appearance){
+  const intro=document.createElement('div');
+  intro.className='appearance-intro';
+  intro.innerHTML='<strong>Apparence de cet élément</strong><p>Réglez ici la présentation de l’ensemble du titre ou du libellé. Pour modifier uniquement des mots sélectionnés, utilisez l’éditeur de texte de l’onglet Général. Le thème général du questionnaire se règle dans « Informations générales / Apparence ».</p>';
+  panels.appearance.prepend(intro);
+ }
  form.prepend(bar,...groups.map(g=>panels[g]));show('content');
  const dirty=document.createElement('p');dirty.className='designer-draft';dirty.setAttribute('role','status');dirty.textContent=form.dataset.dirty==='1'?'Modifications à enregistrer':'Réglages de l’élément sélectionné';bar.after(dirty);
  const update=()=>{form.dataset.dirty='1';dirty.textContent='Modifications à enregistrer';updatePreview(form)};
