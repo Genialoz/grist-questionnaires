@@ -481,3 +481,11 @@ body[data-module="concepteur"] .appearance-intro p{margin:5px 0 0;color:var(--ui
 body[data-module="concepteur"] .appearance-explain{line-height:1.5;margin:0 0 12px;opacity:1;color:var(--ui-muted,#64708a)}
 body[data-module="concepteur"] .inspector-group[data-inspector-group="appearance"] .two-cols{grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:9px}
 body[data-module="concepteur"] .inspector-group[data-inspector-group="appearance"] .check{overflow-wrap:anywhere}
+
+/* Fiches et sous-fiches : navigation locale entre groupes de propriétés. */
+body[data-module="concepteur"] .fiche-editor-tabs{display:flex;flex-wrap:wrap;gap:5px;padding:3px;background:#f2f4f8;border-radius:9px;position:sticky;top:0;z-index:2}
+body[data-module="concepteur"] .fiche-editor-tab{flex:1 1 auto;border:1px solid transparent;background:transparent;border-radius:7px;padding:8px 10px;cursor:pointer;color:#45536b;font-weight:600;font-size:.85rem}
+body[data-module="concepteur"] .fiche-editor-tab.is-active{background:white;border-color:#d7deea;box-shadow:0 1px 3px #20304b18;color:#1e375f}
+body[data-module="concepteur"] .fiche-editor-tab:focus-visible{outline:2px solid #4269b9;outline-offset:1px}
+body[data-module="concepteur"] .fiche-editor-pane[hidden]{display:none!important}
+body[data-module="concepteur"] .fiche-editor-pane .editor-section:first-child{border-top:0;margin-top:8px}
