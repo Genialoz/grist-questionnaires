@@ -429,3 +429,9 @@ body[data-module="concepteur"] .compact-choice-details .matrix-column-policy{max
 body[data-module="concepteur"] .compact-bulk-policy{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 10px}
 body[data-module="concepteur"] .compact-bulk-policy button{font-size:11px;padding:6px 8px}
 body[data-module="concepteur"] .compact-bulk-check{flex:none;accent-color:#5146c8}
+/* Compact list reordering: only saved entries can be moved safely. */
+body[data-module="concepteur"] .compact-move-tools{display:inline-flex;gap:3px;flex-shrink:0}
+body[data-module="concepteur"] .compact-move-tools button{border:1px solid #dce2ec;border-radius:6px;background:#fff;padding:5px 8px;line-height:1.15;cursor:pointer;color:#36445b;font-weight:700}
+body[data-module="concepteur"] .compact-move-tools button:hover:not(:disabled){background:#eeecfc;border-color:#aaa5ec}
+body[data-module="concepteur"] .compact-move-tools button:disabled{opacity:.32;cursor:default}
+@media(max-width:720px){body[data-module="concepteur"] .compact-choice-heading{flex-wrap:wrap}body[data-module="concepteur"] .compact-choice-heading>.choice-label{flex-basis:60%}}

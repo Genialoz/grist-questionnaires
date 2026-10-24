@@ -50,6 +50,37 @@ export function enhanceChoiceLists(){
    const selectAll=document.createElement('button');selectAll.type='button';selectAll.className='secondary-btn';selectAll.textContent='Sélectionner les visibles';selectAll.onclick=()=>list.querySelectorAll(':scope > .choice-row').forEach(row=>{const c=row.querySelector('.compact-bulk-check');if(c)c.checked=!row.hidden&&row.dataset.deleted!=='1'});bulk.prepend(selectAll);
    list.before(bulk);
   }
+  // Reorder existing records using the same Ordre inputs already saved by app.js.
+  // Newly inserted (not yet saved) rows are intentionally excluded: the Grist
+  // AddRecord path assigns their order on creation.
+  const orderSelector=id==='matrix-line-list'?'[data-matrix-line-order]':id==='matrix-input-column-list'?'[data-matrix-column-order]':'[data-choice-order]';
+  const orderedRows=()=>[...list.querySelectorAll(':scope > .choice-row')].filter(r=>r.dataset.deleted!=='1');
+  const refreshMoveButtons=()=>{
+   const rows=orderedRows();
+   rows.forEach((row,index)=>{
+    const persisted=Boolean(row.querySelector(orderSelector));
+    const up=row.querySelector('.compact-move-up'),down=row.querySelector('.compact-move-down');
+    if(up)up.disabled=!persisted||index===0||!rows[index-1]?.querySelector(orderSelector);
+    if(down)down.disabled=!persisted||index===rows.length-1||!rows[index+1]?.querySelector(orderSelector);
+   });
+  };
+  const moveRow=(row,delta)=>{
+   if(search.value.trim()){
+    search.value='';filter();
+   }
+   const rows=orderedRows(),i=rows.indexOf(row),other=rows[i+delta];
+   if(i<0||!other||!row.querySelector(orderSelector)||!other.querySelector(orderSelector))return;
+   // Keep the existing field values as the source of truth. Swapping rather
+   // than renumbering every row limits changes to two Grist records.
+   const a=row.querySelector(orderSelector),b=other.querySelector(orderSelector);
+   const oldA=a.value,oldB=b.value;
+   a.value=oldB;b.value=oldA;
+   if(delta<0)list.insertBefore(row,other);else list.insertBefore(other,row);
+   for(const input of [a,b])input.dispatchEvent(new Event('change',{bubbles:true}));
+   updateIndexes();refreshMoveButtons();
+   row.querySelector('.compact-move-up')?.focus();
+  };
+  const updateIndexes=()=>[...list.querySelectorAll(':scope > .choice-row')].forEach((row,index)=>{const n=row.querySelector('.compact-choice-number');if(n)n.textContent=String(index+1).padStart(2,'0');});
   const initialize=()=>{
    for(const row of list.querySelectorAll(':scope > .choice-row')){
     if(row.dataset.compactReady==='1')continue;row.dataset.compactReady='1';
@@ -59,7 +90,15 @@ export function enhanceChoiceLists(){
     const toggle=document.createElement('button');toggle.type='button';toggle.className='compact-choice-toggle';toggle.textContent='Options ▸';toggle.setAttribute('aria-expanded','false');
     const details=document.createElement('div');details.className='compact-choice-details';details.hidden=true;
     const name=document.createElement('span');name.className='compact-choice-number';
-    head.append(name,labelBox,toggle);row.prepend(head);
+    const moveTools=document.createElement('span');moveTools.className='compact-move-tools';
+    for(const [direction,symbol,title] of [[-1,'↑','Monter'],[1,'↓','Descendre']]){
+     const button=document.createElement('button');button.type='button';
+     button.className=direction<0?'compact-move-up':'compact-move-down';
+     button.textContent=symbol;button.title=title+' cet élément';
+     button.setAttribute('aria-label',title+' '+label.toLowerCase().replace(/s$/,'')+' '+(labelBox.querySelector('input')?.value||''));
+     button.addEventListener('click',()=>moveRow(row,direction));moveTools.append(button);
+    }
+    head.append(name,labelBox,moveTools,toggle);row.prepend(head);
     if(isMatrixColumn){const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.className='compact-bulk-check';checkbox.setAttribute('aria-label','Sélectionner cette colonne');head.insertBefore(checkbox,name)}
     if(tools)details.append(tools);if(policy)details.append(policy);
     // Other direct children (e.g. optional custom settings) are retained inside details.
@@ -69,8 +108,7 @@ export function enhanceChoiceLists(){
     toggle.addEventListener('click',()=>expand(details.hidden));row._expandCompact=expand;
     const input=labelBox.querySelector('input');if(input)input.setAttribute('aria-label',`Libellé ${label.toLowerCase()}`);
    }
-   [...list.querySelectorAll(':scope > .choice-row')].forEach((row,index)=>{const n=row.querySelector('.compact-choice-number');if(n)n.textContent=String(index+1).padStart(2,'0');});
-   filter();
+   updateIndexes();filter();refreshMoveButtons();
   };
   function filter(){const query=search.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();let n=0,total=0;for(const row of list.querySelectorAll(':scope > .choice-row')){if(row.dataset.deleted==='1')continue;total++;const val=row.querySelector('.choice-label input')?.value||row.querySelector('.choice-label')?.textContent||'';const visible=val.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(query);row.hidden=!visible;if(visible)n++;}counter.textContent=query?`${n} / ${total}`:`${total} élément${total>1?'s':''}`;}
   search.addEventListener('input',filter);list.addEventListener('input',filter);
