@@ -68,10 +68,13 @@ export function enhanceChoiceLists(){
   if(!section)continue;
   const toolbar=document.createElement('div');toolbar.className='compact-list-toolbar';
   const search=document.createElement('input');search.type='search';search.placeholder='Rechercher dans '+label.toLowerCase()+'…';search.setAttribute('aria-label',search.placeholder);
-  const counter=document.createElement('span');counter.className='compact-list-count';
+  const counter=document.createElement('span');counter.className='compact-list-count';counter.setAttribute('role','status');
+  const clearSearch=document.createElement('button');clearSearch.type='button';clearSearch.className='secondary-btn';clearSearch.textContent='Effacer la recherche';clearSearch.hidden=true;
+  const searchEmpty=document.createElement('p');searchEmpty.className='hint compact-search-empty';searchEmpty.setAttribute('role','status');searchEmpty.hidden=true;
+  searchEmpty.textContent='Aucun résultat. Effacez la recherche pour afficher toutes les entrées.';
   const all=document.createElement('button');all.type='button';all.className='secondary-btn';all.textContent='Tout déplier';
   const none=document.createElement('button');none.type='button';none.className='secondary-btn';none.textContent='Tout replier';
-  toolbar.append(search,counter,all,none);list.before(toolbar);list.classList.add('compact-choice-list');
+  toolbar.append(search,clearSearch,counter,all,none);list.before(toolbar);list.after(searchEmpty);list.classList.add('compact-choice-list');
   const isMatrixColumn=id==='matrix-input-column-list'||(id==='choice-list'&&matrix);
   if(isMatrixColumn){
    const bulk=document.createElement('div');bulk.className='compact-bulk-policy';
@@ -160,8 +163,8 @@ export function enhanceChoiceLists(){
    }
    updateIndexes();filter();refreshMoveButtons();
   };
-  function filter(){const query=search.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();let n=0,total=0;for(const row of list.querySelectorAll(':scope > .choice-row')){if(row.dataset.deleted==='1')continue;total++;const val=row.querySelector('.choice-label input')?.value||row.querySelector('.choice-label')?.textContent||'';const visible=val.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(query);row.hidden=!visible;if(visible)n++;}counter.textContent=query?`${n} / ${total}`:`${total} élément${total>1?'s':''}`;}
-  search.addEventListener('input',filter);list.addEventListener('input',filter);
+  function filter(){const query=search.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();let n=0,total=0;for(const row of list.querySelectorAll(':scope > .choice-row')){if(row.dataset.deleted==='1')continue;total++;const val=row.querySelector('.choice-label input')?.value||row.querySelector('.choice-label')?.textContent||'';const visible=val.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(query);row.hidden=!visible;if(visible)n++;}counter.textContent=query?`${n} sur ${total} élément${total>1?'s':''}`:`${total} élément${total>1?'s':''}`;clearSearch.hidden=!query;searchEmpty.hidden=!(query&&n===0);}
+  search.addEventListener('input',filter);clearSearch.addEventListener('click',()=>{search.value='';filter();search.focus()});list.addEventListener('input',filter);
   all.addEventListener('click',()=>list.querySelectorAll(':scope > .choice-row').forEach(r=>r._expandCompact?.(true)));
   none.addEventListener('click',()=>list.querySelectorAll(':scope > .choice-row').forEach(r=>r._expandCompact?.(false)));
   const observer=new MutationObserver(records=>{if(records.some(r=>r.type==='childList'&&[...r.addedNodes].some(n=>n.nodeType===1&&n.classList?.contains('choice-row'))))initialize();});
