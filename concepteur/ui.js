@@ -77,9 +77,14 @@ export function enhanceChoiceLists(){
    const bulk=document.createElement('div');bulk.className='compact-bulk-policy';
    const selectionInfo=document.createElement('span');selectionInfo.className='compact-bulk-selection';selectionInfo.setAttribute('role','status');
    const actionButtons=[];
+   const actionFeedback=document.createElement('p');
+   actionFeedback.className='compact-bulk-feedback';
+   actionFeedback.setAttribute('role','status');
+   actionFeedback.setAttribute('aria-live','polite');
+   actionFeedback.style.cssText='margin:6px 0 0;font-size:0.9em;font-weight:600;';
    const selectedRows=()=>[...list.querySelectorAll(':scope > .choice-row')].filter(row=>row.dataset.deleted!=='1'&&row.querySelector('.compact-bulk-check')?.checked);
    const refreshSelection=()=>{const count=selectedRows().length;selectionInfo.textContent=`${count} colonne${count>1?'s':''} sélectionnée${count>1?'s':''}`;actionButtons.forEach(button=>button.disabled=count===0)};
-   const applyButton=(title,handler)=>{const b=document.createElement('button');b.type='button';b.className='secondary-btn';b.textContent=title;b.onclick=()=>{for(const row of selectedRows()){const el=handler(row);if(el)el.dispatchEvent(new Event('change',{bubbles:true}));}refreshSelection()};bulk.append(b);actionButtons.push(b)};
+   const applyButton=(title,handler)=>{const b=document.createElement('button');b.type='button';b.className='secondary-btn';b.textContent=title;b.onclick=()=>{let applied=0;for(const row of selectedRows()){const el=handler(row);if(el){applied++;el.dispatchEvent(new Event('change',{bubbles:true}));}}actionFeedback.textContent=applied?`✓ ${title} : ${applied} colonne${applied>1?'s':''} concernée${applied>1?'s':''}. Pensez à cliquer sur Enregistrer.`:'Aucune colonne modifiable trouvée pour cette action.';b.classList.add('is-applied');b.style.outline='2px solid currentColor';window.setTimeout(()=>{b.classList.remove('is-applied');b.style.outline=''},800);refreshSelection()};bulk.append(b);actionButtons.push(b)};
    applyButton('Rendre visibles',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Visible';return select});
    applyButton('Masquer',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Masquée';return select});
    applyButton('Lecture seule',row=>{const check=row.querySelector('[data-choice-readonly],[data-matrix-readonly]');if(check)check.checked=true;return check});
@@ -88,6 +93,7 @@ export function enhanceChoiceLists(){
    const clearSelection=document.createElement('button');clearSelection.type='button';clearSelection.className='secondary-btn';clearSelection.textContent='Tout désélectionner';clearSelection.onclick=()=>{list.querySelectorAll('.compact-bulk-check').forEach(c=>{c.checked=false});refreshSelection()};
    bulk.prepend(selectionInfo,selectAll,clearSelection);
    list.before(bulk);
+   bulk.after(actionFeedback);
    list.addEventListener('change',e=>{if(e.target.matches('.compact-bulk-check'))refreshSelection()});
    // Newly added or deleted rows also update the action availability.
    new MutationObserver(refreshSelection).observe(list,{childList:true,subtree:false,attributes:true,attributeFilter:['data-deleted']});
