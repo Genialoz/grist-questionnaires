@@ -502,3 +502,24 @@ body[data-module="concepteur"] .fiche-editor-tab{pointer-events:auto;position:re
 .fiche-question-search-label{display:block;margin:.8rem 0 .25rem;font-size:.85rem}
 #fiche-question-search{box-sizing:border-box;width:100%;max-width:100%;margin-bottom:.7rem}
 .fiche-question-search-results .fiche-question-overview[hidden],#fiche-question-search-empty[hidden]{display:none!important}
+
+/* V5.7.1 — Focus visible sans découpe : recherche et boutons d’ajout.
+   Les conteneurs étroits/défilants peuvent masquer les contours extérieurs. */
+body[data-module="concepteur"] .compact-list-toolbar input:focus,
+body[data-module="concepteur"] .compact-list-toolbar input:focus-visible,
+body[data-module="concepteur"] #structure-search:focus,
+body[data-module="concepteur"] #structure-search:focus-visible {
+  outline:none;
+  border-color:var(--ui-accent,#5146c8);
+  box-shadow:inset 0 0 0 1px var(--ui-accent,#5146c8), 0 0 0 1px #fff;
+}
+body[data-module="concepteur"] .addbar button:focus,
+body[data-module="concepteur"] .addbar button:focus-visible {
+  outline:none;
+  border-color:var(--ui-accent,#5146c8);
+  box-shadow:inset 0 0 0 2px var(--ui-accent,#5146c8);
+}
+body[data-module="concepteur"] .compact-list-toolbar input {
+  min-height:34px;
+  line-height:1.35;
+}
