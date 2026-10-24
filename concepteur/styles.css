@@ -454,3 +454,22 @@ body[data-module="concepteur"] .inspector-group[hidden]{display:none!important}
 .matrix-constraint-field { display:inline-flex; flex-direction:column; gap:3px; font-size:11px; font-weight:600; color:var(--text-muted,#596579); min-width:78px; max-width:118px; }
 .matrix-constraint-field .order-input {width:100%; min-width:0; box-sizing:border-box; font-weight:400;}
 .choice-tools .matrix-constraint-field {align-self:flex-start;}
+
+/* Ergonomie V5.2 : conditions lisibles dans le panneau de propriétés */
+body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-card {
+  display:flex;flex-direction:column;align-items:flex-start;gap:7px;min-width:0;
+  padding:14px;border:1px solid #dedce5;border-radius:10px;background:#faf9fc;
+}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-card strong {
+  font-size:13px;line-height:1.4;overflow-wrap:anywhere;
+}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-card .field-help {
+  margin:0;line-height:1.45;overflow-wrap:anywhere;
+}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-summary {
+  width:100%;box-sizing:border-box;margin:0;padding:8px 10px;border-radius:6px;
+  background:#fff;border:1px solid #eceaf1;font-size:12px;line-height:1.5;overflow-wrap:anywhere;
+}
+body[data-module="concepteur"] .inspector-group[data-inspector-group="logic"] .condition-card button {
+  max-width:100%;white-space:normal;text-align:left;
+}
