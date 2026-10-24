@@ -496,3 +496,9 @@ body[data-module="concepteur"] .fiche-editor-form>.fiche-editor-pane,
 body[data-module="concepteur"] .fiche-editor-form>.form-actions{grid-column:1/-1;min-width:0}
 body[data-module="concepteur"] .fiche-editor-tabs{isolation:isolate;z-index:5}
 body[data-module="concepteur"] .fiche-editor-tab{pointer-events:auto;position:relative;z-index:1}
+
+/* Liste des questions de fiche : recherche et repli purement visuels. */
+.fiche-question-list-details > summary{cursor:pointer;font-weight:600;padding:.35rem 0}
+.fiche-question-search-label{display:block;margin:.8rem 0 .25rem;font-size:.85rem}
+#fiche-question-search{box-sizing:border-box;width:100%;max-width:100%;margin-bottom:.7rem}
+.fiche-question-search-results .fiche-question-overview[hidden],#fiche-question-search-empty[hidden]{display:none!important}
