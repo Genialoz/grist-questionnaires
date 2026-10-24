@@ -435,3 +435,12 @@ body[data-module="concepteur"] .compact-move-tools button{border:1px solid #dce2
 body[data-module="concepteur"] .compact-move-tools button:hover:not(:disabled){background:#eeecfc;border-color:#aaa5ec}
 body[data-module="concepteur"] .compact-move-tools button:disabled{opacity:.32;cursor:default}
 @media(max-width:720px){body[data-module="concepteur"] .compact-choice-heading{flex-wrap:wrap}body[data-module="concepteur"] .compact-choice-heading>.choice-label{flex-basis:60%}}
+
+/* Aperçu des modalités dans les fiches et sous-fiches : édition dans la question. */
+body[data-module="concepteur"] .fiche-question-overview{margin:5px 0;border:1px solid #e0e5ed;border-radius:8px;padding:5px 8px}
+body[data-module="concepteur"] .fiche-question-overview .tree-item{width:100%;text-align:left}
+body[data-module="concepteur"] .fiche-question-edit{font-size:11px;opacity:.72;float:right}
+body[data-module="concepteur"] .fiche-question-choices{margin:4px 0 6px 12px;font-size:12px}
+body[data-module="concepteur"] .fiche-question-choices summary{cursor:pointer;color:#576480}
+body[data-module="concepteur"] .fiche-question-options{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+body[data-module="concepteur"] .fiche-question-options span{border:1px solid #dde2ed;border-radius:6px;background:#f7f8fb;padding:3px 6px}
