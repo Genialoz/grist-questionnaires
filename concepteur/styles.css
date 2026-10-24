@@ -489,3 +489,10 @@ body[data-module="concepteur"] .fiche-editor-tab.is-active{background:white;bord
 body[data-module="concepteur"] .fiche-editor-tab:focus-visible{outline:2px solid #4269b9;outline-offset:1px}
 body[data-module="concepteur"] .fiche-editor-pane[hidden]{display:none!important}
 body[data-module="concepteur"] .fiche-editor-pane .editor-section:first-child{border-top:0;margin-top:8px}
+
+/* Fiches : les onglets et leurs panneaux occupent toute la largeur de l’inspecteur. */
+body[data-module="concepteur"] .fiche-editor-form>.fiche-editor-tabs,
+body[data-module="concepteur"] .fiche-editor-form>.fiche-editor-pane,
+body[data-module="concepteur"] .fiche-editor-form>.form-actions{grid-column:1/-1;min-width:0}
+body[data-module="concepteur"] .fiche-editor-tabs{isolation:isolate;z-index:5}
+body[data-module="concepteur"] .fiche-editor-tab{pointer-events:auto;position:relative;z-index:1}
