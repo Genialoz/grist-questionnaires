@@ -1133,6 +1133,9 @@ function render() {
   const showReturnToc=tocMode==="accueil"&&state.pageIndex!==positionedTocPage&&isTrue(page.Afficher_retour_sommaire);
   const showValidationToc=(showToc||hasPositionedToc)&&isTrue(vm.version.Afficher_validation_sommaire);
   const locked=responseIsLocked();
+  const uniqueLinkMode=!state.previewMode&&isUniqueLinkCampaign(selectedCampaign());
+  const showResumeCopy=uniqueLinkMode&&Boolean(state.response?.Jeton_reprise);
+  const showManualSave=!state.previewMode&&!locked&&(uniqueLinkMode||state.pageIndex!==0);
   const completionBadge=status=>status?`<span class="toc-completion toc-completion-${status.state}">${escapeHtml(status.label)}</span>`:"";
   const questionHasRequiredPart=q=>{
     if(isDisplayBlock(q)||isDataTableQuestion(q))return false;
@@ -1186,7 +1189,7 @@ function render() {
   const themeCss=`<style data-questionnaire-theme>${themeBlocks?`.card,.section,.repeatable{background:${themeBlocks}!important}`:""}${themePrimary?`.btn-primary{background:${themePrimary}!important;border-color:${themePrimary}!important}.progress>div{background:${themePrimary}!important}`:""}${mainTitleStyle?`.questionnaire-title-row h1{${mainTitleStyle}}`:""}</style>`;
   const actionFeedbackHtml=state.actionFeedback?`<div class="questionnaire-action-feedback ${state.actionFeedbackKind==="success"?"is-success":"is-busy"}" role="status" aria-live="polite">${state.actionFeedbackKind==="success"?'<span class="action-feedback-check" aria-hidden="true">✓</span>':'<span class="action-feedback-spinner" aria-hidden="true"></span>'}<span>${escapeHtml(state.actionFeedback)}</span></div>`:"";
   root.innerHTML=themeCss+actionFeedbackHtml+`<div class="card">
-    <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${!state.previewMode&&state.response?.Jeton_reprise?`<button type="button" class="btn btn-small" data-copy-resume>Copier le lien de reprise</button>`:""}${!state.previewMode&&!locked?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
+    <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${showResumeCopy?`<button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button>`:""}${showManualSave?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${tocHtml}
@@ -1700,8 +1703,12 @@ function accessibleResponse(def){
 }
 function resumeNotice(){
   if(!state.response?.Jeton_reprise)return "";
-  if(responseIsLocked()) return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée</strong><p>Votre questionnaire a bien été transmis. Vous pouvez conserver ce lien pour consulter votre réponse ultérieurement.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de consultation</button></div></div>`;
-  return `<div class="resume-notice"><strong>Votre réponse est enregistrée</strong><p>Conservez votre lien personnel pour reprendre ce questionnaire plus tard, y compris depuis un autre navigateur.</p><div class="resume-actions"><button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button><button type="button" class="btn btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button></div></div>`;
+  // Le lien personnalisé permet de retrouver directement la réponse : aucune action de reprise nécessaire.
+  let campaign;try{campaign=selectedCampaign()}catch{return ""}
+  if(!isUniqueLinkCampaign(campaign))return "";
+  // Le bouton de copie est déjà affiché une seule fois dans la barre d'outils.
+  if(responseIsLocked())return `<div class="resume-notice"><strong>Votre réponse est validée et enregistrée.</strong></div>`;
+  return `<div class="resume-notice"><strong>Votre réponse est enregistrée.</strong><p>Conservez votre lien de reprise personnel pour revenir sur vos réponses. Utilisez le bouton « Copier mon lien de reprise » en haut du questionnaire.</p></div>`;
 }
 export function campaignResumeBaseUrl(campaign, referrer="") {
   const configured=String(campaign?.URL_reprise ?? campaign?.Url_reprise ?? campaign?.URL_page_Grist ?? "").trim();
