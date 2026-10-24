@@ -1141,7 +1141,20 @@ function bindRichTextEditors(form=document.querySelector("#edit-form")){
   outer.append(toolbar,editor);source.after(outer);source.classList.add("rich-text-source");
  }
 }
-function renderEditor(){renderEditorBase();bindRichTextEditors();if(typeof enhanceInspector!=="function")return;enhanceInspector(form=>{
+function renderEditor(){renderEditorBase();bindRichTextEditors();
+ // Les fiches et sous-fiches ont déjà leurs propres onglets dans renderFicheEditor.
+ // enhanceInspector déplacerait leurs panneaux dans des groupes cachés et rendrait
+ // « Affichage » et « Règles » inaccessibles malgré le clic sur les onglets.
+ if(S.selected?.type==="fiche"){
+  const ficheForm=$("#edit-form");
+  if(ficheForm){
+   const markDirty=()=>{ficheForm.dataset.dirty="1"};
+   ficheForm.addEventListener("input",markDirty);
+   ficheForm.addEventListener("change",markDirty);
+  }
+  return;
+ }
+ if(typeof enhanceInspector!=="function")return;enhanceInspector(form=>{
  const selected=S.selected;if(!selected)return;const {type,row}=selected;
  const title=form.querySelector('[name="title"]')?.value??form.querySelector('[name="fiche-singulier"]')?.value??label(row,type);
  const canvas=$("#canvas");let preview=canvas.querySelector('.designer-live-preview');if(!preview){preview=document.createElement('div');preview.className='designer-live-preview';canvas.append(preview);}
