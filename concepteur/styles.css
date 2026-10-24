@@ -406,3 +406,26 @@ body[data-module="concepteur"] #tree .tree-node > .tree-item{padding-right:38px}
 .rich-text-toolbar select{max-width:140px;width:auto;padding:4px;font-size:12px}
 .rich-text-editor{min-height:50px;max-height:220px;overflow:auto;border:1px solid #b8c3d4;border-radius:5px;padding:8px;background:#fff;white-space:pre-wrap;word-break:break-word}
 .rich-text-editor:focus{outline:2px solid #5a8dec;outline-offset:1px}
+
+/* Compact modalité / matrice editor: visual-only enhancement. */
+body[data-module="concepteur"] .matrix-editor-tabs{display:flex;gap:6px;flex-wrap:wrap;padding:9px 0 12px;border-bottom:1px solid #dddfea}
+body[data-module="concepteur"] .matrix-editor-tabs button{border:1px solid #daddeb;background:#fff;border-radius:8px;padding:8px 12px;cursor:pointer;font-weight:600;color:#47516b}
+body[data-module="concepteur"] .matrix-editor-tabs button[aria-pressed="true"]{background:#eeecfc;border-color:#aaa5ec;color:#5146c8}
+body[data-module="concepteur"] .editor-section[hidden],body[data-module="concepteur"] .compact-choice-details[hidden],body[data-module="concepteur"] .compact-choice-list>.choice-row[hidden]{display:none!important}
+body[data-module="concepteur"] .compact-list-toolbar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin:10px 0}
+body[data-module="concepteur"] .compact-list-toolbar input{flex:1;min-width:135px;padding:8px;border:1px solid #dce2ec;border-radius:7px}
+body[data-module="concepteur"] .compact-list-toolbar button{font-size:11px;padding:6px 8px}
+body[data-module="concepteur"] .compact-list-count{font-size:11px;color:#687389;white-space:nowrap}
+body[data-module="concepteur"] .compact-choice-list{display:grid;gap:5px}
+body[data-module="concepteur"] .compact-choice-list>.choice-row{padding:7px 9px;margin:0}
+body[data-module="concepteur"] .compact-choice-heading{display:flex;gap:9px;align-items:center;min-width:0}
+body[data-module="concepteur"] .compact-choice-heading>.choice-label{flex:1;min-width:0;width:auto}
+body[data-module="concepteur"] .compact-choice-number{font-variant-numeric:tabular-nums;font-size:10px;color:#8590a3}
+body[data-module="concepteur"] .compact-choice-toggle{border:1px solid #dce2ec;background:#f8f9fc;border-radius:6px;padding:6px 9px;cursor:pointer;white-space:nowrap;font-size:11px}
+body[data-module="concepteur"] .compact-choice-details{padding:8px 0 2px 24px;border-top:1px dashed #e0e4ee;margin-top:7px}
+body[data-module="concepteur"] .compact-choice-details .choice-tools{margin-top:2px}
+body[data-module="concepteur"] .compact-choice-details .matrix-column-policy{max-width:100%}
+
+body[data-module="concepteur"] .compact-bulk-policy{display:flex;gap:5px;flex-wrap:wrap;margin:0 0 10px}
+body[data-module="concepteur"] .compact-bulk-policy button{font-size:11px;padding:6px 8px}
+body[data-module="concepteur"] .compact-bulk-check{flex:none;accent-color:#5146c8}

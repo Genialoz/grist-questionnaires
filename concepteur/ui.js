@@ -11,3 +11,72 @@ export function previewDraftLabels(list,labelSelector,orderSelector){
  return [...list.querySelectorAll('.choice-row')].filter(row=>row.dataset.deleted!=='1').map((row,index)=>({label:row.querySelector(labelSelector)?.value??'',order:Number(row.querySelector(orderSelector||'[data-preview-no-order]')?.value||index+1),index})).sort((a,b)=>a.order-b.order||a.index-b.index).map(row=>row.label);
 }
 
+
+// Progressive enhancement only: keep every existing input and event handler in place.
+// Collapsing panels never deletes form fields or changes Grist records.
+export function enhanceChoiceLists(){
+ const form=document.querySelector('#edit-form');if(!form)return;
+ const specs=[['choice-list','Modalités'],['matrix-line-list','Lignes'],['matrix-input-column-list','Colonnes']];
+ const activeLists=specs.map(([id,label])=>({id,label,list:form.querySelector('#'+id)})).filter(x=>x.list);
+ if(!activeLists.length)return;
+ const matrix=Boolean(form.querySelector('[data-kind="matrix-lines"]'));
+ if(matrix){
+  const sections=[...form.querySelectorAll('.editor-section')].filter(x=>x.matches('[data-kind="matrix-lines"], [data-kind="matrix-columns"], [data-kind="matrix-input-columns"], [data-kind="matrix-multi-headers"]'));
+  if(sections.length){
+   const bar=document.createElement('nav');bar.className='matrix-editor-tabs';bar.setAttribute('aria-label','Gestion de la matrice');
+   const views=[['lines','Lignes'],['columns','Colonnes'],['settings','En-têtes']];
+   const show=key=>{sections.forEach(x=>{const kind=x.dataset.kind;const group=kind==='matrix-lines'?'lines':kind==='matrix-multi-headers'?'settings':'columns';x.hidden=group!==key;});bar.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.view===key)));};
+   for(const [key,label] of views){if(key==='settings'&&!sections.some(x=>x.dataset.kind==='matrix-multi-headers'))continue;const b=document.createElement('button');b.type='button';b.dataset.view=key;b.textContent=label;b.onclick=()=>show(key);bar.append(b)}
+   sections[0].before(bar);show('lines');
+  }
+ }
+ for(const {id,list,label} of activeLists){
+  const section=list.closest('.editor-section');
+  if(!section)continue;
+  const toolbar=document.createElement('div');toolbar.className='compact-list-toolbar';
+  const search=document.createElement('input');search.type='search';search.placeholder='Rechercher dans '+label.toLowerCase()+'…';search.setAttribute('aria-label',search.placeholder);
+  const counter=document.createElement('span');counter.className='compact-list-count';
+  const all=document.createElement('button');all.type='button';all.className='secondary-btn';all.textContent='Tout déplier';
+  const none=document.createElement('button');none.type='button';none.className='secondary-btn';none.textContent='Tout replier';
+  toolbar.append(search,counter,all,none);list.before(toolbar);list.classList.add('compact-choice-list');
+  const isMatrixColumn=id==='matrix-input-column-list'||(id==='choice-list'&&matrix);
+  if(isMatrixColumn){
+   const bulk=document.createElement('div');bulk.className='compact-bulk-policy';
+   const applyButton=(title,handler)=>{const b=document.createElement('button');b.type='button';b.className='secondary-btn';b.textContent=title;b.onclick=()=>{for(const row of list.querySelectorAll(':scope > .choice-row')){if(!row.querySelector('.compact-bulk-check')?.checked||row.dataset.deleted==='1')continue;const el=handler(row);if(el){el.dispatchEvent(new Event('change',{bubbles:true}));}}};bulk.append(b)};
+   applyButton('Rendre visibles',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Visible';return select});
+   applyButton('Masquer',row=>{const select=row.querySelector('[data-choice-visibility],[data-matrix-visibility]');if(select)select.value='Masquée';return select});
+   applyButton('Lecture seule',row=>{const check=row.querySelector('[data-choice-readonly],[data-matrix-readonly]');if(check)check.checked=true;return check});
+   applyButton('Rendre modifiables',row=>{const check=row.querySelector('[data-choice-readonly],[data-matrix-readonly]');if(check)check.checked=false;return check});
+   const selectAll=document.createElement('button');selectAll.type='button';selectAll.className='secondary-btn';selectAll.textContent='Sélectionner les visibles';selectAll.onclick=()=>list.querySelectorAll(':scope > .choice-row').forEach(row=>{const c=row.querySelector('.compact-bulk-check');if(c)c.checked=!row.hidden&&row.dataset.deleted!=='1'});bulk.prepend(selectAll);
+   list.before(bulk);
+  }
+  const initialize=()=>{
+   for(const row of list.querySelectorAll(':scope > .choice-row')){
+    if(row.dataset.compactReady==='1')continue;row.dataset.compactReady='1';
+    const labelBox=row.querySelector(':scope > .choice-label');const tools=row.querySelector(':scope > .choice-tools');const policy=row.querySelector(':scope > .matrix-column-policy');
+    if(!labelBox)continue;
+    const head=document.createElement('div');head.className='compact-choice-heading';
+    const toggle=document.createElement('button');toggle.type='button';toggle.className='compact-choice-toggle';toggle.textContent='Options ▸';toggle.setAttribute('aria-expanded','false');
+    const details=document.createElement('div');details.className='compact-choice-details';details.hidden=true;
+    const name=document.createElement('span');name.className='compact-choice-number';
+    head.append(name,labelBox,toggle);row.prepend(head);
+    if(isMatrixColumn){const checkbox=document.createElement('input');checkbox.type='checkbox';checkbox.className='compact-bulk-check';checkbox.setAttribute('aria-label','Sélectionner cette colonne');head.insertBefore(checkbox,name)}
+    if(tools)details.append(tools);if(policy)details.append(policy);
+    // Other direct children (e.g. optional custom settings) are retained inside details.
+    for(const child of [...row.children])if(child!==head&&child!==details)details.append(child);
+    row.append(details);
+    const expand=value=>{details.hidden=!value;toggle.setAttribute('aria-expanded',String(value));toggle.textContent=value?'Options ▾':'Options ▸';};
+    toggle.addEventListener('click',()=>expand(details.hidden));row._expandCompact=expand;
+    const input=labelBox.querySelector('input');if(input)input.setAttribute('aria-label',`Libellé ${label.toLowerCase()}`);
+   }
+   [...list.querySelectorAll(':scope > .choice-row')].forEach((row,index)=>{const n=row.querySelector('.compact-choice-number');if(n)n.textContent=String(index+1).padStart(2,'0');});
+   filter();
+  };
+  function filter(){const query=search.value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase();let n=0,total=0;for(const row of list.querySelectorAll(':scope > .choice-row')){if(row.dataset.deleted==='1')continue;total++;const val=row.querySelector('.choice-label input')?.value||row.querySelector('.choice-label')?.textContent||'';const visible=val.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().includes(query);row.hidden=!visible;if(visible)n++;}counter.textContent=query?`${n} / ${total}`:`${total} élément${total>1?'s':''}`;}
+  search.addEventListener('input',filter);list.addEventListener('input',filter);
+  all.addEventListener('click',()=>list.querySelectorAll(':scope > .choice-row').forEach(r=>r._expandCompact?.(true)));
+  none.addEventListener('click',()=>list.querySelectorAll(':scope > .choice-row').forEach(r=>r._expandCompact?.(false)));
+  const observer=new MutationObserver(records=>{if(records.some(r=>r.type==='childList'&&[...r.addedNodes].some(n=>n.nodeType===1&&n.classList?.contains('choice-row'))))initialize();});
+  observer.observe(list,{childList:true});initialize();
+ }
+}

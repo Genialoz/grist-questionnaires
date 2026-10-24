@@ -1,4 +1,4 @@
-import {initDesignerUI, enhanceInspector, questionPreview, previewDraftLabels} from "./ui.js";
+import {initDesignerUI, enhanceInspector, questionPreview, previewDraftLabels, enhanceChoiceLists} from "./ui.js";
 import {rowsFromTable,sortByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1143,6 +1143,6 @@ function renderEditor(){renderEditorBase();bindRichTextEditors();if(typeof enhan
  if(type==='question')preview.innerHTML=renderQuestion(row);
  else if(type==='fiche')preview.innerHTML=ficheQuestions(row).map(renderQuestion).join('');
  else{const c=current();const secs=type==='page'?c.sections.filter(sec=>ref(sec.Page_Code,S.data.PAGES,'Page_Code')===codeOf(row.Page_Code)):[row];preview.innerHTML=secs.map(sec=>`<section class="design-section">${type==='page'?`<h2>${esc(label(sec,'section'))}</h2>`:''}${c.questions.filter(q=>!isMatrixLine(q)&&ref(q.Section_Code,S.data.SECTIONS,'Section_Code')===codeOf(sec.Section_Code)).map(renderQuestion).join('')||'<p class="hint">Ajoutez une question dans cette section.</p>'}</section>`).join('');}
- });}
+ });enhanceChoiceLists();}
 if(typeof initDesignerUI==="function")initDesignerUI({addFiche:()=>{if(confirmDraftDiscard())add('fiche')},addSubfiche:()=>{if(S.selected?.type!=='fiche'||isSubFiche(S.selected.row)){status('Sélectionnez une fiche parente pour ajouter une sous-fiche.',true,true);return}if(confirmDraftDiscard())addSubFiche(S.selected.row)}});
 
