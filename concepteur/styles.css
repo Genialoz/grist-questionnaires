@@ -449,3 +449,8 @@ body[data-module="concepteur"] .fiche-question-options span{border:1px solid #dd
 body[data-module="concepteur"] .inspector-tabs{flex-wrap:wrap;gap:5px}
 body[data-module="concepteur"] .inspector-tabs button{flex:1 1 72px;min-width:0}
 body[data-module="concepteur"] .inspector-group[hidden]{display:none!important}
+
+/* V5 : contraintes de matrice avec noms explicites, même en panneau étroit. */
+.matrix-constraint-field { display:inline-flex; flex-direction:column; gap:3px; font-size:11px; font-weight:600; color:var(--text-muted,#596579); min-width:78px; max-width:118px; }
+.matrix-constraint-field .order-input {width:100%; min-width:0; box-sizing:border-box; font-weight:400;}
+.choice-tools .matrix-constraint-field {align-self:flex-start;}
