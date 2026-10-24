@@ -444,3 +444,8 @@ body[data-module="concepteur"] .fiche-question-choices{margin:4px 0 6px 12px;fon
 body[data-module="concepteur"] .fiche-question-choices summary{cursor:pointer;color:#576480}
 body[data-module="concepteur"] .fiche-question-options{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
 body[data-module="concepteur"] .fiche-question-options span{border:1px solid #dde2ed;border-radius:6px;background:#f7f8fb;padding:3px 6px}
+
+/* Onglets des propriétés : quatre rubriques sans modification des champs de saisie. */
+body[data-module="concepteur"] .inspector-tabs{flex-wrap:wrap;gap:5px}
+body[data-module="concepteur"] .inspector-tabs button{flex:1 1 72px;min-width:0}
+body[data-module="concepteur"] .inspector-group[hidden]{display:none!important}
