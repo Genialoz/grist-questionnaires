@@ -530,3 +530,15 @@ body[data-module="concepteur"] .compact-list-toolbar input {
 .data-column-move button{min-width:32px;padding:5px 8px}
 .data-column-move button:disabled{opacity:.4;cursor:not-allowed}
 @media(max-width:600px){.data-column-row{grid-template-columns:auto minmax(100px,1fr) auto;gap:6px}}
+
+/* Tableau de données : organisation locale sans changement de stockage */
+.td-config-tabs{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0;padding:4px;background:#f2f3f7;border-radius:9px}
+.td-config-tab{flex:1 1 100px;min-width:0;padding:9px 11px;border:1px solid transparent;border-radius:7px;background:transparent;color:#344057;cursor:pointer;font:inherit;font-weight:600}
+.td-config-tab.is-active{background:white;border-color:#cbd3e4;box-shadow:0 1px 3px #1c30421a}
+.td-config-pane[hidden],.td-col-detail[hidden]{display:none!important}
+.data-table-config .data-column-row{display:grid;grid-template-columns:minmax(120px,1fr) auto auto;align-items:center;gap:9px;padding:8px 10px;border:1px solid #e0e3eb;border-radius:8px;margin:6px 0}
+.data-table-config .td-col-name{font-weight:600;overflow-wrap:anywhere}
+.data-table-config .td-col-detail{grid-column:1/-1;padding:10px;background:#f7f8fb;border-radius:7px;display:grid;gap:10px}
+.data-table-config .td-col-detail label:not(.check){display:grid;gap:4px}
+.data-table-config .data-column-move{display:flex;gap:4px}
+@media(max-width:530px){.data-table-config .data-column-row{grid-template-columns:minmax(80px,1fr) auto auto}.td-config-tab{font-size:.88rem}}
