@@ -558,3 +558,11 @@ body[data-module="concepteur"] .compact-list-toolbar input {
   margin: 0;
   flex: 0 0 16px;
 }
+
+/* Aperçu local des colonnes du tableau en lecture seule */
+.td-live-preview { margin-top: 14px; padding: 12px; border: 1px solid var(--border, #d4dce5); border-radius: 9px; min-width: 0; }
+.td-live-preview[hidden] { display: none !important; }
+.td-live-preview-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.td-live-preview-heading h4 { margin: 0; }
+.td-live-preview .preview-data-table { max-width: 100%; overflow-x: auto; }
+.td-live-preview .preview-data-table table { width: max-content; min-width: 100%; }
