@@ -566,3 +566,40 @@ body[data-module="concepteur"] .compact-list-toolbar input {
 .td-live-preview-heading h4 { margin: 0; }
 .td-live-preview .preview-data-table { max-width: 100%; overflow-x: auto; }
 .td-live-preview .preview-data-table table { width: max-content; min-width: 100%; }
+
+/* Tableau de données : empêcher l'aperçu large de redimensionner l'inspecteur.
+   Le défilement horizontal reste limité au tableau d'aperçu. */
+body[data-module="concepteur"] #properties,
+body[data-module="concepteur"] #properties #edit-form,
+body[data-module="concepteur"] #properties .form-grid,
+body[data-module="concepteur"] #properties .data-table-config,
+body[data-module="concepteur"] #properties .td-config-pane,
+body[data-module="concepteur"] #properties .td-live-preview {
+  min-width: 0;
+  max-width: 100%;
+}
+body[data-module="concepteur"] #properties .td-live-preview {
+  width: 100%;
+  overflow: hidden;
+}
+body[data-module="concepteur"] #properties .td-live-preview .preview-data-table {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 320px;
+  overscroll-behavior-inline: contain;
+}
+body[data-module="concepteur"] #properties .td-live-preview .preview-data-table table {
+  width: max-content;
+  min-width: 100%;
+  max-width: none;
+}
+body[data-module="concepteur"] #properties .td-live-preview .preview-data-table th,
+body[data-module="concepteur"] #properties .td-live-preview .preview-data-table td {
+  min-width: 115px;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+}
