@@ -523,3 +523,10 @@ body[data-module="concepteur"] .compact-list-toolbar input {
   min-height:34px;
   line-height:1.35;
 }
+
+/* Tableau de données : classement des colonnes par flèches */
+.data-column-row{grid-template-columns:120px minmax(160px,1fr) auto}
+.data-column-move{display:flex;gap:4px;align-items:center}
+.data-column-move button{min-width:32px;padding:5px 8px}
+.data-column-move button:disabled{opacity:.4;cursor:not-allowed}
+@media(max-width:600px){.data-column-row{grid-template-columns:auto minmax(100px,1fr) auto;gap:6px}}
