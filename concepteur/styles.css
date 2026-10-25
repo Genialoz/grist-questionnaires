@@ -542,3 +542,19 @@ body[data-module="concepteur"] .compact-list-toolbar input {
 .data-table-config .td-col-detail label:not(.check){display:grid;gap:4px}
 .data-table-config .data-column-move{display:flex;gap:4px}
 @media(max-width:530px){.data-table-config .data-column-row{grid-template-columns:minmax(80px,1fr) auto auto}.td-config-tab{font-size:.88rem}}
+
+/* Tableau de données : case et libellé groupés dans les options des colonnes. */
+.data-table-config .td-col-detail label.check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+}
+.data-table-config .td-col-detail label.check input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex: 0 0 16px;
+}
