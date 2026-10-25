@@ -603,3 +603,14 @@ body[data-module="concepteur"] #properties .td-live-preview .preview-data-table 
   max-width: 220px;
   overflow-wrap: anywhere;
 }
+
+/* Tableau de données : aperçu local dans le panneau central, sans élargir les propriétés. */
+body[data-module="concepteur"] .canvas-panel,
+body[data-module="concepteur"] #canvas,
+body[data-module="concepteur"] .td-canvas-preview {min-width:0;max-width:100%;}
+body[data-module="concepteur"] .td-canvas-preview {overflow:hidden;}
+body[data-module="concepteur"] .td-canvas-heading {display:flex;flex-wrap:wrap;justify-content:space-between;gap:6px 12px;padding:12px 0;}
+body[data-module="concepteur"] .td-canvas-preview .preview-data-table {display:block;max-width:100%;width:100%;max-height:420px;overflow:auto;overscroll-behavior:contain;}
+body[data-module="concepteur"] .td-canvas-preview .preview-data-table table {width:max-content;min-width:100%;max-width:none;}
+body[data-module="concepteur"] .td-canvas-preview .preview-data-table th,
+body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-width:115px;max-width:240px;overflow-wrap:anywhere;}
