@@ -74,7 +74,7 @@ export function hydrateResponse(rows,definition,reponseCode){
   return {response,principalAnswers:principalBundle.answers,principalReadOnlyQuestions:principalBundle.readOnlyQuestions,principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};
 }
 export function assertRevision(expected,actual){if(Number(expected??0)!==Number(actual??0)){const e=new Error("Une version plus récente de cette réponse existe. Rechargez le questionnaire avant de continuer.");e.code="revision_conflict";throw e;} return true;}
-export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions){
+export function validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible=()=>true){
   const errors={principal:{},fiches:{}};
   for(const p of viewModel.pages)for(const s of p.sections)for(const q of s.questions){
     const c=codeOf(q.Question_Code),m=validateConfiguredQuestion(q,answers[c],definition,answers,validateQuestion);
@@ -83,6 +83,7 @@ export function validateWholeResponse(definition,viewModel,answers,fiches,valida
   const identity=f=>String(f?.elementId??f?.elementCode??'');
   const walk=(types,parent=null,context=answers,path=new Set())=>{
     for(const type of types??[]){
+      if(!ficheTypeVisible(type,definition,context))continue;
       if(path.has(type.code)){errors.fiches[type.code]='La hiérarchie des fiches contient une boucle.';continue;}
       const nextPath=new Set(path);nextPath.add(type.code);
       const all=fiches[type.code]??[],parentKey=identity(parent);

@@ -487,7 +487,7 @@ export function buildRepeatableTypes(def, pageCode) {
       resolveRefCode(q.Page_Code,def.pages,"Page_Code")===pageCode
     ));
     return {
-      code,parentCode,
+      code,parentCode,conditionCode:resolveRefCode(type.Condition_Code,def.conditions,"Condition_Code"),
       labelSingular:first(type,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],"Fiche"),
       labelPlural:first(type,["Libelle_pluriel","Libellé_pluriel"],"Fiches"),
       counterLabel:first(type,["Libelle_compteur"],""),
@@ -509,11 +509,19 @@ export function buildRepeatableTypes(def, pageCode) {
   return all.filter(t=>!t.parentCode);
 }
 
+// Les conditions des fiches utilisent le même moteur ET/OU que les pages.
+// Un échec ou une référence inconnue masque la fiche (jamais de suppression).
+export function ficheTypeVisible(type,def,context={}){
+  const raw=type?.conditionCode??type?.Condition_Code;
+  if(!codeOf(raw))return true;
+  return conditionVisible(raw,def,context,[]);
+}
+function visibleChildTypes(parentType,def,context){return (parentType.children??[]).filter(t=>ficheTypeVisible(t,def,context));}
 function findRepeatableType(types,code){for(const t of types??[]){if(t.code===code)return t;const c=findRepeatableType(t.children,code);if(c)return c;}return null;}
 function parentElementIdFromDataset(value){const raw=String(value??"").trim();if(/^\d+$/.test(raw))return Number(raw);return raw;}
 function childFiches(type,parentFiche){return (state.fiches[type.code]??[]).filter(f=>String(f.parentElementId??"")===String(parentFiche?.elementId??""));}
 function subFicheOverview(parentType,parentFiche){
-  const children=parentType.children??[];
+  const children=visibleChildTypes(parentType,state.definition,{...state.answers,...(parentFiche?.answers??{}),...(state.ficheEditor?.answers??{})});
   if(!children.length)return "";
   const rows=children.map(type=>{
     const count=parentFiche?.elementId?childFiches(type,parentFiche).length:0;
@@ -525,13 +533,16 @@ function subFicheOverview(parentType,parentFiche){
   return `<div class="subfiche-overview" aria-label="Sous-fiches de cette fiche"><span class="subfiche-overview-title">Sous-fiches</span>${rows}</div>`;
 }
 function pendingSubFiches(parentType){
-  const children=parentType.children??[];
+  const children=visibleChildTypes(parentType,state.definition,{...state.answers,...(state.ficheEditor?.answers??{})});
   if(!children.length)return "";
   return `<div class="subfiches-pending"><div class="subfiches-pending-title">Sous-fiches</div><p>Cette fiche comporte des sous-fiches. Enregistrez d’abord la fiche pour pouvoir les renseigner.</p><div class="subfiches-pending-list">${children.map(type=>`<span>${escapeHtml(type.labelPlural)}${Number(type.minimum||0)>0?` — minimum ${Number(type.minimum||0)}`:""}</span>`).join("")}</div></div>`;
 }
 function renderSubFiches(parentType,parentFiche,readOnly=false){
   if(!parentFiche?.elementId || !(parentType.children??[]).length) return "";
-  return `<div class="subfiches subfiches-inline">${parentType.children.map(type=>{
+  const context={...state.answers,...(parentFiche.answers??{}),...(state.ficheEditor?.answers??{})};
+  const childTypes=visibleChildTypes(parentType,state.definition,context);
+  if(!childTypes.length)return "";
+  return `<div class="subfiches subfiches-inline">${childTypes.map(type=>{
     const list=childFiches(type,parentFiche);
     const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index),locked=readOnly||fiche.readOnlyImport;return `<article class="fiche-card subfiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong>${fiche.readOnlyImport?`<span class="import-readonly-badge">Lecture seule</span>`:""}${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked&&canAddFiche(type,list)?`<button type="button" class="btn btn-small" data-duplicate-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Dupliquer</button>`:""}${!locked&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
     const canAdd=!readOnly&&!parentFiche.readOnlyImport&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
@@ -641,7 +652,7 @@ function respondentExportButtons(){return !state.previewMode&&state.response?`<b
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
-  const errors=validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions);
+  const errors=validateWholeResponse(definition,viewModel,answers,fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   const incomplete=Object.keys(errors.principal).length>0 || Object.keys(errors.fiches).length>0;
   return incomplete
     ? {state:"incomplete",label:"Brouillon · À compléter",ready:false}
@@ -1033,7 +1044,7 @@ export function validateFiche(type,def,answers={},principalAnswers={}) {
 
 export function ficheCompleteness(type,def,fiche={},principalAnswers={},allFiches={}) {
   const errors=validateFiche(type,def,fiche.answers ?? {},principalAnswers);
-  const treeErrors=validateWholeResponse(def,{pages:[{sections:[],repeatableTypes:[{...type,minimum:0,maximum:null}]}]},principalAnswers,{...allFiches,[type.code]:[fiche]},validateQuestion,visibleFicheQuestions);
+  const treeErrors=validateWholeResponse(def,{pages:[{sections:[],repeatableTypes:[{...type,minimum:0,maximum:null}]}]},principalAnswers,{...allFiches,[type.code]:[fiche]},validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   const complete=Object.keys(errors).length===0&&Object.keys(treeErrors.fiches).length===0;
   return complete ? {state:"complete",label:"Complet",complete:true} : {state:"incomplete",label:"À compléter",complete:false};
 }
@@ -1042,9 +1053,10 @@ export function canAddFiche(type,list=[]) {
   if (!type.allowAdd) return false;
   return type.maximum==null || list.length<type.maximum;
 }
-export function validateFicheCounts(types=[],fiches={}) {
+export function validateFicheCounts(types=[],fiches={},def=state.definition,answers=state.answers) {
   const errors={};
   for (const type of types) {
+    if(!ficheTypeVisible(type,def,answers))continue;
     const count=(fiches[type.code] ?? []).length;
     const singular=String(type.labelSingular || "fiche").toLowerCase();
     const plural=String(type.labelPlural || `${singular}s`).toLowerCase();
@@ -1166,14 +1178,14 @@ function render() {
   const sectionCompletion=section=>isTrue(section?.Afficher_badge_completion)?confirmationCompletion(section,sectionCompletionCore(section),section.questions??[]):null;
   const repeatableCompletion=type=>{
     const list=state.fiches[type.code]??[];
-    const errors=validateWholeResponse(state.definition,{pages:[{sections:[],repeatableTypes:[type]}]},state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+    const errors=validateWholeResponse(state.definition,{pages:[{sections:[],repeatableTypes:[type]}]},state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
     if(Object.keys(errors.fiches).length)return {state:"pending",label:"En attente",hasRequired:true};
-    const hasRequired=type.minimum>0||list.length>0&&(type.children??[]).some(child=>child.minimum>0);
+    const hasRequired=ficheTypeVisible(type,state.definition,state.answers)&&(type.minimum>0||list.some(f=>(type.children??[]).some(child=>child.minimum>0&&ficheTypeVisible(child,state.definition,{...state.answers,...(f.answers??{})}))));
     return list.length||hasRequired?{state:"complete",label:"Complété",hasRequired}:{state:"pending",label:"En attente",hasRequired:false};
   };
   const pageCompletion=page=>{
     if(!isTrue(page?.Afficher_badge_completion))return null;
-    const statuses=[...(page.sections??[]).map(sectionCompletionCore),...(page.repeatableTypes??[]).map(repeatableCompletion)].filter(Boolean);
+    const statuses=[...(page.sections??[]).map(sectionCompletionCore),...(page.repeatableTypes??[]).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(repeatableCompletion)].filter(Boolean);
     if(!statuses.length)return null;
     const requiredStatuses=statuses.filter(x=>x.hasRequired);
     const automatic=requiredStatuses.length?(requiredStatuses.some(x=>x.state==="pending")?{state:"pending",label:"En attente",hasRequired:true}:{state:"complete",label:"Complété",hasRequired:true}):{state:"pending",label:"En attente",hasRequired:false};
@@ -1203,7 +1215,7 @@ function render() {
       ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
-    ${(page.repeatableTypes ?? []).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
+    ${(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
     ${footer?`<footer class="questionnaire-footer">${escapeHtml(footer)}</footer>`:""}
     ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
@@ -1502,6 +1514,7 @@ async function saveCurrentSubFiche() {
   const type=findRepeatableType(page?.repeatableTypes ?? [],editor.typeCode);
   if (!type) return;
   const parentAnswers=state.ficheEditor?.answers ?? {};
+  if(!ficheTypeVisible(type,state.definition,{...state.answers,...parentAnswers})) {showSaveError(new Error("Cette sous-fiche est actuellement masquée par sa condition d’affichage."));return;}
   const errors=validateFiche(type,state.definition,editor.answers,{...state.answers,...parentAnswers});
   root?.querySelectorAll("[data-fiche-field]").forEach(x=>x.classList.remove("invalid"));
   root?.querySelectorAll("[data-fiche-error]").forEach(x=>x.textContent="");
@@ -1598,7 +1611,7 @@ async function finalizeFromToc(vm) {
   state.statusMessage="";
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de valider le questionnaire."));return;}
   if(!state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement avant validation…":"Préparation de la validation…");render();if(!await savePrincipal()){clearActionFeedback();render();return;}}
-  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){state.saveError="";state.statusMessage="Aperçu : le questionnaire peut être validé — aucune réponse n’a été enregistrée.";render();return;}
   try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
@@ -1609,7 +1622,7 @@ async function nextPage(vm,page) {
   state.statusMessage="";
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
   const errors=validateVisiblePage(page,state.answers);
-  const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches);
+  const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches,state.definition,state.answers);
   document.querySelectorAll(".field").forEach(x=>x.classList.remove("invalid"));
   document.querySelectorAll("[data-error]").forEach(x=>x.textContent="");
   for (const [code,msg] of Object.entries(errors)) {
@@ -1644,7 +1657,7 @@ async function nextPage(vm,page) {
   }
   const mustFinalize=navMode==="validation_finale" || state.pageIndex>=vm.pages.length-1;
   if(!mustFinalize){navigateToPage(vm,state.pageIndex+1);clearActionFeedback();render();return;}
-  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions);
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){clearActionFeedback();state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
   try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
