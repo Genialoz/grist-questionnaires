@@ -37,7 +37,7 @@ export function deserializeAnswer(question,row,context={}){
   return row.Valeur_texte ?? "";
 }
 function sameRef(value,row,codeCol){const raw=codeOf(value); return raw===codeOf(row?.[codeCol]) || String(value)===String(row?.id);}
-export function hydrateResponse(rows,definition,reponseCode){
+export function hydrateResponse(rows,definition,reponseCode,selectedPeriod=null){
   const response=(rows.REPONSES??[]).find(r=>codeOf(r.Reponse_Code)===codeOf(reponseCode)||String(r.id)===String(reponseCode))??null;
   if(!response) return {response:null,principalAnswers:{},fiches:{},revisions:{response:null,elements:{}}};
   const elements=(rows.ELEMENTS_REPONSE??[]).filter(e=>sameRef(e.Reponse_Code,response,"Reponse_Code"));
@@ -58,7 +58,12 @@ export function hydrateResponse(rows,definition,reponseCode){
       continue;}
     if(multi(q))out[qc]=selections.filter(s=>sameRef(s.Valeur_Code,v,"Valeur_Code")).map(selectedCode).filter(Boolean);else out[qc]=deserializeAnswer(q,v,definition);
   } return {answers:out,readOnlyQuestions};};
-  const principal=elements.find(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
+  // En mode permanent, chaque période a son propre élément Principal.
+  // Sans période (null), conserver strictement le comportement historique.
+  const principals=elements.filter(e=>String(e.Type_element??"").toLowerCase()==="principal" && !isTrue(e.Supprime_logiquement));
+  const principal=selectedPeriod===null
+    ? principals.find(e=>!String(e.Periode_Code??""))
+    : principals.find(e=>String(e.Periode_Code??"")===String(selectedPeriod));
   const fiches={};
   for(const el of sortByOrder(elements.filter(e=>["fiche","sous-fiche"].includes(String(e.Type_element??"").toLowerCase())&&!isTrue(e.Supprime_logiquement)&&String(e.Statut??"").toLowerCase()!=="annulé"))){
     const rawTc=codeOf(el.TypeFiche_Code);
@@ -68,7 +73,7 @@ export function hydrateResponse(rows,definition,reponseCode){
     const parentRaw=codeOf(el.Parent_Code);
     const parentEl=parentRaw ? elements.find(x=>String(x.id)===parentRaw || codeOf(x.Element_Code)===parentRaw) : null;
     const bundle=answersFor(el);
-    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
+    (fiches[tc]??=[]).push({elementCode:codeOf(el.Element_Code)||String(el.id),elementId:el.id,parentElementId:parentEl?.id??null,periodeCode:String(el.Periode_Code??""),parentElementCode:parentEl?(codeOf(parentEl.Element_Code)||String(parentEl.id)):"",revision:Number(el.Revision||0),status:el.Statut||"Brouillon",readOnlyImport:isTrue(el.Lecture_seule_import),readOnlyQuestions:bundle.readOnlyQuestions,answers:bundle.answers});
   }
   const principalBundle=principal?answersFor(principal):{answers:{},readOnlyQuestions:{}};
   return {response,principalAnswers:principalBundle.answers,principalReadOnlyQuestions:principalBundle.readOnlyQuestions,principalElement:principal??null,fiches,revisions:{response:Number(response.Revision||0),elements:Object.fromEntries(elements.map(e=>[codeOf(e.Element_Code)||String(e.id),Number(e.Revision||0)]))}};

@@ -2,6 +2,7 @@ import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequire
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 import {writeWorkbook} from "./xlsx-lite.js";
 import {effectiveQuestion,matrixValidationErrors,validateConfiguredQuestion} from "./validation.js";
+import {readPeriodConfiguration, periodSelectionHtml, periodLabel, periodForNewFiche, periodEditable, periodCanChangeStructure, periodMatches} from "./periodes.js";
 
 export const TABLES = [
   "VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","FILTRES_TYPES_FICHES",
@@ -9,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -34,6 +35,56 @@ function navigateToPreviousPage(vm){
 function canNavigatePrevious(vm){
   if(state.pageHistory.some(key=>vm.pages.some(p=>pageHistoryKey(p)===key)))return true;
   return state.pageIndex>0;
+}
+// Une consultation d'archive verrouillée n'est pas une saisie en cours.
+// Les archives déverrouillées restent protégées contre l'abandon de modifications.
+function closeReadonlyArchiveEditor(){
+  if(!state.ficheEditor && !state.subFicheEditor)return true;
+  const config=state.periodConfig;
+  if(!config?.enabled)return false;
+  const selected=String(state.selectedPeriod||"");
+  const readonly=selected==="__historique__" || config.periods?.some(p=>
+    String(p.Periode_Code)===selected &&
+    String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
+    !periodEditable(config,selected)
+  );
+  if(!readonly)return false;
+  state.ficheEditor=null;
+  state.subFicheEditor=null;
+  state.saveError="";
+  return true;
+}
+function returnFromReadonlyArchiveHome(){
+  if(!closeReadonlyArchiveEditor())return false;
+  state.selectedPeriod=state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"";
+  loadPrincipalForSelectedPeriod();
+  state.pageIndex=0;
+  state.pageHistory=[];
+  state.ficheListUi={};
+  state.saveError="";
+  render();
+  return true;
+}
+// La saisie générale d'une période ne doit jamais écraser celle d'une autre.
+// Un code nul correspond au mode classique ; "" désigne les réponses historiques.
+function principalPeriodScope(){
+  if(!state.periodConfig?.enabled)return null;
+  const selected=String(state.selectedPeriod||"");
+  if(selected==="__historique__")return "";
+  if(state.periodConfig.periods?.some(p=>String(p.Periode_Code)===selected))return selected;
+  return "__aucune_periode__";
+}
+function hydratedCurrentResponse(){
+  return hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code,principalPeriodScope());
+}
+function loadPrincipalForSelectedPeriod(){
+  if(!state.response||!state.definition)return;
+  const h=hydratedCurrentResponse();
+  state.principalElement=h.principalElement;
+  state.answers=h.principalAnswers;
+  state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};
+  state.principalDirty=false;
+  applyCampaignPersonalization();
 }
 function beginActionFeedback(message){state.actionFeedback=message;state.actionFeedbackKind="busy";state.actionFeedbackToken++;}
 function clearActionFeedback(){state.actionFeedback="";state.actionFeedbackKind="";state.actionFeedbackToken++;}
@@ -544,11 +595,11 @@ function renderSubFiches(parentType,parentFiche,readOnly=false){
   if(!childTypes.length)return "";
   return `<div class="subfiches subfiches-inline">${childTypes.map(type=>{
     const list=childFiches(type,parentFiche);
-    const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index),locked=readOnly||fiche.readOnlyImport;return `<article class="fiche-card subfiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong>${fiche.readOnlyImport?`<span class="import-readonly-badge">Lecture seule</span>`:""}${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked&&canAddFiche(type,list)?`<button type="button" class="btn btn-small" data-duplicate-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Dupliquer</button>`:""}${!locked&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
-    const canAdd=!readOnly&&!parentFiche.readOnlyImport&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
+    const cards=list.map((fiche,index)=>{const card=ficheCardText(type,state.definition,fiche,index),locked=readOnly||fiche.readOnlyImport||!periodEditable(state.periodConfig,fiche.periodeCode||parentFiche.periodeCode);return `<article class="fiche-card subfiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><strong class="fiche-title">${escapeHtml(card.title)}</strong>${fiche.readOnlyImport?`<span class="import-readonly-badge">Lecture seule</span>`:""}${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(i=>`<div><span class="fiche-summary-label">${escapeHtml(i.label)} :</span> ${escapeHtml(i.value)}</div>`).join("")}</div>`:""}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked&&periodCanChangeStructure(state.periodConfig,fiche.periodeCode||parentFiche.periodeCode)&&canAddFiche(type,list)?`<button type="button" class="btn btn-small" data-duplicate-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Dupliquer</button>`:""}${!locked&&periodCanChangeStructure(state.periodConfig,fiche.periodeCode||parentFiche.periodeCode)&&type.allowDelete?`<button type="button" class="btn btn-small" data-delete-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}" data-sub-index="${index}">Supprimer</button>`:""}</div></article>`}).join("");
+    const canAdd=!readOnly&&!parentFiche.readOnlyImport&&periodCanChangeStructure(state.periodConfig,parentFiche.periodeCode)&&type.allowAdd&&(type.maximum==null||list.length<type.maximum);
     const ed=state.subFicheEditor?.typeCode===type.code&&String(state.subFicheEditor.parentElementId)===String(parentFiche.elementId)?state.subFicheEditor:null;
-    const editedFiche=ed&&ed.index!=null?list[ed.index]:null,editorLocked=readOnly||Boolean(editedFiche?.readOnlyImport);
-    const editorHtml=ed?`<div class="fiche-editor subfiche-editor${editorLocked?" imported-readonly-card":""}" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${editorLocked?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers,editorLocked||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers})).join("")}${editorLocked?`<div class="import-readonly-note">Sous-fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>${editorLocked?"Fermer":"Annuler"}</button>${editorLocked?"":`<button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button>`}</div></div>`:"";
+    const editedFiche=ed&&ed.index!=null?list[ed.index]:null,editorLocked=readOnly||Boolean(editedFiche?.readOnlyImport)||(!!editedFiche&&!periodEditable(state.periodConfig,editedFiche.periodeCode||parentFiche.periodeCode));
+    const editorHtml=ed?`<div class="fiche-editor subfiche-editor${editorLocked?" imported-readonly-card":""}" data-subfiche-editor="${escapeHtml(type.code)}"><h4>${editorLocked?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:ed.index==null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h4>${visibleFicheQuestions(type,state.definition,{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers}).map(q=>renderFicheField(q,ed.answers,editorLocked||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...state.answers,...(state.ficheEditor?.answers??{}),...ed.answers})).join("")}${editorLocked?`<div class="import-readonly-note">Sous-fiche en lecture seule</div>`:`<div class="fiche-validation-summary" data-subfiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-subfiche>${editorLocked?"Fermer":"Annuler"}</button>${editorLocked?"":`<button type="button" class="btn btn-primary" data-save-subfiche>Enregistrer la sous-fiche</button>`}</div></div>`:"";
     return `<section class="repeatable subfiche-group" data-subfiche-group="${escapeHtml(type.code)}"><div class="repeatable-heading"><h4>${escapeHtml(type.labelPlural)}</h4><span>${list.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:""}</span></div>${cards||`<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>`}${canAdd&&!ed?`<button type="button" class="btn btn-primary btn-small" data-add-subfiche="${escapeHtml(type.code)}" data-parent-element="${parentFiche.elementId}">+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}</button>`:""}${editorHtml}</section>`;
   }).join("")}</div>`;
 }
@@ -640,15 +691,105 @@ function individualPrintHtml(){
   const m=individualExportModel(),pages=m.vm.pages.map(page=>{const sections=page.sections.map(sec=>{const qs=sec.questions.map(q=>exportQuestionHtml(q,state.answers)).join("");const st=first(sec,["Titre","Libelle","Libellé","Nom"],"");return (qs?`<section>${st?`<h3>${escapeHtml(st)}</h3>`:""}${qs}</section>`:"")}).join("");const fiches=(page.repeatableTypes??[]).map(type=>{const list=(state.fiches[type.code]??[]).filter(f=>!f.parentElementId);if(!list.length)return "";return `<section><h3>${escapeHtml(type.labelPlural)}</h3>${list.map((f,i)=>exportFicheHtml(type,f,i)).join("")}</section>`}).join("");if(!sections&&!fiches)return "";return `<div class="page"><h2>${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>${sections}${fiches}</div>`}).join("");
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(m.title)}</title><style>@page{size:A4;margin:15mm}*{box-sizing:border-box}body{font:11pt Arial,sans-serif;color:#222;line-height:1.35}h1{font-size:22pt;margin:0 0 4mm}h2{font-size:16pt;border-bottom:2px solid #444;padding-bottom:2mm;margin-top:9mm}h3{font-size:13pt;margin:6mm 0 3mm}h4{font-size:11.5pt;margin:0 0 3mm}.meta{background:#f3f4f6;padding:4mm;border-radius:2mm;margin:0 0 7mm}.q{break-inside:avoid;page-break-inside:avoid;margin:0 0 4mm}.ql{font-weight:700;margin-bottom:1mm;break-after:avoid;page-break-after:avoid}.qa{padding:2.5mm 3mm;background:#f7f7f7;border-left:3px solid #777;white-space:normal;break-inside:avoid;page-break-inside:avoid}.fiche{break-inside:auto;page-break-inside:auto;border:1px solid #bbb;border-radius:2mm;padding:4mm;margin:0 0 5mm}.fiche h4{break-after:avoid;page-break-after:avoid}.sub{margin:4mm 0 0 5mm;border-left:2px solid #bbb;padding-left:4mm}table{width:100%;border-collapse:collapse;margin-top:2mm;font-size:9.5pt;break-inside:auto;page-break-inside:auto}thead{display:table-header-group}tr{break-inside:avoid;page-break-inside:avoid}th,td{border:1px solid #bbb;padding:2mm;text-align:left;vertical-align:top}thead th{background:#eee}.empty{font-style:italic;color:#666}@media print{button{display:none}}</style></head><body><h1>${escapeHtml(m.title)}</h1><div class="meta">${m.campaignTitle?`<div><strong>Campagne :</strong> ${escapeHtml(m.campaignTitle)}</div>`:""}<div><strong>Réponse :</strong> ${escapeHtml(m.responseCode)}</div><div><strong>Statut :</strong> ${escapeHtml(m.status)}</div>${m.validated?`<div><strong>Validation :</strong> ${escapeHtml(exportDate(m.validated))}</div>`:""}${m.modified?`<div><strong>Dernière modification :</strong> ${escapeHtml(exportDate(m.modified))}</div>`:""}</div>${pages}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),150));<\/script></body></html>`;
 }
-function exportMyPdf(){try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
+function exportMyPdf(){
+  if(state.periodConfig?.enabled){
+    const selected=String(state.selectedPeriod||"");
+    if(!(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected)){
+      alert("Sélectionnez une période ouverte pour télécharger ses réponses.");return;
+    }
+    exportPeriodPdf(selected);return;
+  }
+  try{const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");w.document.open();w.document.write(individualPrintHtml());w.document.close();}catch(e){alert(`Export PDF impossible : ${e?.message||e}`)}}
 function individualWorkbook(){
   const m=individualExportModel(),main=[["Questionnaire",m.title],["Campagne",m.campaignTitle],["Réponse",m.responseCode],["Statut",m.status],["Création",exportDate(m.created)],["Dernière modification",exportDate(m.modified)],["Validation",exportDate(m.validated)],[],["Page","Section","Question","Réponse"]],fiches=[["Type","N°","Parent","Question","Réponse"]],matrices=[["Contexte","Matrice","Ligne","Colonne","Valeur"]];
   for(const page of m.vm.pages)for(const sec of page.sections)for(const q of sec.questions){if(isDisplayBlock(q)||isDataTableQuestion(q))continue;const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,state.answers);mx.body.forEach(r=>r.slice(1).forEach((v,i)=>{if(exportHasValue(v))matrices.push(["Principal",first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[i+1],v])}));}else if(exportHasValue(state.answers[qc]))main.push([first(page,["Titre","Libelle","Libellé","Nom"],""),first(sec,["Titre","Libelle","Libellé","Nom"],""),first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,state.answers[qc],state.answers)]);}
   const roots=m.vm.pages.flatMap(p=>p.repeatableTypes??[]);const walk=(type,parent="")=>{const list=(state.fiches[type.code]??[]).filter(f=>parent?String(f.parentElementId)===String(parent.elementId):!f.parentElementId);list.forEach((f,i)=>{const combined={...state.answers,...f.answers};for(const q of visibleFicheQuestions(type,state.definition,combined)){const qc=codeOf(q.Question_Code);if(matrixKind(q)){const mx=exportMatrixModel(q,f.answers);mx.body.forEach(r=>r.slice(1).forEach((v,j)=>{if(exportHasValue(v))matrices.push([`${type.labelSingular} ${i+1}`,first(q,["Libelle","Libellé","Titre"],qc),r[0],mx.headers[j+1],v])}));}else if(exportHasValue(f.answers?.[qc]))fiches.push([type.labelSingular,i+1,parent?codeOf(parent.elementId):"",first(q,["Libelle","Libellé","Titre"],qc),exportAnswerLabel(q,f.answers[qc],f.answers)]);}for(const child of type.children??[])walk(child,f);});};roots.forEach(t=>walk(t));return [{name:"REPONSE",rows:main},{name:"FICHES",rows:fiches},{name:"MATRICES",rows:matrices}];
 }
 function downloadExportBlob(blob,name){const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000);}
-function exportMyExcel(){try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
-function respondentExportButtons(){return !state.previewMode&&state.response?`<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`:"";}
+function exportMyExcel(){
+  if(state.periodConfig?.enabled){
+    const selected=String(state.selectedPeriod||"");
+    if(!(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected)){
+      alert("Sélectionnez une période ouverte pour télécharger ses réponses.");return;
+    }
+    exportPeriodExcel(selected);return;
+  }
+  try{const m=individualExportModel(),safe=String(m.responseCode||"reponse").replace(/[^a-z0-9_-]+/gi,"_");downloadExportBlob(writeWorkbook(individualWorkbook()),`Mes_reponses_${safe}.xlsx`);}catch(e){alert(`Export Excel impossible : ${e?.message||e}`)}}
+// Exports du répondant, limités à ses propres éléments déjà chargés et regroupés par période.
+// Aucun changement de la période affichée ni écriture dans Grist pendant un export.
+function periodExportScopes(){
+  const pc=state.periodConfig;
+  const list=(pc?.periods||[]).map(p=>({code:String(p.Periode_Code),label:String(p.Libelle||p.Periode_Code)}));
+  const hasHistorical=Object.values(state.fiches||{}).some(arr=>arr.some(f=>!f.periodeCode)) ||
+    state.definition.responseElements.some(e=>String(e.Reponse_Code)===String(state.response?.id) && String(e.Type_element||"").toLowerCase()==="principal" && !String(e.Periode_Code||""));
+  if(hasHistorical)list.push({code:"__historique__",label:"Sans période (historique)"});
+  return list;
+}
+function withPeriodExportScope(code,build){
+  const originalAnswers=state.answers, originalFiches=state.fiches;
+  try{
+    const rows={REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections};
+    const selected=code==="__historique__"?null:code;
+    const h=hydrateResponse(rows,state.definition,state.response.Reponse_Code,selected);
+    state.answers=h.principalAnswers||{};
+    state.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([type,list])=>[type,list.filter(f=>selected===null?!f.periodeCode:String(f.periodeCode||"")===String(selected))]));
+    return build();
+  }finally{state.answers=originalAnswers;state.fiches=originalFiches;}
+}
+function periodExportLabel(code){return periodExportScopes().find(p=>p.code===code)?.label||code;}
+function safeExportPart(value){return String(value).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9_-]+/gi,"_").slice(0,60);}
+function buildPeriodExcel(scope){
+  const grouped=scope.map(p=>({label:p.label,sheets:withPeriodExportScope(p.code,individualWorkbook)}));
+  const output=[{name:"PERIODES",rows:[["Période","Code"],...scope.map(p=>[p.label,p.code])]}];
+  for(let i=0;i<3;i++){
+    const name=["REPONSES","FICHES","MATRICES"][i],rows=[["Période",...(i===0?["Page","Section","Question","Réponse"]:i===1?["Type","N°","Parent","Question","Réponse"]:["Contexte","Matrice","Ligne","Colonne","Valeur"])]];
+    for(const p of grouped){const content=p.sheets[i]?.rows||[];
+      // Le premier onglet comporte des métadonnées puis un tableau (Page, Section, Question, Réponse).
+      const start=i===0?content.findIndex(r=>r[0]==="Page"&&r[1]==="Section")+1:1;
+      for(const r of content.slice(start)){if(r.length && r.some(v=>v!==""&&v!=null))rows.push([p.label,...r]);}
+    }
+    output.push({name,rows});
+  }
+  return output;
+}
+function exportPeriodExcel(code=null){
+  try{
+    if(!state.response)throw new Error("Aucune réponse à exporter.");
+    const scopes=code?periodExportScopes().filter(p=>p.code===code):periodExportScopes();
+    if(!scopes.length)throw new Error("Aucune période à exporter.");
+    if(code&&!scopes.length)throw new Error("Période introuvable.");
+    downloadExportBlob(writeWorkbook(buildPeriodExcel(scopes)),`Mes_reponses_${safeExportPart(code?periodExportLabel(code):"toutes_periodes")}.xlsx`);
+  }catch(e){alert(`Export Excel impossible : ${e?.message||e}`);}
+}
+function exportPeriodPdf(code=null){
+  try{
+    if(!state.response)throw new Error("Aucune réponse à exporter.");
+    const scopes=code?periodExportScopes().filter(p=>p.code===code):periodExportScopes();
+    if(!scopes.length)throw new Error("Aucune période à exporter.");
+    const parts=scopes.map(p=>{
+      const html=withPeriodExportScope(p.code,individualPrintHtml);
+      const contents=html.match(/<body>([\s\S]*?)<script>/)?.[1];
+      if(!contents)throw new Error("Impossible de générer la page PDF.");
+      return `<section style="break-before:page;page-break-before:always"><h2>Période : ${escapeHtml(p.label)}</h2>${contents}</section>`;
+    });
+    const template=withPeriodExportScope(scopes[0].code,individualPrintHtml);
+    const full=template.replace(/<body>[\s\S]*?<script>/,`<body>${parts.join("")}<script>`);
+    const w=window.open("","_blank");if(!w)throw new Error("Le navigateur a bloqué l’ouverture de la vue PDF.");
+    w.document.open();w.document.write(full);w.document.close();
+  }catch(e){alert(`Export PDF impossible : ${e?.message||e}`);}
+}
+function respondentExportButtons(){
+  if(state.previewMode||!state.response)return "";
+  if(state.periodConfig?.enabled){
+    // L'export général appartient aux questionnaires classiques. Pour un questionnaire
+    // permanent, la barre supérieure concerne seulement la période ouverte choisie.
+    const selected=String(state.selectedPeriod||"");
+    const openPeriod=(state.periodConfig.selectable||[]).some(p=>String(p.Periode_Code)===selected);
+    if(!openPeriod)return ""; // Archives et absence de période : exports dédiés uniquement.
+    return `<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger les réponses de la période en cours (PDF)</button><button type="button" class="btn btn-small" data-export-my-excel>Télécharger la période en cours (Excel)</button>`;
+  }
+  return `<button type="button" class="btn btn-small" data-export-my-pdf>Télécharger mes réponses en PDF</button><button type="button" class="btn btn-small" data-export-my-excel>Excel</button>`;
+}
 
 export function responseCompleteness(definition,viewModel,answers={},fiches={},response=null) {
   if (String(response?.Statut ?? "").toLowerCase() === "validé") return {state:"validated",label:"Validé",ready:true};
@@ -713,7 +854,20 @@ function indicatorLegacyStats(q){return String(q?.Indicateurs_Stats||"count,perc
 function indicatorSourceConfig(q,token,kind){const c=indicatorConfig(q)[token];if(c&&Array.isArray(c.stats))return {stats:new Set(c.stats.map(String)),chart:String(c.chart||"none").toLowerCase(),display:String(c.display||"both").toLowerCase(),groupBy:String(c.groupBy||"")};const legacy=new Set(indicatorLegacyStats(q));return {stats:kind==="f"?new Set(["total"]):legacy,chart:String(q?.Indicateurs_Graphique||"none").toLowerCase(),display:"both",groupBy:""}}
 function indicatorResponses(){const all=(state.definition?.responses||[]).filter(r=>!isTrue(r.Supprime_logiquement));let campaign=null;try{campaign=selectedCampaign()}catch{}if(!campaign)return [];return all.filter(r=>{const raw=codeOf(r.Campagne_Code);return String(raw)===String(campaign.id)||String(raw)===String(codeOf(campaign.Campagne_Code))})}
 function indicatorHasCampaign(){try{return !!selectedCampaign()}catch{return false}}
-function indicatorHydratedResponses(){const tables={REPONSES:state.definition?.responses||[],ELEMENTS_REPONSE:state.definition?.responseElements||[],VALEURS_REPONSE:state.definition?.responseValues||[],SELECTIONS_REPONSE:state.definition?.responseSelections||[]};const out=[];for(const r of indicatorResponses()){try{out.push(hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id)))}catch{}}return out}
+function indicatorHydratedResponses(){
+  const tables={REPONSES:state.definition?.responses||[],ELEMENTS_REPONSE:state.definition?.responseElements||[],VALEURS_REPONSE:state.definition?.responseValues||[],SELECTIONS_REPONSE:state.definition?.responseSelections||[]};
+  const out=[],scope=principalPeriodScope();
+  for(const r of indicatorResponses()){
+    try{
+      const h=hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id),scope);
+      if(state.periodConfig?.enabled){
+        h.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([key,list])=>[key,list.filter(f=>periodMatches(state.periodConfig,state.selectedPeriod,f))]));
+      }
+      out.push(h);
+    }catch(e){console.warn("Indicateurs : réponse ignorée",e);}
+  }
+  return out;
+}
 function questionChoiceLabels(q){
   const out=new Map(),def=state.definition||{},qc=String(codeOf(q?.Question_Code)||"");
   for(const c of def.choices||[]){
@@ -1053,8 +1207,14 @@ export function canAddFiche(type,list=[]) {
   if (!type.allowAdd) return false;
   return type.maximum==null || list.length<type.maximum;
 }
+function fichesForCurrentPeriod(fiches=state.fiches){
+  if(!state.periodConfig?.enabled)return fiches;
+  return Object.fromEntries(Object.entries(fiches).map(([code,list])=>[code,(list??[]).filter(f=>periodMatches(state.periodConfig,state.selectedPeriod,f))]));
+}
+
 export function validateFicheCounts(types=[],fiches={},def=state.definition,answers=state.answers) {
   const errors={};
+  fiches=fichesForCurrentPeriod(fiches);
   for (const type of types) {
     if(!ficheTypeVisible(type,def,answers))continue;
     const count=(fiches[type.code] ?? []).length;
@@ -1068,23 +1228,28 @@ export function validateFicheCounts(types=[],fiches={},def=state.definition,answ
 
 export function renderRepeatableType(type,targetState,def,readOnly=false) {
   const list=targetState.fiches[type.code] ?? [];
+  const periods=targetState.periodConfig; // Affichage par période ; les indices restent ceux des listes complètes.
+
   const editor=targetState.ficheEditor?.typeCode===type.code ? targetState.ficheEditor : null;
-  const atMax=!canAddFiche(type,list);
+  const atMax=false; // Le maximum est calculé ci-dessous pour la période sélectionnée.
   const ui=targetState.ficheListUi?.[type.code] ?? {query:"",sort:"recent"};
-  const visibleRows=filterAndSortFiches(list,ui);
+  const visibleRows=filterAndSortFiches(list,ui).filter(({fiche})=>periodMatches(periods,targetState.selectedPeriod,fiche));
+  const shownList=list.filter(f=>periodMatches(periods,targetState.selectedPeriod,f));
+  // Le maximum est compté sur la période affichée, pas sur les archives.
+  const periodAtMax=type.maximum!=null && shownList.length>=type.maximum;
   const hasActiveFilters=Object.values(ui.filters ?? {}).some(v=>v!=="" && v!=null);
   const showTools=list.length>=type.filterThreshold || Boolean(ui.query) || hasActiveFilters;
   const filters=ficheFilterTools(type,ui,def,list);
   const tools=showTools ? `<div class="fiche-list-tools"><label class="fiche-search"><span class="sr-only">Rechercher dans les ${escapeHtml(type.labelPlural.toLowerCase())}</span><input type="search" placeholder="Rechercher…" value="${escapeHtml(ui.query ?? "")}" data-fiche-search="${escapeHtml(type.code)}"></label>${filters}<label class="fiche-sort"><span>Trier</span><select data-fiche-sort="${escapeHtml(type.code)}"><option value="recent"${ui.sort!=="oldest"?" selected":""}>Plus récentes</option><option value="oldest"${ui.sort==="oldest"?" selected":""}>Plus anciennes</option></select></label>${(ui.query||hasActiveFilters)?`<button type="button" class="btn btn-small fiche-reset" data-fiche-reset="${escapeHtml(type.code)}">Réinitialiser</button>`:""}</div>` : "";
-  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{},targetState.fiches),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport;return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> <span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${fiche.readOnlyImport?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && canAddFiche(type,list)?`<button type="button" class="btn btn-small" data-duplicate-fiche="${escapeHtml(type.code)}" data-index="${index}">Dupliquer</button>`:""}${!locked && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
-  const empty=list.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
-  const editedFiche=editor&&editor.index!==null?list[editor.index]:null,editorReadOnly=readOnly||Boolean(editedFiche?.readOnlyImport);
-  const editorHtml=editor ? `<div class="fiche-editor${editorReadOnly?" imported-readonly-card":""}" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editorReadOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers,editorReadOnly||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...(targetState.answers??{}),...editor.answers})).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],editorReadOnly) : pendingSubFiches(type)}${editorReadOnly?`<div class="import-readonly-note">Fiche préremplie en lecture seule</div>`:`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${editorReadOnly?"Fermer":"Annuler"}</button>${editorReadOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
+  const cards=visibleRows.map(({fiche,index})=>{const completeness=ficheCompleteness(type,def,fiche,targetState.answers??{},targetState.fiches),card=ficheCardText(type,def,fiche,index),locked=readOnly||fiche.readOnlyImport||!periodEditable(periods,fiche.periodeCode);const periodBadge=periods?.enabled?`<span class="fiche-period-badge">${escapeHtml(periodLabel(periods,fiche.periodeCode))}</span>`:"";return `<article class="fiche-card${fiche.readOnlyImport?" imported-readonly-card":""}"><div class="fiche-card-main"><div class="fiche-title-row"><strong class="fiche-title">${escapeHtml(card.title)}</strong> ${periodBadge}<span class="fiche-status fiche-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>${locked?` <span class="import-readonly-badge">Lecture seule</span>`:""}</div><div class="fiche-identifier">${escapeHtml(card.identifier)}</div>${card.summaries.length?`<div class="fiche-summary">${card.summaries.map(item=>`<div class="fiche-summary-item"><span class="fiche-summary-label">${escapeHtml(item.label)} :</span> ${escapeHtml(item.value)}</div>`).join("")}</div>`:""}${subFicheOverview(type,fiche)}</div><div class="fiche-actions"><button type="button" class="btn btn-small" data-edit-fiche="${escapeHtml(type.code)}" data-index="${index}">${locked?"Consulter":"Modifier"}</button>${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && canAddFiche(type,shownList)?`<button type="button" class="btn btn-small" data-duplicate-fiche="${escapeHtml(type.code)}" data-index="${index}">Dupliquer</button>`:""}${!locked && periodCanChangeStructure(periods,fiche.periodeCode) && type.allowDelete?`<button type="button" class="btn btn-small" data-delete-fiche="${escapeHtml(type.code)}" data-index="${index}">Supprimer</button>`:""}</div></article>`;}).join("");
+  const empty=shownList.length===0 ? `<p class="empty-fiches">${escapeHtml(type.emptyMessage||`Aucun ${type.labelSingular.toLowerCase()} saisi.`)}</p>` : visibleRows.length===0 ? `<p class="empty-fiches">Aucune fiche ne correspond aux critères.</p>` : "";
+  const editedFiche=editor&&editor.index!==null?list[editor.index]:null,editorReadOnly=readOnly||Boolean(editedFiche?.readOnlyImport)||(!!editedFiche&&!periodEditable(periods,editedFiche.periodeCode));
+  const editorHtml=editor ? `<div class="fiche-editor${editorReadOnly?" imported-readonly-card":""}" data-fiche-editor="${escapeHtml(type.code)}"><h3>${editorReadOnly?`Consulter ${escapeHtml(type.labelSingular.toLowerCase())}`:editor.index===null?`Ajouter ${escapeHtml(type.labelSingular.toLowerCase())}`:`Modifier ${escapeHtml(type.labelSingular.toLowerCase())}`}</h3>${visibleFicheQuestions(type,def,{...(targetState.answers??{}),...editor.answers}).map(q=>renderFicheField(q,editor.answers,editorReadOnly||isTrue(editedFiche?.readOnlyQuestions?.[codeOf(q.Question_Code)]),{...(targetState.answers??{}),...editor.answers})).join("")}${editor.index!==null && list[editor.index]?.elementId ? renderSubFiches(type,list[editor.index],editorReadOnly) : pendingSubFiches(type)}${editorReadOnly?`<div class="import-readonly-note">Fiche en lecture seule</div>`:`<div class="fiche-validation-summary" data-fiche-validation-summary role="alert" hidden></div>`}<div class="fiche-editor-actions"><button type="button" class="btn" data-cancel-fiche>${editorReadOnly?"Fermer":"Annuler"}</button>${editorReadOnly?"":`<button type="button" class="btn btn-primary" data-save-fiche>Enregistrer la fiche</button>`}</div></div>`:"";
   const addLabel=`+ Ajouter un ${escapeHtml(type.labelSingular.toLowerCase())}`;
-  const canShowAdd=!readOnly && !editor && type.allowAdd;
+  const canShowAdd=!readOnly && !editor && type.allowAdd && !periodAtMax && periodCanChangeStructure(periods,targetState.selectedPeriod);
   const addButton=canShowAdd?`<button type="button" class="btn btn-primary add-fiche" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-normal="${escapeHtml(type.code)}"${atMax?" disabled":""}>${addLabel}</button>`:"";
-  const floatingAdd=canShowAdd && list.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-floating="${escapeHtml(type.code)}" aria-label="${addLabel}">+ Ajouter</button>` : "";
-  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${list.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:` ${list.length>1?"fiches":"fiche"}`}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
+  const floatingAdd=canShowAdd && shownList.length>=5 && !atMax ? `<button type="button" class="btn btn-primary add-fiche-floating" data-add-fiche="${escapeHtml(type.code)}" data-add-fiche-floating="${escapeHtml(type.code)}" aria-label="${addLabel}">+ Ajouter</button>` : "";
+  return `<section class="repeatable" data-fiche-type="${escapeHtml(type.code)}"><div class="repeatable-heading"><h3>${escapeHtml(type.labelPlural)}</h3><span>${shownList.length}${type.counterLabel?` ${escapeHtml(type.counterLabel)}`:` ${shownList.length>1?"fiches":"fiche"}`}</span></div>${tools}${cards}${empty}<div class="fiche-count-error" data-fiche-count-error="${escapeHtml(type.code)}"></div>${canShowAdd?`<div class="fiche-add-bottom">${addButton}</div>`:""}${editorHtml}${floatingAdd}</section>`;
 }
 
 function scrollToEditor(selector){
@@ -1128,6 +1293,8 @@ function render() {
   }
   if (state.pageIndex>=vm.pages.length) state.pageIndex=vm.pages.length-1;
   const page=vm.pages[state.pageIndex];
+  const archiveOverview=Boolean(state.periodConfig?.enabled && state.selectedPeriod==="__archives__");
+  const archiveSpace=Boolean(state.periodConfig?.enabled && (archiveOverview || state.selectedPeriod==="__historique__" || state.periodConfig?.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) && String(p.Statut||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee")));
   const title=first(vm.version,["Titre","Titre_affiche","Nom"],"Questionnaire");
   const intro=first(vm.version,["Introduction","Texte_introduction"],"");
   const logo=first(vm.version,["Logo_Data","Logo_URL","Logo","Url_logo"],"");
@@ -1177,8 +1344,8 @@ function render() {
   };
   const sectionCompletion=section=>isTrue(section?.Afficher_badge_completion)?confirmationCompletion(section,sectionCompletionCore(section),section.questions??[]):null;
   const repeatableCompletion=type=>{
-    const list=state.fiches[type.code]??[];
-    const errors=validateWholeResponse(state.definition,{pages:[{sections:[],repeatableTypes:[type]}]},state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
+    const list=(fichesForCurrentPeriod()[type.code]??[]);
+    const errors=validateWholeResponse(state.definition,{pages:[{sections:[],repeatableTypes:[type]}]},state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
     if(Object.keys(errors.fiches).length)return {state:"pending",label:"En attente",hasRequired:true};
     const hasRequired=ficheTypeVisible(type,state.definition,state.answers)&&(type.minimum>0||list.some(f=>(type.children??[]).some(child=>child.minimum>0&&ficheTypeVisible(child,state.definition,{...state.answers,...(f.answers??{})}))));
     return list.length||hasRequired?{state:"complete",label:"Complété",hasRequired}:{state:"pending",label:"En attente",hasRequired:false};
@@ -1204,18 +1371,19 @@ function render() {
     <div class="respondent-toolbar"><div class="respondent-toolbar-status">${state.previewMode?'<span class="response-status">Aperçu</span>':`<span class="response-status response-status-${escapeHtml(completeness.state)}">${escapeHtml(completeness.label)}</span>`}</div><div class="respondent-toolbar-actions">${respondentExportButtons()}${showResumeCopy?`<button type="button" class="btn btn-small" data-copy-resume>Copier mon lien de reprise</button>`:""}${showManualSave?`<button type="button" class="btn btn-primary btn-small" data-save-quit${(state.ficheEditor||state.subFicheEditor)?' disabled title="Enregistrez d’abord la fiche en cours"':''}>Enregistrer</button>${(state.ficheEditor||state.subFicheEditor)?`<span class="help">Enregistrez d’abord la fiche en cours.</span>`:""}`:""}</div></div>
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
-    ${tocHtml}
-    ${showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
-    <h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>
-    ${page.sections.map(s=>{
+    ${periodSelectionHtml(state.periodConfig,state.selectedPeriod,state.fiches,vm.pages)}
+    ${archiveSpace?"":tocHtml}
+    ${!archiveSpace&&showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
+    ${archiveOverview?"":`<h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>`}
+    ${(archiveOverview?[]:page.sections).map(s=>{
       const sectionTitle=first(s,["Titre","Libelle","Libellé","Nom"],"");
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${richTextHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${richTextHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return `<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
-    ${(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
+    ${archiveOverview?`<div class="period-archive-placeholder">Sélectionnez une période dans la liste des archives ci-dessus pour afficher ses fiches.</div>`:(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
     ${footer?`<footer class="questionnaire-footer">${escapeHtml(footer)}</footer>`:""}
     ${!locked?`<div class="fiche-validation-summary" data-page-validation-summary role="alert" hidden></div>`:""}
     ${vm.diagnostics.length?`<div class="diagnostic">Diagnostic : ${vm.diagnostics.map(escapeHtml).join(" · ")}</div>`:""}
@@ -1239,7 +1407,58 @@ function render() {
   nav.innerHTML=locked
     ? `<div class="readonly-nav">${state.validationJustCompleted?`<div class="status-info" role="status">✓ ${richTextHtml(finalValidationMessage(vm.version))}</div>`:""}<div class="status-info">Cette réponse est validée et n’est plus modifiable.</div><div class="respondent-export-actions">${respondentExportButtons()}</div><div>${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>Suivant</button>`:""}</div></div>`
     : `${showPrevButton?`<button class="btn" id="prev"${prevDisabled?" disabled":""}>Précédent</button>`:""}${showNextButton?`<button class="btn btn-primary" id="next"${nextDisabled?" disabled":""}>${escapeHtml(nextButtonLabel)}</button>`:""}`;
+  if(locked || (archiveSpace && !archiveOverview && !periodEditable(state.periodConfig,state.selectedPeriod))){
+    // Verrouiller la saisie, pas les boutons de consultation/navigation.
+    root.querySelectorAll("[data-question],[data-matrix-question],[data-clear-question]").forEach(el=>{el.disabled=true;});
+  }
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
+  root.querySelector("[data-period-select]")?.addEventListener("change",e=>{
+    if(state.ficheEditor||state.subFicheEditor||state.principalDirty){e.target.value=state.selectedPeriod;if(state.principalDirty)showSaveError(new Error("Enregistrez les questions générales avant de changer de période."));return;}
+    state.selectedPeriod=e.target.value;loadPrincipalForSelectedPeriod();render();
+  });
+  // Une fiche archivée consultée en lecture seule ne doit pas bloquer la navigation.
+  // Une fiche réellement modifiable conserve la protection contre l'abandon de saisie.
+  const canLeavePeriodView=()=>closeReadonlyArchiveEditor();
+  const changePeriodView=(next,{home=false}={})=>{
+    if(!canLeavePeriodView())return;
+    if(state.principalDirty){showSaveError(new Error("Enregistrez les questions générales avant de quitter cette période."));render();return;}
+    state.saveError="";
+    state.selectedPeriod=next;
+    loadPrincipalForSelectedPeriod();
+    state.ficheListUi={};
+    // Les cartes d'archives sont sur l'accueil ; les fiches peuvent être sur une autre page.
+    if(next==="__archives__" || home){state.pageIndex=0;state.pageHistory=[];}
+    else if(next==="__historique__" || state.periodConfig?.periods?.some(p=>String(p.Periode_Code)===String(next))){
+      const firstFichePage=vm.pages.findIndex(p=>(p.repeatableTypes??[]).some(type=>(state.fiches[type.code]||[]).some(f=>!f.parentElementId&&periodMatches(state.periodConfig,next,f))));
+      if(firstFichePage>=0){
+        state.pageIndex=firstFichePage;
+        state.pageHistory=[];
+      }
+    }
+    render();
+  };
+  root.querySelectorAll("[data-period-space]").forEach(el=>el.addEventListener("click",()=>{
+    const isArchive=el.dataset.periodSpace==="archives";
+    changePeriodView(isArchive?"__archives__":(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||""),{home:!isArchive});
+  }));
+  root.querySelectorAll("[data-period-export]").forEach(el=>el.addEventListener("click",()=>{
+    if(state.ficheEditor||state.subFicheEditor||state.principalDirty){showSaveError(new Error("Enregistrez ou annulez les modifications avant de télécharger les réponses."));return;}
+    const kind=el.dataset.periodExport,scope=el.dataset.exportPeriod||null;
+    if(kind==="excel"||kind==="all-excel")exportPeriodExcel(scope);
+    else exportPeriodPdf(scope);
+  }));
+  root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
+  root.querySelectorAll("[data-archive-page]").forEach(el=>el.addEventListener("click",()=>{
+    if(!closeReadonlyArchiveEditor())return;
+    const target=Number(el.dataset.archivePage);
+    if(!Number.isInteger(target)||target<0||target>=vm.pages.length)return;
+    state.pageIndex=target;state.pageHistory=[];state.ficheListUi={};render();
+  }));
+  root.querySelector("[data-archive-back]")?.addEventListener("click",()=>changePeriodView("__archives__"));
+  root.querySelector("[data-archive-home]")?.addEventListener("click",()=>{
+    if(!closeReadonlyArchiveEditor())return;
+    changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true});
+  });
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
@@ -1259,6 +1478,12 @@ function render() {
     const targetSection=e.currentTarget.dataset.tocSection||"";const targetIndicator=e.currentTarget.dataset.tocIndicator||"";
     if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
     if(targetPage!==state.pageIndex){
+      if(state.periodConfig?.enabled && state.selectedPeriod && closeReadonlyArchiveEditor() &&
+        (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) &&
+          String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
+        if(targetPage===0){returnFromReadonlyArchiveHome();return;}
+        navigateToPage(vm,targetPage);render();return;
+      }
       if(!locked && !state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement et chargement de la page…":"Chargement de la page…");render();if(!(await savePrincipal())){clearActionFeedback();render();return;}}
       navigateToPage(vm,targetPage);clearActionFeedback();render();
     }
@@ -1276,8 +1501,8 @@ function render() {
   root.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
   root.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   root.querySelectorAll("[data-save-quit]").forEach(el=>el.addEventListener("click",()=>saveAndQuit()));
-  root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addFiche;createDraftFiche(state,typeCode);render();scrollToEditor(`[data-fiche-editor="${CSS.escape(typeCode)}"]`)}));
-  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addSubfiche;state.subFicheEditor={typeCode,index:null,parentElementId:parentElementIdFromDataset(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor(`[data-subfiche-editor="${CSS.escape(typeCode)}"]`)}));
+  root.querySelectorAll("[data-add-fiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addFiche;if(!periodCanChangeStructure(state.periodConfig,state.selectedPeriod))return;createDraftFiche(state,typeCode);render();scrollToEditor(`[data-fiche-editor="${CSS.escape(typeCode)}"]`)}));
+  root.querySelectorAll("[data-add-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.addSubfiche,parentId=parentElementIdFromDataset(e.currentTarget.dataset.parentElement);if(!periodCanChangeStructure(state.periodConfig,state.definition.responseElements.find(x=>String(x.id)===String(parentId))?.Periode_Code))return;state.subFicheEditor={typeCode,index:null,parentElementId:parentElementIdFromDataset(e.currentTarget.dataset.parentElement),answers:{}};render();scrollToEditor(`[data-subfiche-editor="${CSS.escape(typeCode)}"]`)}));
   root.querySelectorAll("[data-edit-subfiche]").forEach(el=>el.addEventListener("click",e=>{const typeCode=e.currentTarget.dataset.editSubfiche,parentElementId=parentElementIdFromDataset(e.currentTarget.dataset.parentElement),index=Number(e.currentTarget.dataset.subIndex),list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));state.subFicheEditor={typeCode,index,parentElementId,answers:{...(list[index]?.answers??{})}};render();scrollToEditor("[data-subfiche-editor]")}));
   root.querySelectorAll("[data-duplicate-subfiche]").forEach(el=>el.addEventListener("click",e=>duplicateRespondentFiche(e.currentTarget.dataset.duplicateSubfiche,Number(e.currentTarget.dataset.subIndex),parentElementIdFromDataset(e.currentTarget.dataset.parentElement))));
   root.querySelectorAll("[data-delete-subfiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentSubFiche(e.currentTarget.dataset.deleteSubfiche,parentElementIdFromDataset(e.currentTarget.dataset.parentElement),Number(e.currentTarget.dataset.subIndex))));
@@ -1322,6 +1547,12 @@ function render() {
   nav.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
   nav.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   document.querySelector("#prev")?.addEventListener("click",async()=>{
+    if(state.periodConfig?.enabled && (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) && String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
+      if(!closeReadonlyArchiveEditor())return;
+      navigateToPreviousPage(vm);
+      if(state.pageIndex===0){returnFromReadonlyArchiveHome();return;}
+      render();return;
+    }
     if(locked||state.previewMode){navigateToPreviousPage(vm);render();return;}
     beginActionFeedback(state.principalDirty?"Enregistrement et retour à la page précédente…":"Retour à la page précédente…");render();
     if(await savePrincipal()){navigateToPreviousPage(vm);clearActionFeedback();render();}
@@ -1611,7 +1842,10 @@ async function finalizeFromToc(vm) {
   state.statusMessage="";
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de valider le questionnaire."));return;}
   if(!state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement avant validation…":"Préparation de la validation…");render();if(!await savePrincipal()){clearActionFeedback();render();return;}}
-  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
+  if(globalValidationForbidden()){
+    clearActionFeedback();state.statusMessage="Les fiches périodisées sont enregistrées individuellement. La validation globale reste désactivée pour préserver les archives et les périodes suivantes.";render();return;
+  }
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){state.saveError="";state.statusMessage="Aperçu : le questionnaire peut être validé — aucune réponse n’a été enregistrée.";render();return;}
   try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
@@ -1620,6 +1854,24 @@ async function finalizeFromToc(vm) {
 
 async function nextPage(vm,page) {
   state.statusMessage="";
+  // En lecture seule, « Accueil » doit fonctionner même si la fiche est affichée.
+  // Les archives ouvertes à la modification conservent le contrôle habituel.
+  if(state.periodConfig?.enabled && state.selectedPeriod &&
+    (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>
+      String(p.Periode_Code)===String(state.selectedPeriod) &&
+      String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
+      !periodEditable(state.periodConfig,state.selectedPeriod)))){
+    if(!closeReadonlyArchiveEditor())return;
+    const navMode=String(page.Navigation_apres||"").trim();
+    const targetRaw=codeOf(page.Page_cible_Code);
+    const targetIndex=navMode==="retour_page"?vm.pages.findIndex(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw)):-1;
+    if(targetIndex===0 || (navMode!=="retour_page" && state.pageIndex===vm.pages.length-1)){
+      returnFromReadonlyArchiveHome();return;
+    }
+    if(targetIndex>0){navigateToPage(vm,targetIndex);render();return;}
+    if(state.pageIndex<vm.pages.length-1){navigateToPage(vm,state.pageIndex+1);render();return;}
+    returnFromReadonlyArchiveHome();return;
+  }
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de continuer."));return;}
   const errors=validateVisiblePage(page,state.answers);
   const ficheErrors=validateFicheCounts(page.repeatableTypes ?? [],state.fiches,state.definition,state.answers);
@@ -1657,7 +1909,10 @@ async function nextPage(vm,page) {
   }
   const mustFinalize=navMode==="validation_finale" || state.pageIndex>=vm.pages.length-1;
   if(!mustFinalize){navigateToPage(vm,state.pageIndex+1);clearActionFeedback();render();return;}
-  const allErrors=validateWholeResponse(state.definition,vm,state.answers,state.fiches,validateQuestion,visibleFicheQuestions,ficheTypeVisible);
+  if(globalValidationForbidden()){
+    clearActionFeedback();state.statusMessage="Les fiches périodisées restent enregistrées individuellement : la validation globale est désactivée pour protéger les archives.";render();return;
+  }
+  const allErrors=validateWholeResponse(state.definition,vm,state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
   if(state.previewMode){clearActionFeedback();state.saveError="";state.statusMessage="Fin de l’aperçu — aucune réponse n’a été enregistrée.";render();return;}
   try { beginActionFeedback("Validation du questionnaire…");state.saving=true; render(); await finalizeResponse(); state.saving=false; clearActionFeedback();state.saveError=""; state.validationJustCompleted=true; state.statusMessage=finalValidationMessage(state.definition?.version); render(); showValidationFeedback(); }
@@ -1764,7 +2019,7 @@ async function refreshPersistenceRows(){for(const [key,table] of [["responses","
 function creationAclKey(){return selectedCampaign().Jeton_acces ?? "";}
 function selectedCampaign(){const cs=state.definition.campaigns??[]; /* The URL access token is authoritative for personalized links; ACL still controls which rows are readable. */ const access=requestedParam("Acces_");let c=null;if(access)c=cs.find(x=>String(x.Jeton_acces??"").trim()===access)||null;const requested=requestedParam("Campagne_");if(!c&&requested)c=cs.find(x=>String(x.id)===requested||String(codeOf(x.Campagne_Code))===requested)||null;const candidate=state.selectedRecord?.Campagne_Code;if(!c&&candidate!=null){const raw=codeOf(candidate);c=cs.find(x=>String(x.id)===raw||codeOf(x.Campagne_Code)===raw)||null;}if(!c&&cs.length===1)c=cs[0];if(!c)throw new Error("Impossible d’identifier la campagne de réponse. Sélectionnez une campagne unique pour ce questionnaire.");const gate=campaignAccessState(c);if(!gate.allowed&&!state.previewMode)throw new Error(gate.message);return c;}
 async function ensureResponse(){
-  if(state.response&&state.principalElement)return;
+  if(state.response&&state.principalElement && (principalPeriodScope()===null || String(state.principalElement.Periode_Code??"")===principalPeriodScope()))return;
   const campaign=selectedCampaign(), vc=state.definition.version.id;
   /* Re-read persistence immediately before creation. With a personalized access link,
      the access token is the collective response key: reuse an existing readable
@@ -1783,9 +2038,14 @@ async function ensureResponse(){
     if(state.response && isUniqueLinkCampaign(campaign))setPendingUniqueResumeToken("");
   }
   if(!state.response)throw new Error("La réponse a été créée mais n’est pas relisible dans cette session Grist.");
-  let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement));
+  const scope=principalPeriodScope();
+  if(scope==="__aucune_periode__"|| (scope!==null && scope!=="" && !periodEditable(state.periodConfig,scope))){
+    throw new Error("Sélectionnez une période autorisée avant d'enregistrer les questions générales.");
+  }
+  let principal=state.definition.responseElements.find(e=>String(e.Reponse_Code)===String(state.response.id)&&String(e.Type_element??"").toLowerCase()==="principal"&&!isTrue(e.Supprime_logiquement) && (scope===null? !String(e.Periode_Code??""):String(e.Periode_Code??"")===scope));
   if(!principal){
     const ec=uniqueCode("ELT"),fields={Element_Code:ec,Reponse_Code:state.response.id,Type_element:"Principal",Statut:"Brouillon",Ordre:0,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};
+    if(scope)fields.Periode_Code=scope;
     await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);
     await refreshPersistenceRows();
     principal=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===codeOf(ec))??null;
@@ -1860,13 +2120,17 @@ async function bumpElementRevision(element){const er=Number(element.Revision||0)
 async function savePrincipal(){try{
   state.saveError="";
   assertResponseEditable();
+  if(state.principalDirty && state.periodConfig?.enabled && !periodEditable(state.periodConfig,state.selectedPeriod)){
+    throw new Error("Les réponses générales de cette période sont en lecture seule.");
+  }
   // La navigation ne doit pas écrire le bloc principal s'il n'a pas été modifié
   // dans ce navigateur. Sur un lien collectif, une autre personne peut avoir
   // créé/enregistré une fiche entre-temps sans rendre cette session obsolète.
   if(!state.principalDirty){
+    if(state.periodConfig?.enabled && !periodEditable(state.periodConfig,state.selectedPeriod))return true;
     await ensureResponse();
     await refreshPersistenceRows();
-    const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
+    const h=hydratedCurrentResponse();
     state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};state.fiches=h.fiches;
     applyCampaignPersonalization();
     return true;
@@ -1884,14 +2148,15 @@ async function savePrincipal(){try{
   await writeAnswers(state.principalElement,qs,state.answers);
   await bumpElementRevision(state.principalElement);
   await refreshPersistenceRows();
-  const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);
+  const h=hydratedCurrentResponse();
   state.response=h.response;state.principalElement=h.principalElement;state.answers=h.principalAnswers;state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{};state.fiches=h.fiches;state.principalDirty=false;
   applyCampaignPersonalization();
   state.saving=false;
   return true;
 }catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();return false;}}
-async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await refreshPersistenceRows();if(editor.parentElementId){const parent=state.definition.responseElements.find(e=>String(e.id)===String(editor.parentElementId));if(isTrue(parent?.Lecture_seule_import))throw new Error("La fiche parente préremplie est en lecture seule.");}const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];if(fiche?.readOnlyImport)throw new Error("Cette fiche préremplie est en lecture seule.");let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
-  await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
+async function persistFiche(type,editor){assertResponseEditable();await ensureResponse();await refreshPersistenceRows();if(editor.parentElementId){const parent=state.definition.responseElements.find(e=>String(e.id)===String(editor.parentElementId));if(!(editor.index==null?periodCanChangeStructure:periodEditable)(state.periodConfig,parent?.Periode_Code))throw new Error("La période de la fiche parente ne permet pas cette action.");if(isTrue(parent?.Lecture_seule_import))throw new Error("La fiche parente préremplie est en lecture seule.");}const scoped=(state.fiches[type.code]??[]).filter(f=>!editor.parentElementId||String(f.parentElementId)===String(editor.parentElementId));let fiche=editor.index==null?null:scoped[editor.index];if(fiche?.readOnlyImport)throw new Error("Cette fiche préremplie est en lecture seule.");
+ if(!fiche&&!editor.parentElementId&&!periodCanChangeStructure(state.periodConfig,state.selectedPeriod))throw new Error("Création impossible dans une période archivée."); if(fiche&&!periodEditable(state.periodConfig,fiche.periodeCode))throw new Error("Cette période est archivée ou fermée à la modification.");let el=fiche?state.definition.responseElements.find(e=>e.id===fiche.elementId||codeOf(e.Element_Code)===fiche.elementCode):null;if(el){assertRevision(fiche.revision,el.Revision);}else{const ec=uniqueCode("ELT");const typeId=rowIdByCode(state.definition.ficheTypes,"TypeFiche_Code",type.code);const fields={Element_Code:ec,Reponse_Code:state.response.id,TypeFiche_Code:typeId,Type_element:editor.parentElementId?"Sous-fiche":"Fiche",Statut:"Brouillon",Ordre:scoped.length+1,Revision:1,Supprime_logiquement:false,Cle_creation_ACL:creationAclKey()};if(editor.parentElementId)fields.Parent_Code=editor.parentElementId;const selectedPeriod=periodForNewFiche(state.periodConfig,state.selectedPeriod,editor.parentElementId,state.definition.responseElements);if(selectedPeriod)fields.Periode_Code=selectedPeriod;await grist.docApi.applyUserActions([["AddRecord","ELEMENTS_REPONSE",null,fields]]);await refreshPersistenceRows();el=state.definition.responseElements.find(e=>codeOf(e.Element_Code)===ec);}
+  await writeAnswers(el,type.questions,editor.answers);await bumpElementRevision(el);await refreshPersistenceRows();const h=hydratedCurrentResponse();state.fiches=h.fiches;state.response=h.response;state.principalElement=h.principalElement;
 }
 // Copie d'une fiche de répondant : réutilise le flux de création et ses ACL existantes.
 // Chaque élément et chaque valeur reçoit un nouvel identifiant via persistFiche.
@@ -1904,7 +2169,7 @@ async function duplicateRespondentFiche(typeCode,index,parentElementId=null){
  const isSub=parentElementId!=null;
  const list=isSub?(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId)):(state.fiches[typeCode]??[]);
  const source=list[index];
- if(!source||source.readOnlyImport||!canAddFiche(type,list))return;
+ if(!source||source.readOnlyImport||!periodCanChangeStructure(state.periodConfig,source.periodeCode)||!periodCanChangeStructure(state.periodConfig,state.selectedPeriod)||!canAddFiche(type,list.filter(f=>periodMatches(state.periodConfig,state.selectedPeriod,f))))return;
  const answers=structuredClone(source.answers??{});
  // Mémoriser les sous-fiches avant de recharger les données après la création.
  const children=!isSub?(type.children??[]).flatMap(childType=>(state.fiches[childType.code]??[]).filter(f=>String(f.parentElementId)===String(source.elementId)).map(f=>({type:childType,answers:structuredClone(f.answers??{})}))):[];
@@ -1936,9 +2201,15 @@ async function duplicateRespondentFiche(typeCode,index,parentElementId=null){
   state.saving=false;showActionSuccess("Fiche dupliquée — vérifiez et modifiez la copie");render();scrollToEditor(isSub?"[data-subfiche-editor]":"[data-fiche-editor]");
  }catch(e){state.saving=false;clearActionFeedback();showSaveError(e);render();}
 }
-async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;if(fiche.readOnlyImport){showSaveError(new Error("Cette fiche préremplie est en lecture seule et ne peut pas être supprimée."));render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
-async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;if(fiche.readOnlyImport){showSaveError(new Error("Cette sous-fiche préremplie est en lecture seule et ne peut pas être supprimée."));render();return;}if(state.previewMode){const all=state.fiches[typeCode]??[];const pos=all.indexOf(fiche);if(pos>=0)all.splice(pos,1);state.subFicheEditor=null;render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
-async function finalizeResponse(){await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
+async function cancelCurrentFiche(typeCode,index){if(state.previewMode){deleteFiche(state,typeCode,index);render();return;}assertResponseEditable();const fiche=state.fiches[typeCode]?.[index];if(!fiche)return;if(fiche.readOnlyImport||!periodCanChangeStructure(state.periodConfig,fiche.periodeCode)){showSaveError(new Error("Cette fiche est en lecture seule et ne peut pas être supprimée."));render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();deleteFiche(state,typeCode,index);state.response=state.definition.responses.find(r=>r.id===state.response.id);state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+async function cancelCurrentSubFiche(typeCode,parentElementId,index){const list=(state.fiches[typeCode]??[]).filter(f=>String(f.parentElementId)===String(parentElementId));const fiche=list[index];if(!fiche)return;if(fiche.readOnlyImport||!periodCanChangeStructure(state.periodConfig,fiche.periodeCode)){showSaveError(new Error("Cette sous-fiche est en lecture seule et ne peut pas être supprimée."));render();return;}if(state.previewMode){const all=state.fiches[typeCode]??[];const pos=all.indexOf(fiche);if(pos>=0)all.splice(pos,1);state.subFicheEditor=null;render();return;}try{state.saving=true;render();await refreshPersistenceRows();const el=state.definition.responseElements.find(e=>e.id===fiche.elementId);assertRevision(fiche.revision,el?.Revision);await grist.docApi.applyUserActions([["UpdateRecord","ELEMENTS_REPONSE",el.id,{Statut:"Annulé",Supprime_logiquement:true,Revision:Number(el.Revision||0)+1}],["UpdateRecord","REPONSES",state.response.id,{Date_modification:Date.now()/1000}]]);await refreshPersistenceRows();const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.response=h.response;state.saving=false;render();}catch(e){state.saving=false;showSaveError(e);render();}}
+// Une validation globale ne doit jamais convertir les fiches de plusieurs périodes en « Validé ».
+function responseHasPeriodizedFiches(){
+  if(!state.periodConfig?.periods?.length)return false;
+  return Object.values(state.fiches??{}).some(list=>(list??[]).some(f=>Boolean(f.periodeCode)));
+}
+function globalValidationForbidden(){return Boolean(state.periodConfig?.enabled || responseHasPeriodizedFiches());}
+async function finalizeResponse(){if(globalValidationForbidden())throw new Error("Validation globale indisponible : des fiches sont rattachées à des périodes. Elles restent enregistrées individuellement, sans verrouillage des archives.");await ensureResponse();await checkResponseRevision();const activeElements=state.definition.responseElements.filter(e=>String(e.Reponse_Code)===String(state.response.id)&&!isTrue(e.Supprime_logiquement));const actions=activeElements.map(e=>["UpdateRecord","ELEMENTS_REPONSE",e.id,{Statut:"Validé",Revision:Number(e.Revision||0)+1}]);const now=Date.now()/1000;actions.push(["UpdateRecord","REPONSES",state.response.id,{Statut:"Validé",Revision:Number(state.response.Revision||0)+1,Date_modification:now,Date_validation:now}]);await grist.docApi.applyUserActions(actions);await refreshPersistenceRows();state.response=state.definition.responses.find(r=>r.id===state.response.id);const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,state.response.Reponse_Code);state.fiches=h.fiches;state.principalElement=h.principalElement;}
 function showSaveError(e){state.saveError=String(e?.message??e);const node=document.querySelector("#status");if(node)node.innerHTML=`<div class="status-error">${escapeHtml(state.saveError)}</div>`;}
 
 function uniqueLinkAclVisibleResponse(){
@@ -2000,6 +2271,9 @@ async function boot() {
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{}; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
+    state.periodConfig=await readPeriodConfiguration(grist.docApi,state.definition);
+    state.selectedPeriod=state.periodConfig?.defaultPeriod||"";
+    if(state.response)loadPrincipalForSelectedPeriod();
     render();
   } catch(e) {
     if(e?.code==="preview_selection_required"){renderDirectPreviewChooser(e.versions);return;}
