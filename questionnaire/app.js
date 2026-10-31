@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"" };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",selected:[],reference:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false,showChart:false,chartType:"bar",chartMetric:""} };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -869,14 +869,17 @@ function indicatorLegacyStats(q){return String(q?.Indicateurs_Stats||"count,perc
 function indicatorSourceConfig(q,token,kind){const c=indicatorConfig(q)[token];if(c&&Array.isArray(c.stats))return {stats:new Set(c.stats.map(String)),chart:String(c.chart||"none").toLowerCase(),display:String(c.display||"both").toLowerCase(),groupBy:String(c.groupBy||"")};const legacy=new Set(indicatorLegacyStats(q));return {stats:kind==="f"?new Set(["total"]):legacy,chart:String(q?.Indicateurs_Graphique||"none").toLowerCase(),display:"both",groupBy:""}}
 function indicatorResponses(){const all=(state.definition?.responses||[]).filter(r=>!isTrue(r.Supprime_logiquement));let campaign=null;try{campaign=selectedCampaign()}catch{}if(!campaign)return [];return all.filter(r=>{const raw=codeOf(r.Campagne_Code);return String(raw)===String(campaign.id)||String(raw)===String(codeOf(campaign.Campagne_Code))})}
 function indicatorHasCampaign(){try{return !!selectedCampaign()}catch{return false}}
-function indicatorHydratedResponses(){
+function indicatorHydratedResponses(periodOverride=null,respondentOnly=false){
   const tables={REPONSES:state.definition?.responses||[],ELEMENTS_REPONSE:state.definition?.responseElements||[],VALEURS_REPONSE:state.definition?.responseValues||[],SELECTIONS_REPONSE:state.definition?.responseSelections||[]};
-  const out=[],scope=principalPeriodScope();
-  for(const r of indicatorResponses()){
+  const selected=periodOverride===null?state.selectedPeriod:periodOverride;
+  const scope=periodOverride===null?principalPeriodScope():selected;
+  const out=[];
+  const responses=respondentOnly?indicatorResponses().filter(r=>String(codeOf(r.Reponse_Code))===String(codeOf(state.response?.Reponse_Code))):indicatorResponses();
+  for(const r of responses){
     try{
       const h=hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id),scope);
       if(state.periodConfig?.enabled){
-        h.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([key,list])=>[key,list.filter(f=>periodMatches(state.periodConfig,state.selectedPeriod,f))]));
+        h.fiches=Object.fromEntries(Object.entries(h.fiches||{}).map(([key,list])=>[key,list.filter(f=>periodMatches(state.periodConfig,selected,f))]));
       }
       out.push(h);
     }catch(e){console.warn("Indicateurs : réponse ignorée",e);}
@@ -927,8 +930,247 @@ function indicatorCrossRows(src,groupSrc,pairs,stats){const groups=new Map();for
 function indicatorFicheCountCrossBlock(ft,groupSrc,pairs,stats,title){const groups=new Map();for(const [g,n] of pairs){if(g===undefined||g===null||g==="")continue;for(const gv of (Array.isArray(g)?g:[g])){const label=indicatorGroupLabel(groupSrc,gv);if(!groups.has(label))groups.set(label,[]);groups.get(label).push(Number(n)||0)}}const rows=[...groups].map(([label,counts])=>{const total=sumNumbers(counts),r={label,total};if(stats.has("withAny"))r.withAny=counts.filter(n=>n>0).length;if(stats.has("mean"))r.mean=counts.length?total/counts.length:0;if(stats.has("min"))r.min=counts.length?Math.min(...counts):0;if(stats.has("max"))r.max=counts.length?Math.max(...counts):0;return r}).sort((a,b)=>String(a.label).localeCompare(String(b.label),"fr"));if(!rows.length)return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4><div class="help">Aucune donnée ventilée disponible.</div></div>`;const cols=[["total",resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")?"Nombre de sous-fiches":"Nombre de fiches"],["withAny","Répondants avec au moins une fiche"],["mean","Moyenne par répondant"],["min","Minimum par répondant"],["max","Maximum par répondant"]].filter(([k])=>k==="total"?stats.has("total"):stats.has(k));const totals={total:sumNumbers(rows.map(r=>r.total||0)),withAny:sumNumbers(rows.map(r=>r.withAny||0))};const allCounts=pairs.map(([,n])=>Number(n)||0);totals.mean=allCounts.length?sumNumbers(allCounts)/allCounts.length:0;totals.min=allCounts.length?Math.min(...allCounts):0;totals.max=allCounts.length?Math.max(...allCounts):0;const fmt=v=>typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v??""));return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px">${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],"Groupe"))}</th>${cols.map(([,l])=>`<th style="text-align:right;padding:6px">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td style="padding:6px;border-top:1px solid #e5e7eb">${escapeHtml(r.label)}</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:1px solid #e5e7eb">${fmt(r[k])}</td>`).join("")}</tr>`).join("")}<tr style="font-weight:700"><td style="padding:6px;border-top:2px solid #cbd5e1">Total</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:2px solid #cbd5e1">${fmt(totals[k])}</td>`).join("")}</tr></tbody></table></div></div>`}
 function indicatorCrossBlock(src,groupSrc,pairs,stats,chart,title,display="both"){const rows=indicatorCrossRows(src,groupSrc,pairs,stats);if(!rows.length)return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4><div class="help">Aucune donnée croisée disponible.</div></div>`;if(!indicatorNumeric(src)){const total=rows.reduce((a,r)=>a+(r.count||0),0),items=rows.map(r=>({label:r.label,n:r.count||0}));const graph=display!=="table"?(chart==="pie"?indicatorPie(items,total):chart==="bar"?indicatorBar(items,total,stats.has("percent")):""):"",table=display!=="chart"?`<div>${items.map(x=>`<div>${escapeHtml(x.label)}${stats.has("count")?` : <strong>${x.n}</strong>`:""}${stats.has("percent")&&total?` (${(100*x.n/total).toFixed(1)} %)` : ""}</div>`).join("")}<div style="font-weight:700;border-top:2px solid #cbd5e1;margin-top:6px;padding-top:6px">Total${stats.has("count")?` : <strong>${total}</strong>`:""}${stats.has("percent")&&total?` (100.0 %)` : ""}</div></div>`:"";return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}${table}</div>`}const cols=[["count","Valeurs renseignées"],["sum","Somme"],["mean","Moyenne"],["median","Médiane"],["min","Minimum"],["max","Maximum"]].filter(([k])=>stats.has(k));const metric=cols.find(([k])=>k!=="count")?.[0]||cols[0]?.[0];const graph=display!=="table"&&chart==="bar"&&metric?indicatorBar(rows.filter(r=>Number.isFinite(r[metric])).map(r=>({label:r.label,n:r[metric]})),1,false):"";if(display==="chart")return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}</div>`;return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}<div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px">${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],"Groupe"))}</th>${cols.map(([,l])=>`<th style="text-align:right;padding:6px">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td style="padding:6px;border-top:1px solid #e5e7eb">${escapeHtml(r.label)}</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:1px solid #e5e7eb">${r[k]===undefined?"":(typeof r[k]==="number"&&!Number.isInteger(r[k])?r[k].toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(r[k])))}</td>`).join("")}</tr>`).join("")}<tr style="font-weight:700"><td style="padding:6px;border-top:2px solid #cbd5e1">Total</td>${cols.map(([k])=>{const all=pairs.map(([,v])=>v),nums=all.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);let v="";if(k==="count")v=nums.length;else if(k==="sum")v=sumNumbers(nums);else if(k==="mean")v=nums.length?sumNumbers(nums)/nums.length:"";else if(k==="median"&&nums.length){const m=Math.floor(nums.length/2);v=nums.length%2?nums[m]:(nums[m-1]+nums[m])/2}else if(k==="min"&&nums.length)v=nums[0];else if(k==="max"&&nums.length)v=nums[nums.length-1];return `<td style="text-align:right;padding:6px;border-top:2px solid #cbd5e1">${typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v))}</td>`}).join("")}</tr></tbody></table></div></div>`}
 
-function renderIndicators(q){const tokens=indicatorQuestionCodes(q),hydrated=indicatorHydratedResponses(),title=first(q,["Libelle","Libellé","Titre"],"Indicateurs"),blocks=[];if(!indicatorHasCampaign())return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div class="help">Aucune campagne n’est identifiable dans cet aperçu. Les indicateurs ne mélangent pas automatiquement les données de plusieurs campagnes. Ouvrez un lien de campagne pour afficher ses résultats.</div></section>`;for(const raw of tokens){let kind="q",typeCode="",qc=raw;if(raw.startsWith("f:")){kind="f";typeCode=raw.slice(2)}else if(raw.startsWith("fq:")){kind="fq";const rest=raw.slice(3),i=rest.indexOf(":");if(i<0)continue;typeCode=rest.slice(0,i);qc=rest.slice(i+1)}else if(raw.startsWith("q:"))qc=raw.slice(2);const cfg=indicatorSourceConfig(q,raw,kind);if(kind==="f"){const ft=indicatorFicheType(typeCode);if(!ft)continue;const counts=hydrated.map(h=>(h.fiches?.[typeCode]||[]).length),total=sumNumbers(counts),withAny=counts.filter(n=>n>0).length,parts=[];if(cfg.stats.has("total"))parts.push([resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")?"Nombre total de sous-fiches":"Nombre total de fiches",total]);if(cfg.stats.has("withAny"))parts.push(["Répondants avec au moins une fiche",withAny]);if(counts.length&&cfg.stats.has("mean"))parts.push(["Nombre moyen de fiches par répondant",total/counts.length]);if(counts.length&&cfg.stats.has("min"))parts.push(["Nombre minimum de fiches par répondant",Math.min(...counts)]);if(counts.length&&cfg.stats.has("max"))parts.push(["Nombre maximum de fiches par répondant",Math.max(...counts)]);const ficheTitle=first(ft,["Libelle_pluriel","Libellé_pluriel","Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode);if(cfg.groupBy){const spec=indicatorFicheGroupSpec(cfg.groupBy,typeCode),groupSrc=spec?.kind==="main"?(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(spec.questionCode)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")):spec?indicatorFicheQuestion(spec.questionCode,spec.typeCode):null;if(groupSrc){const pairs=hydrated.flatMap(h=>indicatorFicheCountGroupData(h,typeCode,spec));blocks.push(indicatorFicheCountCrossBlock(ft,groupSrc,pairs,cfg.stats,ficheTitle));continue}}blocks.push(`<div class="indicator-card"><h4>${escapeHtml(ficheTitle)}</h4>${indicatorKpis(parts)}</div>`);continue}let src,vals,pairs=[];if(kind==="fq"){src=indicatorFicheQuestion(qc,typeCode);if(!src)continue;const rows=hydrated.flatMap(h=>(h.fiches?.[typeCode]||[]).map(f=>({h,f})));vals=rows.map(({h,f})=>indicatorEffectiveFicheAnswer(h,f,src,qc)).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy){const groupSrc=indicatorFicheQuestion(cfg.groupBy,typeCode);pairs=rows.map(({h,f})=>[groupSrc?indicatorEffectiveFicheAnswer(h,f,groupSrc,cfg.groupBy):f.answers?.[cfg.groupBy],indicatorEffectiveFicheAnswer(h,f,src,qc)])}}else{src=(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(qc)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(!src)continue;vals=hydrated.map(h=>h.principalAnswers?.[qc]).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy)pairs=hydrated.map(h=>[h.principalAnswers?.[cfg.groupBy],h.principalAnswers?.[qc]])}const ft=kind==="fq"?indicatorFicheType(typeCode):null,labelText=`${kind==="fq"&&ft?`${first(ft,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode)} — `:""}${first(src,["Libelle","Libellé","Titre"],qc)}`;if(cfg.groupBy){const groupSrc=kind==="fq"?indicatorFicheQuestion(cfg.groupBy,typeCode):(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(cfg.groupBy)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(groupSrc){blocks.push(indicatorCrossBlock(src,groupSrc,pairs,cfg.stats,cfg.chart,labelText,cfg.display));continue}}blocks.push(indicatorNumeric(src)?indicatorNumericBlock(vals,cfg.stats,labelText,cfg.chart,cfg.display):indicatorCategoricalBlock(src,vals,cfg.stats,cfg.chart,labelText,cfg.display))}return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div style="display:grid;gap:14px">${blocks.join("")||'<div class="help">Aucune donnée disponible pour les indicateurs sélectionnés dans cette campagne.</div>'}</div></section>`}
+function renderIndicators(q,periodOverride=null,respondentOnly=false){const tokens=indicatorQuestionCodes(q),hydrated=indicatorHydratedResponses(periodOverride,respondentOnly),title=first(q,["Libelle","Libellé","Titre"],"Indicateurs"),blocks=[];if(!indicatorHasCampaign())return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div class="help">Aucune campagne n’est identifiable dans cet aperçu. Les indicateurs ne mélangent pas automatiquement les données de plusieurs campagnes. Ouvrez un lien de campagne pour afficher ses résultats.</div></section>`;for(const raw of tokens){let kind="q",typeCode="",qc=raw;if(raw.startsWith("f:")){kind="f";typeCode=raw.slice(2)}else if(raw.startsWith("fq:")){kind="fq";const rest=raw.slice(3),i=rest.indexOf(":");if(i<0)continue;typeCode=rest.slice(0,i);qc=rest.slice(i+1)}else if(raw.startsWith("q:"))qc=raw.slice(2);const cfg=indicatorSourceConfig(q,raw,kind);if(kind==="f"){const ft=indicatorFicheType(typeCode);if(!ft)continue;const counts=hydrated.map(h=>(h.fiches?.[typeCode]||[]).length),total=sumNumbers(counts),withAny=counts.filter(n=>n>0).length,parts=[];if(cfg.stats.has("total"))parts.push([resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")?"Nombre total de sous-fiches":"Nombre total de fiches",total]);if(cfg.stats.has("withAny"))parts.push(["Répondants avec au moins une fiche",withAny]);if(counts.length&&cfg.stats.has("mean"))parts.push(["Nombre moyen de fiches par répondant",total/counts.length]);if(counts.length&&cfg.stats.has("min"))parts.push(["Nombre minimum de fiches par répondant",Math.min(...counts)]);if(counts.length&&cfg.stats.has("max"))parts.push(["Nombre maximum de fiches par répondant",Math.max(...counts)]);const ficheTitle=first(ft,["Libelle_pluriel","Libellé_pluriel","Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode);if(cfg.groupBy){const spec=indicatorFicheGroupSpec(cfg.groupBy,typeCode),groupSrc=spec?.kind==="main"?(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(spec.questionCode)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")):spec?indicatorFicheQuestion(spec.questionCode,spec.typeCode):null;if(groupSrc){const pairs=hydrated.flatMap(h=>indicatorFicheCountGroupData(h,typeCode,spec));blocks.push(indicatorFicheCountCrossBlock(ft,groupSrc,pairs,cfg.stats,ficheTitle));continue}}blocks.push(`<div class="indicator-card"><h4>${escapeHtml(ficheTitle)}</h4>${indicatorKpis(parts)}</div>`);continue}let src,vals,pairs=[];if(kind==="fq"){src=indicatorFicheQuestion(qc,typeCode);if(!src)continue;const rows=hydrated.flatMap(h=>(h.fiches?.[typeCode]||[]).map(f=>({h,f})));vals=rows.map(({h,f})=>indicatorEffectiveFicheAnswer(h,f,src,qc)).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy){const groupSrc=indicatorFicheQuestion(cfg.groupBy,typeCode);pairs=rows.map(({h,f})=>[groupSrc?indicatorEffectiveFicheAnswer(h,f,groupSrc,cfg.groupBy):f.answers?.[cfg.groupBy],indicatorEffectiveFicheAnswer(h,f,src,qc)])}}else{src=(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(qc)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(!src)continue;vals=hydrated.map(h=>h.principalAnswers?.[qc]).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy)pairs=hydrated.map(h=>[h.principalAnswers?.[cfg.groupBy],h.principalAnswers?.[qc]])}const ft=kind==="fq"?indicatorFicheType(typeCode):null,labelText=`${kind==="fq"&&ft?`${first(ft,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode)} — `:""}${first(src,["Libelle","Libellé","Titre"],qc)}`;if(cfg.groupBy){const groupSrc=kind==="fq"?indicatorFicheQuestion(cfg.groupBy,typeCode):(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(cfg.groupBy)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(groupSrc){blocks.push(indicatorCrossBlock(src,groupSrc,pairs,cfg.stats,cfg.chart,labelText,cfg.display));continue}}blocks.push(indicatorNumeric(src)?indicatorNumericBlock(vals,cfg.stats,labelText,cfg.chart,cfg.display):indicatorCategoricalBlock(src,vals,cfg.stats,cfg.chart,labelText,cfg.display))}return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div style="display:grid;gap:14px">${blocks.join("")||'<div class="help">Aucune donnée disponible pour les indicateurs sélectionnés dans cette campagne.</div>'}</div></section>`}
 function renderIndicatorsSafe(q){try{return renderIndicators(q)}catch(e){console.error("[Gristionnaire] Erreur bloc Indicateurs",codeOf(q?.Question_Code),e);const qc=escapeHtml(codeOf(q?.Question_Code));const title=escapeHtml(first(q,["Libelle","Libellé","Titre"],"Indicateurs"));return `<section class="content-indicators" id="indicator-${qc}" data-display-block="${qc}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${title}</h3><div class="help"><strong>Impossible de calculer ce bloc Indicateurs.</strong><br><small>Les autres éléments de la section restent accessibles.</small></div></section>`}}
+// V3.8 : les comparaisons sont strictement limitées à la réponse courante.
+function comparisonPeriods(){return state.periodConfig?.enabled?(state.periodConfig.periods||[]).filter(p=>["ouverte","cloturee","clôturée"].includes(String(p.Statut||"").trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""))):[];}
+// Les calculs complémentaires sont facultatifs : seuls les KPI numériques ayant
+// le même intitulé et la même unité dans les deux périodes sont comparés.
+function comparisonParseNumber(text){
+  const value=String(text||"").trim().replace(/[\u00a0\u202f\s]/g,"");
+  // Pas de conversion silencieuse d'une chaîne qualitative en nombre.
+  if(!/^[+\-]?(?:\d[\d.,]*|[.,]\d+)(?:%|€)?$/.test(value))return null;
+  const unit=value.endsWith("%")?"%":value.endsWith("€")?"€":"";
+  const raw=unit?value.slice(0,-1):value;
+  const comma=raw.lastIndexOf(","),dot=raw.lastIndexOf(".");
+  const decimal=comma>dot?",":dot>comma?".":"";
+  let normal=raw;
+  if(comma>=0&&dot>=0)normal=raw.replace(decimal===","?/\./g:/,/g,"").replace(decimal, ".");
+  else if(decimal===",")normal=raw.replace(",",".");
+  else if(decimal==="."&&/\.\d{3}$/.test(raw)&&!raw.includes(","))normal=raw.replace(".","");
+  const number=Number(normal);
+  return Number.isFinite(number)?{number,unit}:null;
+}
+function comparisonKpis(html){
+  const tmp=document.createElement("div");tmp.innerHTML=html;
+  const found=new Map();
+  tmp.querySelectorAll(".indicator-card").forEach(card=>{
+    const title=card.querySelector("h4")?.textContent?.trim()||"";
+    card.querySelectorAll("small").forEach(label=>{
+      // La disposition KPI du questionnaire est <small>libellé</small><div>valeur</div>.
+      const valueEl=label.nextElementSibling;
+      if(!title||!valueEl||valueEl.tagName!=="DIV")return;
+      const metric=comparisonParseNumber(valueEl.textContent);
+      if(!metric)return;
+      const name=label.textContent.trim();
+      if(name)found.set(`${title}\u0000${name}`,{title,name,...metric});
+    });
+  });
+  return found;
+}
+function comparisonFormatNumber(value,unit=""){
+  const n=new Intl.NumberFormat("fr-FR",{maximumFractionDigits:2}).format(value);
+  return `${value>0?"+":""}${n}${unit==="%"?" points":unit?` ${unit}`:""}`;
+}
+// V3.9 — Une seule extraction par période, sans lecture de réponses d'autres participants.
+function comparisonSeries(q,periods){
+  return periods.map(p=>{
+    const html=renderIndicators(q,String(p.Periode_Code),true);
+    return {code:String(p.Periode_Code),label:String(p.Libelle||p.Periode_Code),html,kpis:comparisonKpis(html)};
+  });
+}
+function comparisonFormatValue(metric){
+  if(!metric)return '—';
+  const formatted=new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(metric.number);
+  return `${formatted}${metric.unit==='%'?' %':metric.unit?` ${metric.unit}`:''}`;
+}
+function comparisonNumericRows(series){
+  if(series.length<2)return [];
+  // L'union des indicateurs préserve les cas où une période n'a pas de valeur.
+  const keys=[...new Set(series.flatMap(p=>[...p.kpis.keys()]))];
+  return keys.map(key=>{
+    const values=series.map(p=>p.kpis.get(key)||null);
+    const metrics=values.filter(Boolean);
+    if(!metrics.length||new Set(metrics.map(x=>x.unit)).size!==1)return null;
+    return {key,unit:metrics[0].unit,title:metrics[0].title,name:metrics[0].name,values};
+  }).filter(Boolean);
+}
+function renderComparisonTable(series,options,reference){
+  const rows=comparisonNumericRows(series);
+  if(!rows.length)return '<div class="help" role="status">Aucun indicateur numérique comparable. Consultez les détails des périodes ci-dessous.</div>';
+  const referenceIndex=Math.max(0,series.findIndex(p=>p.code===reference));
+  const others=series.map((p,index)=>({p,index})).filter(x=>x.index!==referenceIndex);
+  const extraHead=others.map(({p})=>`${options.showDiff?`<th scope="col">Écart vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}${options.showPercent?`<th scope="col">Évolution vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}`).join('');
+  const header=`<thead><tr><th scope="col">Indicateur</th>${series.map(p=>`<th scope="col">${escapeHtml(p.label)}</th>`).join('')}${extraHead}</tr></thead>`;
+  const body=rows.map(row=>{
+    const base=row.values[referenceIndex];
+    const cell=row.values.map(v=>`<td>${escapeHtml(comparisonFormatValue(v))}</td>`).join('');
+    const extras=others.map(({index})=>{
+      const current=row.values[index];
+      if(!base||!current)return `${options.showDiff?'<td>—</td>':''}${options.showPercent?'<td>—</td>':''}`;
+      const delta=current.number-base.number,ratio=base.number===0?null:100*delta/Math.abs(base.number);
+      const trend=delta>0?'↗':delta<0?'↘':'→';
+      const trendClass=delta>0?'comparison-up':delta<0?'comparison-down':'comparison-flat';
+      const icon=options.showTrend?`<span class="comparison-trend ${trendClass}" aria-label="${delta>0?'Hausse':delta<0?'Baisse':'Stable'}">${trend}</span> `:'';
+      const diff=options.showDiff?`<td>${icon}${escapeHtml(comparisonFormatNumber(delta,row.unit))}</td>`:'';
+      const percent=options.showPercent?`<td>${ratio===null?'Non calculable':`${!options.showDiff?icon:''}${escapeHtml(comparisonFormatNumber(ratio,''))} %`}</td>`:'';
+      return diff+percent;
+    }).join('');
+    return `<tr><th scope="row">${escapeHtml(row.title+' — '+row.name)}</th>${cell}${extras}</tr>`;
+  }).join('');
+  const note=options.showDiff||options.showPercent?'<p class="help">Chaque écart compare la période indiquée à la référence choisie. Pour les indicateurs en %, les écarts sont en points ; une valeur de référence nulle rend l’évolution relative non calculable.</p>':'';
+  return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${body}</tbody></table></div>${note}</section>`;
+}
+function comparisonChartData(series){
+  const rows=comparisonNumericRows(series);
+  const metrics=rows.filter(row=>row.values.every(Boolean)).map(row=>({...row,numbers:row.values.map(v=>v.number)}));
+  const groups=new Map();
+  for(const m of metrics){const key=`${m.title}\u0000${m.unit}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m);}
+  return {metrics,groups:[...groups.entries()].filter(([,items])=>items.length>=2&&items.every(x=>x.numbers.every(v=>v>=0)))};
+}
+function comparisonSvgChart(items,labels,type){
+  if(!items.length||!labels.length)return '';
+  const n=labels.length,width=Math.max(760,n*105+150),height=310,left=75,right=35,top=25,bottom=96;
+  const plotW=width-left-right,plotH=height-top-bottom;
+  const fmt=x=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(x);
+  const svgText=(x,y,value,attrs='')=>`<text x="${x}" y="${y}" ${attrs}>${escapeHtml(String(value))}</text>`;
+  const values=labels.map((_,i)=>type==='stacked'?items.reduce((sum,row)=>sum+row.numbers[i],0):items[0].numbers[i]);
+  // Graduations lisibles : pas arrondis (1, 2, 2,5, 5 × 10^n),
+  // et pas entier dès que toutes les données sont des comptages entiers.
+  const allInteger=items.every(row=>row.numbers.every(Number.isInteger));
+  const lo=Math.min(0,...values),hi=Math.max(0,...values);
+  const span=Math.max(hi-lo,allInteger?1:Math.abs(hi)*0.1,0.001);
+  const rough=span/4;
+  const magnitude=10**Math.floor(Math.log10(rough));
+  const niceStep=[1,2,2.5,5,10].map(x=>x*magnitude).find(x=>x>=rough)||10*magnitude;
+  const step=allInteger?Math.max(1,Math.ceil(niceStep)):niceStep;
+  let min=Math.floor(lo/step)*step,max=Math.ceil(hi/step)*step;
+  if(min===max)max=min+step;
+  const y=v=>top+(max-v)/(max-min)*plotH,base=y(0);
+  const tickValues=Array.from({length:Math.min(12,Math.round((max-min)/step)+1)},(_,i)=>min+i*step);
+  const ticks=tickValues.map(value=>{const yy=y(value);return `<line x1="${left}" y1="${yy}" x2="${width-right}" y2="${yy}" stroke="#e0e8f1"/>${svgText(left-9,yy+5,fmt(allInteger?Math.round(value):Number(value.toPrecision(10))),'text-anchor="end" font-size="12" fill="#50647b"')}`;}).join('');
+  const xs=labels.map((_,i)=>left+plotW*(i+.5)/n);
+  const barWidth=Math.min(95,plotW/n*.65);
+  let content='';
+  if(type==='line'){
+    content=`<polyline points="${xs.map((x,i)=>`${x},${y(values[i])}`).join(' ')}" fill="none" stroke="#2763a0" stroke-width="3"/>`;
+    content+=xs.map((x,i)=>`<circle cx="${x}" cy="${y(values[i])}" r="5" fill="#2763a0"/>${svgText(x,y(values[i])-11,fmt(values[i]),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`).join('');
+  }else if(type==='stacked'){
+    const colors=['#346fba','#e29a45','#45a48d','#9b80cf','#d16d77','#7d95ae'];
+    content=xs.map((x,i)=>{let accumulated=0;const segments=items.map((row,j)=>{const v=row.numbers[i],topY=y(accumulated+v),bottomY=y(accumulated);accumulated+=v;return `<rect x="${x-barWidth/2}" y="${topY}" width="${barWidth}" height="${Math.max(0,bottomY-topY)}" fill="${colors[j%colors.length]}"><title>${escapeHtml(row.name)} : ${escapeHtml(fmt(v))}</title></rect>`;}).join('');return segments+svgText(x,y(accumulated)-9,fmt(accumulated),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"');}).join('');
+    content+=`<g transform="translate(${left},${height-25})">${items.map((m,i)=>`<rect x="${(i%3)*200}" y="${Math.floor(i/3)*18}" width="9" height="9" fill="${colors[i%colors.length]}"/>${svgText((i%3)*200+15,9+Math.floor(i/3)*18,m.name.slice(0,22),'font-size="11" fill="#394b61"')}`).join('')}</g>`;
+  }else{
+    content=xs.map((x,i)=>{const v=values[i],yy=y(v),rectY=Math.min(yy,base),h=Math.max(1,Math.abs(base-yy));return `<rect x="${x-barWidth/2}" y="${rectY}" width="${barWidth}" height="${h}" rx="4" fill="${i%2?'#42a596':'#346fba'}"/>${svgText(x,v>=0?yy-10:yy+20,fmt(v),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`;}).join('');
+  }
+  return `<div class="comparison-chart-scroll"><svg class="comparison-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif des périodes">${ticks}<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#71839b"/>${content}${xs.map((x,i)=>svgText(x,height-69,labels[i],'text-anchor="middle" font-size="12" fill="#263e59"')).join('')}</svg></div>`;
+}
+function renderComparisonChart(series){
+  if(!state.comparison.showChart)return '';
+  const {metrics,groups}=comparisonChartData(series);
+  if(!metrics.length)return '<div class="help">Aucun indicateur numérique commun à toutes les périodes sélectionnées pour construire un graphique.</div>';
+  const type=state.comparison.chartType||'bar';
+  const opts=type==='stacked'?groups.map(([key,items])=>({key,label:`${items[0].title} (${items.length} composantes)`})):metrics.map(m=>({key:m.key,label:`${m.title} — ${m.name}`}));
+  // Toujours afficher le sélecteur de type : une ventilation empilée impossible
+  // ne doit jamais enfermer le répondant dans un écran sans moyen de revenir.
+  if(!opts.length)return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar">Barres</option><option value="line">Courbe</option><option value="stacked" selected>Barres empilées</option></select></label></div><p class="help" role="status">Aucune ventilation compatible avec un graphique empilé pour ces indicateurs. Sélectionnez « Barres » ou « Courbe » pour afficher un autre graphique.</p></section>`;
+  if(!opts.some(x=>x.key===state.comparison.chartMetric))state.comparison.chartMetric=opts[0].key;
+  const selected=state.comparison.chartMetric;
+  const items=type==='stacked'?(groups.find(([k])=>k===selected)?.[1]||[]):metrics.filter(x=>x.key===selected);
+  const title=type==='stacked'?items[0]?.title:`${items[0]?.title} — ${items[0]?.name}`;
+  const select=opts.map(o=>`<option value="${escapeHtml(o.key)}" ${o.key===selected?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
+  const note=type==='stacked'?'Vérifiez que les composantes positives et de même unité peuvent être additionnées.':'';
+  return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar" ${type==='bar'?'selected':''}>Barres</option><option value="line" ${type==='line'?'selected':''}>Courbe</option><option value="stacked" ${type==='stacked'?'selected':''}>Barres empilées</option></select></label><label>Indicateur<select data-comparison-chart-metric>${select}</select></label></div><h4>${escapeHtml(title)}</h4>${comparisonSvgChart(items,series.map(p=>p.label),type)}<p class="help">${escapeHtml(note)}</p></section>`;
+}
+function renderIndicatorComparison(q){
+  const periods=comparisonPeriods();
+  if(periods.length<2||!state.response)return renderIndicatorsSafe(q);
+  const valid=new Set(periods.map(p=>String(p.Periode_Code)));
+  if(!Array.isArray(state.comparison.selected))state.comparison.selected=[];
+  state.comparison.selected=state.comparison.selected.filter(c=>valid.has(c));
+  if(!state.comparison.selected.length)state.comparison.selected=periods.slice(0,2).map(p=>String(p.Periode_Code));
+  if(!state.comparison.selected.includes(state.comparison.reference))state.comparison.reference=state.comparison.selected[0];
+  const header=`<div class="period-comparison-header"><button type="button" class="btn btn-small" data-comparison-toggle aria-expanded="${state.comparison.active}">${state.comparison.active?'Fermer la comparaison':'Comparer les périodes'}</button></div>`;
+  if(!state.comparison.active)return header+renderIndicatorsSafe(q);
+  const selectedPeriods=periods.filter(p=>state.comparison.selected.includes(String(p.Periode_Code)));
+  const selectors=periods.map(p=>`<label class="comparison-period-choice"><input type="checkbox" data-comparison-select="${escapeHtml(p.Periode_Code)}" ${state.comparison.selected.includes(String(p.Periode_Code))?'checked':''}><span>${escapeHtml(p.Libelle||p.Periode_Code)}</span></label>`).join('');
+  const referenceSelect=selectedPeriods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}" ${String(p.Periode_Code)===state.comparison.reference?'selected':''}>${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join('');
+  const referenceControl=state.comparison.showDiff||state.comparison.showPercent?`<label class="comparison-reference-field">Période de référence<select data-comparison-reference>${referenceSelect}</select></label>`:'';
+  const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?'checked':''}><span>${label}</span></label>`;
+  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle('showDiff','Afficher les écarts absolus',state.comparison.showDiff)}${toggle('showPercent','Afficher les évolutions en %',state.comparison.showPercent)}${toggle('showTrend','Afficher les flèches de hausse ou de baisse',state.comparison.showTrend)}${toggle('showChart','Afficher un graphique comparatif',state.comparison.showChart)}</div>${referenceControl}<p class="help">Les options d’écarts sont facultatives. Chaque période est comparée à la référence choisie, sans modifier les réponses.</p></details>`;
+  let table='',chart='',details='';
+  if(selectedPeriods.length>=2){
+    const series=comparisonSeries(q,selectedPeriods);
+    table=renderComparisonTable(series,state.comparison,state.comparison.reference);
+    chart=renderComparisonChart(series);
+    details=`<details class="comparison-details"><summary>Voir les graphiques et indicateurs détaillés</summary><div class="period-comparison-columns">${series.map(p=>`<div class="period-comparison-column"><h4>${escapeHtml(p.label)}</h4>${p.html}</div>`).join('')}</div></details>`;
+  }
+  const warn=selectedPeriods.length<2?'<p class="help" role="alert">Sélectionnez au moins deux périodes pour afficher la comparaison.</p>':'';
+  return `<section class="period-comparison-panel"><div class="period-comparison-header"><h3>Comparaison de mes indicateurs</h3>${header}</div><p class="help">Choisissez au moins deux périodes. Les calculs concernent uniquement votre propre réponse.</p><div class="comparison-period-choices">${selectors}</div>${options}${warn}${table}${chart}${selectedPeriods.length>=2?`<div class="comparison-export-actions"><span class="comparison-export-label">Télécharger la comparaison</span><button type="button" class="btn btn-small" data-comparison-export="excel">Tableau Excel</button><button type="button" class="btn btn-small" data-comparison-export="pdf">Tableau et graphique (PDF)</button>${state.comparison.showChart?'<button type="button" class="btn btn-small" data-comparison-export="png">Graphique PNG</button>':''}</div>`:''}${details}</section>`;
+}
+// V3.9.1 — Les exports portent uniquement sur le tableau déjà affiché pour la
+// réponse courante. Ils n'interrogent ni les autres répondants ni les tables Grist.
+function comparisonExportContext(){
+  const panel=document.querySelector('.period-comparison-panel');
+  const table=panel?.querySelector('.comparison-changes table');
+  if(!state.comparison.active||!table)throw new Error('Sélectionnez au moins deux périodes avec des indicateurs numériques.');
+  const periods=comparisonPeriods().filter(p=>(state.comparison.selected||[]).includes(String(p.Periode_Code)));
+  if(periods.length<2)throw new Error('Sélectionnez au moins deux périodes.');
+  const rows=[...table.querySelectorAll('tr')].map(tr=>[...tr.querySelectorAll('th,td')].map(td=>td.innerText?.trim()||td.textContent?.trim()||''));
+  const chart=state.comparison.showChart?panel.querySelector('.comparison-chart-svg'):null;
+  return {panel,table,rows,chart,periods,reference:periods.find(p=>String(p.Periode_Code)===state.comparison.reference)};
+}
+function comparisonExportFilename(suffix,extension){
+  const name=String(state.definition?.version?.Titre||state.definition?.version?.Libelle||'indicateurs');
+  const slug=safeExportPart(name)||'indicateurs';
+  return `Comparaison_${slug}_${suffix}.${extension}`;
+}
+function exportComparisonExcel(){
+  try{
+    const c=comparisonExportContext();
+    const meta=[['Comparaison des indicateurs'],['Périodes sélectionnées',c.periods.map(p=>p.Libelle||p.Periode_Code).join(' ; ')],['Période de référence',c.reference?.Libelle||''],['Écarts',state.comparison.showDiff?'Oui':'Non'],['Évolutions en %',state.comparison.showPercent?'Oui':'Non'],['Flèches',state.comparison.showTrend?'Oui':'Non'],[],...c.rows];
+    const sheets=[{name:'COMPARAISON',rows:meta}];
+    if(c.chart){
+      // L'export du graphique utilise les valeurs visibles et non des données d'autres participants.
+      const chartTitle=c.panel.querySelector('.comparison-chart-box h4')?.textContent||'Graphique';
+      sheets.push({name:'GRAPHIQUE',rows:[['Indicateur affiché',chartTitle],['Type de graphique',state.comparison.chartType],[],...c.rows]});
+    }
+    downloadExportBlob(writeWorkbook(sheets),comparisonExportFilename('tableau','xlsx'));
+  }catch(error){alert(`Export Excel impossible : ${error.message||error}`);}
+}
+async function exportComparisonPng(){
+  try{
+    const c=comparisonExportContext();
+    if(!c.chart)throw new Error('Activez « Afficher un graphique comparatif » pour télécharger une image.');
+    const svg=c.chart.cloneNode(true);
+    svg.setAttribute('xmlns','http://www.w3.org/2000/svg');
+    const vb=c.chart.viewBox.baseVal;
+    const w=vb?.width||800,h=vb?.height||350;
+    svg.setAttribute('width',w);svg.setAttribute('height',h);
+    const src=new Blob([new XMLSerializer().serializeToString(svg)],{type:'image/svg+xml;charset=utf-8'});
+    const uri=URL.createObjectURL(src);
+    try{
+      const img=new Image();
+      await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error('Impossible de convertir le graphique en image.'));img.src=uri;});
+      const canvas=document.createElement('canvas');canvas.width=Math.ceil(w*2);canvas.height=Math.ceil(h*2);
+      const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponible.');
+      ctx.scale(2,2);ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);ctx.drawImage(img,0,0,w,h);
+      const png=await new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(new Error('Conversion PNG impossible.')),'image/png'));
+      downloadExportBlob(png,comparisonExportFilename('graphique','png'));
+    }finally{URL.revokeObjectURL(uri);}
+  }catch(error){alert(`Export PNG impossible : ${error.message||error}`);}
+}
+function exportComparisonPdf(){
+  try{
+    const c=comparisonExportContext();
+    const title='Comparaison des indicateurs';
+    const labels=c.periods.map(p=>p.Libelle||p.Periode_Code).join(' · ');
+    const table=c.table.outerHTML;
+    const chart=c.chart?`<h2>${escapeHtml(c.panel.querySelector('.comparison-chart-box h4')?.textContent||'Graphique')}</h2>${c.chart.outerHTML}`:'';
+    const html=`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title><style>@page{size:A4 landscape;margin:12mm}body{font-family:Arial,sans-serif;color:#24344a}h1{font-size:21px}h2{font-size:15px;margin-top:22px}.meta{color:#53657e;margin-bottom:15px}table{border-collapse:collapse;width:100%;font-size:10px}th,td{border:1px solid #cbd5e1;padding:7px;text-align:left}thead th{background:#e9eff8}tr{break-inside:avoid}svg{width:100%;height:auto;max-height:380px}small{font-size:9px}</style></head><body><h1>${title}</h1><p class="meta">Périodes : ${escapeHtml(labels)}${c.reference?`<br>Période de référence : ${escapeHtml(c.reference.Libelle||c.reference.Periode_Code)}`:''}</p>${table}${chart}<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),250));<\/script></body></html>`;
+    const w=window.open('','_blank');if(!w)throw new Error('Autorisez les fenêtres pop-up pour ouvrir le PDF.');
+    w.document.open();w.document.write(html);w.document.close();
+  }catch(error){alert(`Export PDF impossible : ${error.message||error}`);}
+}
 function personalizedDescriptionText(q,answers){const fallback=first(q,["Aide","Description","Texte_aide"],"");if(!isTrue(q.MP_Actif))return fallback;const rules=(()=>{try{const x=JSON.parse(q.MP_Regles||"[]");return Array.isArray(x)?x:[]}catch{return []}})(),source=String(q.MP_Question_Source||""),srcQ=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===source);let value=source?answers?.[source]:"";if((value===""||value==null)&&srcQ&&campaignLocksQuestion(srcQ)){const p=campaignPersonalization();if(p&&String(p.questionCode)===source)value=p.value}value=String(codeOf(value)||value||"");let hit=rules.find(r=>String(r.value)===value);if(!hit&&isTrue(q.MP_Heritage_Descendants)&&value&&srcQ){hit=rules.find(r=>hierarchyMatchSet(String(r.value),"value_descendants",srcQ).has(value))}return String(hit?.text??q.MP_Texte_Defaut??fallback??"")}
 
 
@@ -1395,7 +1637,7 @@ function render() {
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${richTextHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${richTextHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorsSafe(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorComparison(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
     </section>`;
     }).join("")}
     ${archiveOverview?`<div class="period-archive-placeholder">Sélectionnez une période dans la liste des archives ci-dessus pour afficher ses fiches.</div>`:(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
@@ -1427,6 +1669,38 @@ function render() {
     root.querySelectorAll("[data-question],[data-matrix-question],[data-clear-question]").forEach(el=>{el.disabled=true;});
   }
   if(locked) root.querySelectorAll("input,select,textarea").forEach(el=>{el.disabled=true;});
+  root.querySelectorAll("[data-comparison-toggle]").forEach(el=>el.addEventListener("click",()=>{
+    state.comparison.active=!state.comparison.active;render();
+  }));
+  root.querySelectorAll("[data-comparison-select]").forEach(el=>el.addEventListener("change",e=>{
+    const code=e.currentTarget.dataset.comparisonSelect;
+    const selected=new Set(state.comparison.selected||[]);
+    if(e.currentTarget.checked)selected.add(code);else selected.delete(code);
+    state.comparison.selected=[...selected];
+    if(!selected.has(state.comparison.reference))state.comparison.reference=state.comparison.selected[0]||"";
+    render();
+  }));
+  root.querySelector("[data-comparison-reference]")?.addEventListener("change",e=>{
+    state.comparison.reference=e.currentTarget.value;state.comparison.optionsOpen=true;render();
+  });
+  root.querySelectorAll(".comparison-options").forEach(el=>el.addEventListener("toggle",()=>{
+    state.comparison.optionsOpen=el.open;
+  }));
+  root.querySelectorAll("[data-comparison-option]").forEach(el=>el.addEventListener("change",e=>{
+    state.comparison.optionsOpen=true;
+    const option=e.currentTarget.dataset.comparisonOption;
+    if(["showDiff","showPercent","showTrend","showChart"].includes(option))state.comparison[option]=e.currentTarget.checked;
+    if(option==="showTrend"&&state.comparison.showTrend&&!state.comparison.showDiff&&!state.comparison.showPercent)state.comparison.showDiff=true;
+    render();
+  }));
+  root.querySelectorAll('[data-comparison-export]').forEach(button=>button.addEventListener('click',()=>{
+    const kind=button.dataset.comparisonExport;
+    if(kind==='excel')exportComparisonExcel();
+    else if(kind==='pdf')exportComparisonPdf();
+    else if(kind==='png')void exportComparisonPng();
+  }));
+  root.querySelector("[data-comparison-chart-type]")?.addEventListener("change",e=>{state.comparison.chartType=e.currentTarget.value;state.comparison.chartMetric="";render();});
+  root.querySelector("[data-comparison-chart-metric]")?.addEventListener("change",e=>{state.comparison.chartMetric=e.currentTarget.value;render();});
   root.querySelector("[data-period-select]")?.addEventListener("change",e=>{
     if(state.ficheEditor||state.subFicheEditor||state.principalDirty){e.target.value=state.selectedPeriod;if(state.principalDirty)showSaveError(new Error("Enregistrez les questions générales avant de changer de période."));return;}
     state.selectedPeriod=e.target.value;loadPrincipalForSelectedPeriod();render();

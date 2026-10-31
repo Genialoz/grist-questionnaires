@@ -197,3 +197,63 @@ body{font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif;line-height
 .period-archive-export{display:grid;gap:10px;margin-top:16px;padding:14px 15px;border:1px solid #dce3ef;border-radius:10px;background:#f8fafc;color:#35465e}
 .period-archive-export-buttons{display:flex;flex-wrap:wrap;gap:8px}
 @media(max-width:560px){.period-archive-export-buttons .btn{width:100%}}
+
+/* V3.8 — comparaison des indicateurs, uniquement pour le répondant courant. */
+.period-comparison-panel{margin:14px 0;padding:16px;border:1px solid #d8e2f2;border-radius:12px;background:#f8faff}
+.period-comparison-header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:8px}
+.period-comparison-header h3{margin:0;font-size:1.1rem}
+.period-comparison-controls{display:flex;gap:14px;flex-wrap:wrap;margin:12px 0 18px}
+.period-comparison-period-field,.comparison-period-field{display:flex;flex-direction:column;gap:6px;flex:1 1 220px;font-weight:600}
+.comparison-period-field select{width:100%;max-width:100%;padding:9px;border:1px solid #b9c7dd;border-radius:8px;background:white}
+.period-comparison-columns{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}
+.period-comparison-column{min-width:0;padding:12px;background:white;border:1px solid #dce4f0;border-radius:10px;overflow-wrap:anywhere}
+.period-comparison-column>h4{margin:0 0 12px;font-size:1.05rem;color:#253c65}
+.period-comparison-column .indicator-card{max-width:100%}
+@media(max-width:800px){.period-comparison-columns{grid-template-columns:1fr}}
+
+/* Comparaison : options facultatives, compactes et sans étirement des cases. */
+.comparison-options{border:1px solid #dce4f0;border-radius:9px;background:#fff;padding:10px 12px;margin:0 0 16px}
+.comparison-options summary{cursor:pointer;font-weight:650;color:#253c65}
+.comparison-option-list{display:flex;gap:9px 18px;flex-wrap:wrap;margin:12px 0}
+.comparison-option{display:inline-flex;align-items:center;gap:7px;font-weight:400;cursor:pointer}
+.comparison-option input[type="checkbox"]{width:16px!important;height:16px!important;flex:0 0 16px;margin:0}
+.comparison-changes{margin-top:18px;padding:12px;border:1px solid #dce4f0;background:white;border-radius:10px}
+.comparison-changes h4{margin:0 0 10px}
+.comparison-table-scroll{overflow-x:auto}
+.comparison-changes table{width:100%;border-collapse:collapse;text-align:left}
+.comparison-changes th,.comparison-changes td{padding:9px 10px;border-bottom:1px solid #e6ebf1}
+.comparison-changes td{white-space:nowrap}
+.comparison-trend{font-weight:800;color:#365273}
+.comparison-up{color:#147c67}.comparison-down{color:#b34c35}.comparison-flat{color:#667085}
+
+/* V3.8.2 : tableau comparatif unique et détails repliables. */
+.comparison-changes{margin-top:12px}
+.comparison-changes table{width:100%;min-width:580px}
+.comparison-changes th:first-child{min-width:200px}
+.comparison-changes td:not(:first-child){font-variant-numeric:tabular-nums}
+.comparison-changes thead th{background:#edf2fa;color:#263c62;font-weight:700}
+.comparison-details{margin-top:16px;padding:12px;border:1px solid #dce4f0;border-radius:10px;background:#fff}
+.comparison-details summary{cursor:pointer;font-weight:650;color:#253c65;margin-bottom:8px}
+.comparison-details:not([open]) summary{margin-bottom:0}
+
+/* V3.8.3 : graphiques comparatifs optionnels */
+.comparison-chart-box{background:#fff;border:1px solid #dce4f0;border-radius:10px;padding:14px;margin:16px 0}
+.comparison-chart-box h4{font-size:1rem;margin:14px 0 8px;color:#263e59}
+.comparison-chart-fields{display:grid;grid-template-columns:1fr 1.5fr;gap:12px}
+.comparison-chart-fields label{display:flex;flex-direction:column;gap:6px;font-weight:600;min-width:0}
+.comparison-chart-fields select{width:100%;max-width:100%;padding:8px;border:1px solid #b9c7dd;border-radius:7px;background:white}
+.comparison-chart-scroll{overflow-x:auto}
+.comparison-chart-svg{display:block;width:100%;min-width:490px;height:auto;max-height:350px}
+@media(max-width:650px){.comparison-chart-fields{grid-template-columns:1fr}}
+
+/* V3.9 — sélecteur de périodes multiples et période de référence */
+.comparison-period-choices{display:flex;flex-wrap:wrap;gap:8px 14px;margin:12px 0;padding:12px;background:#f6f8fc;border:1px solid #dce4f0;border-radius:9px}
+.comparison-period-choice{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-weight:550}
+.comparison-period-choice input[type="checkbox"]{width:16px!important;height:16px!important;flex:0 0 16px;margin:0!important}
+.comparison-reference-field{display:flex;flex-direction:column;gap:5px;max-width:330px;margin:10px 0;font-weight:600}
+.comparison-reference-field select{padding:8px;border:1px solid #b9c7dd;border-radius:7px;background:#fff}
+/* V3.9.1 — téléchargements de la comparaison */
+.comparison-export-actions{display:flex;align-items:center;flex-wrap:wrap;gap:9px;margin:16px 0;padding:12px 14px;border:1px solid #dce4f0;background:#f7f9fd;border-radius:9px}
+.comparison-export-label{font-weight:700;color:#263e59;margin-right:5px}
+.comparison-export-actions .btn{white-space:normal}
+@media(max-width:620px){.comparison-export-actions{align-items:stretch;flex-direction:column}.comparison-export-label{margin-bottom:2px}}
