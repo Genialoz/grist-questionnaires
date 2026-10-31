@@ -2,7 +2,7 @@
 <title>Concepteur de questionnaires</title><link rel="stylesheet" href="../shared/common.css?v=20261015-ui"><link rel="stylesheet" href="../shared/module-nav.css?v=20261015-ui"><link rel="stylesheet" href="./styles.css?v=20261015-ui"><link rel="stylesheet" href="../shared/interface.css?v=20261015-ui">
 <script src="https://docs.getgrist.com/grist-plugin-api.js"></script><script defer src="../shared/module-nav.js"></script></head><body class="ui-admin" data-module="concepteur"><main id="designer" data-view="canvas">
 <header class="topbar"><div><h1>Concepteur</h1><p>Concevoir · Organiser · Diffuser</p></div><div class="selectors">
-<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="manage-questionnaires">Mes questionnaires</button><button type="button" class="btn" id="manage-campaigns">Campagnes</button><button type="button" class="btn" id="manage-results">Résultats / Suivi</button><button type="button" class="btn" id="respondent-preview">Aperçu répondant</button><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
+<label>Questionnaire <select id="questionnaire-select"></select></label><label>Version <select id="version-select"></select></label><button type="button" class="btn" id="manage-questionnaires">Mes questionnaires</button><button type="button" class="btn" id="manage-campaigns">Campagnes</button><button type="button" class="btn" id="manage-periods">Périodes</button><button type="button" class="btn" id="manage-results">Résultats / Suivi</button><button type="button" class="btn" id="respondent-preview">Aperçu répondant</button><button type="button" class="btn" id="general-info">Informations générales / Apparence</button><button type="button" class="btn btn-primary" id="new-questionnaire">+ Nouveau questionnaire</button></div></header>
 <div id="status"></div>
 <dialog id="new-questionnaire-dialog" class="app-dialog">
 <form id="new-questionnaire-form" class="form-grid">
@@ -29,6 +29,7 @@
 <div class="dialog-shell"><div class="dialog-head"><div><h2>Campagnes et liens personnalisés</h2><p>Créez un accès distinct par structure pour la version sélectionnée.</p></div><button type="button" class="dialog-close" id="close-campaigns" aria-label="Fermer">×</button></div>
 <div id="campaigns-content"></div></div>
 </dialog>
+<dialog id="periods-dialog" class="app-dialog wide-dialog"><div class="dialog-shell"><div class="dialog-head"><div><h2>Gestion des périodes</h2><p>Préparer les périodes des questionnaires permanents.</p></div><button type="button" class="dialog-close" id="close-periods" aria-label="Fermer">×</button></div><div id="periods-content"></div></div></dialog>
 <dialog id="results-dialog" class="app-dialog wide-dialog">
 <div class="dialog-shell"><div class="dialog-head"><div><h2>Résultats / Suivi des réponses</h2><p>Suivez l’avancement des campagnes de la version sélectionnée.</p></div><button type="button" class="dialog-close" id="close-results" aria-label="Fermer">×</button></div>
 <div id="results-content"></div></div>

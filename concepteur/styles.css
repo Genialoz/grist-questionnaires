@@ -614,3 +614,49 @@ body[data-module="concepteur"] .td-canvas-preview .preview-data-table {display:b
 body[data-module="concepteur"] .td-canvas-preview .preview-data-table table {width:max-content;min-width:100%;max-width:none;}
 body[data-module="concepteur"] .td-canvas-preview .preview-data-table th,
 body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-width:115px;max-width:240px;overflow-wrap:anywhere;}
+
+/* Gestion des périodes — panneau autonome */
+.periods-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px;margin:14px 0}
+.periods-grid label{display:flex;flex-direction:column;gap:5px;min-width:0;font-weight:600}
+.periods-grid input,.periods-grid select{box-sizing:border-box;width:100%;min-width:0;padding:8px;border:1px solid #cbd5e1;border-radius:6px}
+.period-row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #e2e8f0;flex-wrap:wrap}
+.period-actions{display:flex;flex-wrap:wrap;gap:6px}
+.periods-editor{margin-top:16px;padding:14px;border:1px solid #cbd5e1;border-radius:8px}
+
+/* Périodes V3.3.1 : alignement cohérent des champs, sans changer le formulaire. */
+#periods-form .periods-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  column-gap: 18px;
+  row-gap: 18px;
+}
+#periods-form .periods-grid > label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: minmax(3.6em, auto) 40px auto;
+  gap: 6px;
+  align-content: start;
+  min-width: 0;
+  margin: 0;
+  line-height: 1.25;
+}
+#periods-form .periods-grid > label > input,
+#periods-form .periods-grid > label > select {
+  display: block;
+  height: 40px;
+  min-height: 40px;
+  margin: 0;
+  align-self: stretch;
+  font: inherit;
+}
+#periods-form .periods-grid > label > .field-help {
+  display: block;
+  margin: 0;
+  line-height: 1.4;
+  font-size: 12px;
+  font-weight: 400;
+}
+@media (max-width: 650px) {
+  #periods-form .periods-grid { grid-template-columns: minmax(0, 1fr); }
+  #periods-form .periods-grid > label { grid-template-rows: auto 40px auto; }
+}
