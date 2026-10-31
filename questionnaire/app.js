@@ -1748,6 +1748,15 @@ function render() {
   const renderTocHtml=(title="Sommaire",tocQuestion=null)=>{let ordered=vm.pages.map((p,pi)=>({p,pi})).filter(({p})=>!(p.Afficher_dans_sommaire===false||p.Afficher_dans_sommaire===0||String(p.Afficher_dans_sommaire).toLowerCase()==="false"));if(tocQuestion){let saved=[];try{const x=JSON.parse(tocQuestion.Sommaire_Ordre||"[]");if(Array.isArray(x))saved=x.map(String)}catch{}const rank=new Map(saved.map((c,i)=>[c,i]));ordered.sort((a,b)=>{const ac=String(codeOf(a.p.Page_Code)),bc=String(codeOf(b.p.Page_Code)),ai=rank.has(ac)?rank.get(ac):9999,bi=rank.has(bc)?rank.get(bc):9999;return ai-bi||a.pi-b.pi})}const cols=tocQuestion?Math.max(1,Math.min(3,Number(tocQuestion.Sommaire_Colonnes||1))):1,intro=tocQuestion?first(tocQuestion,["Aide","Description","Texte_aide"],""):"";return `<nav class="questionnaire-toc toc-cols-${cols}" aria-label="Sommaire du questionnaire">${title?`<div class="questionnaire-toc-title">${escapeHtml(title)}</div>`:""}${intro?`<div class="questionnaire-toc-intro">${escapeHtml(intro).replace(/\n/g,"<br>")}</div>`:""}<div class="toc-grid">${ordered.map(({p,pi})=>{const pc=codeOf(p.Page_Code);const pt=first(p,["Titre","Libelle","Libellé","Nom"],pc);const pageStatus=pageCompletion(p);const visibleSections=(p.sections??[]).filter(s=>{const st=first(s,["Titre","Libelle","Libellé","Nom"],"");const sd=first(s,["Description","Texte","Introduction","Texte_introduction"],"");const showInToc=!(s.Afficher_dans_sommaire===false||s.Afficher_dans_sommaire===0||String(s.Afficher_dans_sommaire).toLowerCase()==="false");return showInToc&&Boolean(st&&(s.questions?.length||sd));});const indicators=(p.sections??[]).flatMap(sec=>(sec.questions??[]).filter(q=>displayBlockKind(q)==="indicators"&&!(q.Indicateurs_Dans_Sommaire===false||q.Indicateurs_Dans_Sommaire===0||String(q.Indicateurs_Dans_Sommaire).toLowerCase()==="false")));return `<div class="toc-page${pi===state.pageIndex?" is-current":""}"><button type="button" class="toc-page-link" data-toc-page="${pi}"${pi===state.pageIndex?' aria-current="page"':''}><span class="toc-link-label">${escapeHtml(pt)}</span>${completionBadge(pageStatus)}</button>${visibleSections.length||indicators.length?`<div class="toc-sections">${visibleSections.map(sec=>{const sc=codeOf(sec.Section_Code);const st=first(sec,["Titre","Libelle","Libellé","Nom"],sc);return `<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-section="${escapeHtml(sc)}"><span class="toc-link-label">${escapeHtml(st)}</span>${completionBadge(sectionCompletion(sec))}</button>`}).join("")}${indicators.map(iq=>`<button type="button" class="toc-section-link" data-toc-page="${pi}" data-toc-indicator="${escapeHtml(codeOf(iq.Question_Code))}"><span class="toc-link-label">📊 ${escapeHtml(first(iq,["Libelle","Libellé","Titre"],"Indicateurs"))}</span></button>`).join("")}</div>`:""}</div>`}).join("")}</div>${showValidationToc?`<div class="toc-validation"><button type="button" class="btn btn-primary" data-validate-toc>${escapeHtml(finalValidationLabel(vm.version))}</button></div>`:""}</nav>`};
   const tocHtml=showToc?renderTocHtml("Sommaire"):"";
   const completeness=responseCompleteness(state.definition,vm,state.answers,state.fiches,state.response);
+  // Le statut global de REPONSES ne décrit pas l'avancement d'une période.
+  // Ne pas afficher « Prêt à valider » quand cette validation est volontairement absente.
+  if(globalValidationForbidden() && !state.previewMode && completeness.state!=="validated"){
+    const savedElements=(state.definition?.responseElements||[]).filter(e=>
+      state.response && (String(codeOf(e.Reponse_Code))===String(state.response.id)||String(codeOf(e.Reponse_Code))===String(codeOf(state.response.Reponse_Code))) &&
+      String(e.Periode_Code||"")===String(state.selectedPeriod||"") && !isTrue(e.Supprime_logiquement));
+    completeness.label=savedElements.length?"Saisie enregistrée · Modifiable":"Saisie en cours";
+    completeness.state="ready";
+  }
   const themeBg=cssColor(state.definition.version?.Couleur_arriere_plan),themeBlocks=cssColor(state.definition.version?.Couleur_blocs),themePrimary=cssColor(state.definition.version?.Couleur_principale),themeTitles=cssColor(state.definition.version?.Couleur_titres);
   root.style.background=themeBg||"";root.style.minHeight=themeBg?"100vh":"";root.style.padding=themeBg?"16px":"";
   const mainTitleStyle=titleStyle({...state.definition.version,Couleur_titre:state.definition.version?.Couleur_titres},themeTitles);
@@ -1758,6 +1767,7 @@ function render() {
     <header class="header">${logo?`<div class="questionnaire-logo logo-${escapeHtml(logoSize)} align-${escapeHtml(logoAlign)}"><img src="${escapeHtml(logo)}" alt=""></div>`:""}<div class="questionnaire-title-row"><h1>${escapeHtml(title)}</h1></div>${intro?`<div class="intro">${escapeHtml(intro)}</div>`:""}
     ${showProgress?`<div class="progress"><div style="width:${((state.pageIndex+1)/vm.pages.length)*100}%"></div></div><div class="progress-label">Page ${state.pageIndex+1} sur ${vm.pages.length}</div>`:""}</header>
     ${periodSelectionHtml(state.periodConfig,state.selectedPeriod,state.fiches,vm.pages)}
+    ${!state.previewMode&&state.periodConfig?.enabled&&!archiveSpace?'<div class="status-info" role="status">Les informations sont conservées au fur et à mesure des enregistrements. Il n’est pas nécessaire de valider le questionnaire : vous pourrez revenir compléter ou corriger la période tant qu’elle est ouverte.</div>':""}
     ${archiveSpace?"":tocHtml}
     ${!archiveSpace&&showReturnToc?`<div class="return-toc-wrap"><button type="button" class="btn return-toc" data-return-toc>← Retour au sommaire</button></div>`:""}
     ${archiveOverview?"":`<h2 style="${escapeHtml(titleStyle(page,themeTitles))}">${richTextHtml(first(page,["Titre","Libelle","Libellé","Nom"],codeOf(page.Page_Code)))}</h2>`}
@@ -2272,7 +2282,7 @@ async function finalizeFromToc(vm) {
   if(state.ficheEditor||state.subFicheEditor){showSaveError(new Error("Enregistrez ou annulez la fiche en cours avant de valider le questionnaire."));return;}
   if(!state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement avant validation…":"Préparation de la validation…");render();if(!await savePrincipal()){clearActionFeedback();render();return;}}
   if(globalValidationForbidden()){
-    clearActionFeedback();state.statusMessage="Les fiches périodisées sont enregistrées individuellement. La validation globale reste désactivée pour préserver les archives et les périodes suivantes.";render();return;
+    clearActionFeedback();state.statusMessage="✓ Vos réponses enregistrées sont conservées pour cette période. Aucune validation supplémentaire n’est nécessaire. Vous pourrez revenir les modifier tant que la période reste ouverte.";render();return;
   }
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
@@ -2338,7 +2348,7 @@ async function nextPage(vm,page) {
   const mustFinalize=navMode==="validation_finale" || state.pageIndex>=vm.pages.length-1;
   if(!mustFinalize){navigateToPage(vm,state.pageIndex+1);clearActionFeedback();render();return;}
   if(globalValidationForbidden()){
-    clearActionFeedback();state.statusMessage="Les fiches périodisées restent enregistrées individuellement : la validation globale est désactivée pour protéger les archives.";render();return;
+    clearActionFeedback();state.statusMessage="✓ Vos réponses enregistrées sont conservées pour cette période. Vous pouvez revenir les compléter tant que la période reste ouverte.";render();return;
   }
   const allErrors=validateWholeResponse(state.definition,vm,state.answers,fichesForCurrentPeriod(),validateQuestion,visibleFicheQuestions,ficheTypeVisible);
   if(Object.keys(allErrors.principal).length || Object.keys(allErrors.fiches).length){clearActionFeedback();showSaveError(new Error("Le questionnaire contient encore des réponses obligatoires à compléter."));return;}
