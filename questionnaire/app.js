@@ -10,7 +10,7 @@ export const TABLES = [
   "CAMPAGNES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE"
 ];
 
-const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",selected:[],reference:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false,showChart:false,chartType:"bar",chartMetric:""} };
+const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{}, principalReadOnlyQuestions:{}, fiches:{}, ficheEditor:null, subFicheEditor:null, pageIndex:0, pageHistory:[], diagnostics:[], selectedRecord:null, response:null, principalElement:null, principalDirty:false, saving:false, actionFeedback:"", actionFeedbackKind:"", actionFeedbackToken:0, saveError:"", statusMessage:"", validationJustCompleted:false, ficheListUi:{}, previewMode:false, debugEvents:[], openMultiSelect:"", comparison:{active:false,left:"",right:"",selected:[],reference:"",showDiff:false,showPercent:false,showTrend:false,optionsOpen:false,showChart:false,chartType:"bar",chartMetric:"",tableTotals:"auto",chartTotals:false} };
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
@@ -918,7 +918,7 @@ function indicatorBar(items,total,showPercent){const max=Math.max(1,...items.map
 function indicatorPie(items,total){if(!total)return "";let acc=0;const stops=items.map((x,i)=>{const a=acc,b=acc+100*x.n/total;acc=b;return `hsl(${(i*67)%360} 55% 62%) ${a}% ${b}%`}).join(",");return `<div style="display:flex;gap:18px;align-items:center;flex-wrap:wrap"><div style="width:130px;height:130px;border-radius:50%;background:conic-gradient(${stops})"></div><div>${items.map(x=>`<div>${escapeHtml(x.label)} — <strong>${x.n}</strong> (${(100*x.n/total).toFixed(1)} %)</div>`).join("")}</div></div>`}
 function indicatorKpis(parts){return `<div style="display:flex;gap:10px;flex-wrap:wrap">${parts.map(([l,v])=>`<div style="padding:10px 14px;border:1px solid #d9dee5;border-radius:8px"><small>${escapeHtml(l)}</small><div style="font-size:1.25rem;font-weight:700">${typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v))}</div></div>`).join("")}</div>`}
 function indicatorNumericBlock(vals,stats,title,chart="none",display="both"){const nums=vals.map(Number).filter(Number.isFinite).sort((a,b)=>a-b),parts=[];if(stats.has("count"))parts.push(["Valeurs renseignées",nums.length]);if(nums.length){if(stats.has("sum"))parts.push(["Somme",sumNumbers(nums)]);if(stats.has("mean"))parts.push(["Moyenne",sumNumbers(nums)/nums.length]);if(stats.has("median")){const m=Math.floor(nums.length/2);parts.push(["Médiane",nums.length%2?nums[m]:(nums[m-1]+nums[m])/2])}if(stats.has("min"))parts.push(["Minimum",nums[0]]);if(stats.has("max"))parts.push(["Maximum",nums[nums.length-1]])}const graph=display!=="table"&&chart==="bar"?indicatorBar(parts.map(([label,value])=>({label,n:Number(value)||0})),1,false):"",table=display!=="chart"?indicatorKpis(parts):"";return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4>${graph}${table}</div>`}
-function indicatorCategoricalBlock(src,vals,stats,chart,title,display="both"){const labels=questionChoiceLabels(src),counts=new Map();for(const v of vals){const arr=Array.isArray(v)?v:[v];for(const z of arr){const k=String(codeOf(z)||z);counts.set(k,(counts.get(k)||0)+1)}}const items=[...counts].map(([k,n])=>({label:labels.get(k)||k,n})).sort((a,b)=>b.n-a.n),total=vals.length,showPercent=stats.has("percent"),showChart=display!=="table",showTable=display!=="chart";let graph="";if(showChart&&chart==="pie")graph=indicatorPie(items,total);else if(showChart&&chart==="bar")graph=indicatorBar(items,total,showPercent);const table=showTable&&(stats.has("count")||showPercent)?`<div>${items.map(x=>`<div>${escapeHtml(x.label)}${stats.has("count")?` : <strong>${x.n}</strong>`:""}${showPercent&&total?` (${(100*x.n/total).toFixed(1)} %)` : ""}</div>`).join("")}</div>`:"";return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4>${graph}${table}</div>`}
+function indicatorCategoricalBlock(src,vals,stats,chart,title,display="both"){const labels=questionChoiceLabels(src),counts=new Map();for(const v of vals){const arr=Array.isArray(v)?v:[v];for(const z of arr){const k=String(codeOf(z)||z);counts.set(k,(counts.get(k)||0)+1)}}const items=[...counts].map(([k,n])=>({label:labels.get(k)||k,n})).sort((a,b)=>b.n-a.n),total=vals.length,showPercent=stats.has("percent"),showChart=display!=="table",showTable=display!=="chart";let graph="";if(showChart&&chart==="pie")graph=indicatorPie(items,total);else if(showChart&&chart==="bar")graph=indicatorBar(items,total,showPercent);const table=showTable&&(stats.has("count")||showPercent)?`<div>${items.map(x=>`<div class="comparison-modality-row" data-comparison-modality="${escapeHtml(x.label)}">${escapeHtml(x.label)}${stats.has("count")?` : <strong>${x.n}</strong>`:""}${showPercent&&total?` (${(100*x.n/total).toFixed(1)} %)` : ""}</div>`).join("")}</div>`:"";return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4>${graph}${table}</div>`}
 function indicatorFicheType(code){return (state.definition?.ficheTypes||[]).find(ft=>String(codeOf(ft.TypeFiche_Code))===String(code))}
 function indicatorFicheQuestion(code,typeCode){return (state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(code)&&String(resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"))===String(typeCode))}
 function indicatorFicheParentTypeCode(typeCode){const ft=indicatorFicheType(typeCode);return ft?String(resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")||""):""}
@@ -928,7 +928,7 @@ function indicatorFicheCountGroupData(h,targetTypeCode,spec){const targetRows=h.
 function indicatorGroupLabel(q,value){const labels=questionChoiceLabels(q);const k=String(codeOf(value)||value||"");return labels.get(k)||k||"(Non renseigné)"}
 function indicatorCrossRows(src,groupSrc,pairs,stats){const groups=new Map();for(const [g,v] of pairs){if(g===undefined||g===null||g===""||v===undefined||v===null||v==="")continue;const values=Array.isArray(g)?g:[g];for(const gv of values){const key=indicatorGroupLabel(groupSrc,gv);if(!groups.has(key))groups.set(key,[]);groups.get(key).push(v)}}const rows=[];for(const [label,vals] of groups){if(indicatorNumeric(src)){const nums=vals.map(Number).filter(Number.isFinite).sort((a,b)=>a-b),r={label};if(stats.has("count"))r.count=nums.length;if(nums.length){if(stats.has("sum"))r.sum=sumNumbers(nums);if(stats.has("mean"))r.mean=sumNumbers(nums)/nums.length;if(stats.has("median")){const m=Math.floor(nums.length/2);r.median=nums.length%2?nums[m]:(nums[m-1]+nums[m])/2}if(stats.has("min"))r.min=nums[0];if(stats.has("max"))r.max=nums[nums.length-1]}rows.push(r)}else{const flat=vals.flatMap(v=>Array.isArray(v)?v:[v]);rows.push({label,count:flat.length})}}return rows.sort((a,b)=>String(a.label).localeCompare(String(b.label),"fr"))}
 function indicatorFicheCountCrossBlock(ft,groupSrc,pairs,stats,title){const groups=new Map();for(const [g,n] of pairs){if(g===undefined||g===null||g==="")continue;for(const gv of (Array.isArray(g)?g:[g])){const label=indicatorGroupLabel(groupSrc,gv);if(!groups.has(label))groups.set(label,[]);groups.get(label).push(Number(n)||0)}}const rows=[...groups].map(([label,counts])=>{const total=sumNumbers(counts),r={label,total};if(stats.has("withAny"))r.withAny=counts.filter(n=>n>0).length;if(stats.has("mean"))r.mean=counts.length?total/counts.length:0;if(stats.has("min"))r.min=counts.length?Math.min(...counts):0;if(stats.has("max"))r.max=counts.length?Math.max(...counts):0;return r}).sort((a,b)=>String(a.label).localeCompare(String(b.label),"fr"));if(!rows.length)return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4><div class="help">Aucune donnée ventilée disponible.</div></div>`;const cols=[["total",resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")?"Nombre de sous-fiches":"Nombre de fiches"],["withAny","Répondants avec au moins une fiche"],["mean","Moyenne par répondant"],["min","Minimum par répondant"],["max","Maximum par répondant"]].filter(([k])=>k==="total"?stats.has("total"):stats.has(k));const totals={total:sumNumbers(rows.map(r=>r.total||0)),withAny:sumNumbers(rows.map(r=>r.withAny||0))};const allCounts=pairs.map(([,n])=>Number(n)||0);totals.mean=allCounts.length?sumNumbers(allCounts)/allCounts.length:0;totals.min=allCounts.length?Math.min(...allCounts):0;totals.max=allCounts.length?Math.max(...allCounts):0;const fmt=v=>typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v??""));return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4><div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px">${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],"Groupe"))}</th>${cols.map(([,l])=>`<th style="text-align:right;padding:6px">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td style="padding:6px;border-top:1px solid #e5e7eb">${escapeHtml(r.label)}</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:1px solid #e5e7eb">${fmt(r[k])}</td>`).join("")}</tr>`).join("")}<tr style="font-weight:700"><td style="padding:6px;border-top:2px solid #cbd5e1">Total</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:2px solid #cbd5e1">${fmt(totals[k])}</td>`).join("")}</tr></tbody></table></div></div>`}
-function indicatorCrossBlock(src,groupSrc,pairs,stats,chart,title,display="both"){const rows=indicatorCrossRows(src,groupSrc,pairs,stats);if(!rows.length)return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4><div class="help">Aucune donnée croisée disponible.</div></div>`;if(!indicatorNumeric(src)){const total=rows.reduce((a,r)=>a+(r.count||0),0),items=rows.map(r=>({label:r.label,n:r.count||0}));const graph=display!=="table"?(chart==="pie"?indicatorPie(items,total):chart==="bar"?indicatorBar(items,total,stats.has("percent")):""):"",table=display!=="chart"?`<div>${items.map(x=>`<div>${escapeHtml(x.label)}${stats.has("count")?` : <strong>${x.n}</strong>`:""}${stats.has("percent")&&total?` (${(100*x.n/total).toFixed(1)} %)` : ""}</div>`).join("")}<div style="font-weight:700;border-top:2px solid #cbd5e1;margin-top:6px;padding-top:6px">Total${stats.has("count")?` : <strong>${total}</strong>`:""}${stats.has("percent")&&total?` (100.0 %)` : ""}</div></div>`:"";return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}${table}</div>`}const cols=[["count","Valeurs renseignées"],["sum","Somme"],["mean","Moyenne"],["median","Médiane"],["min","Minimum"],["max","Maximum"]].filter(([k])=>stats.has(k));const metric=cols.find(([k])=>k!=="count")?.[0]||cols[0]?.[0];const graph=display!=="table"&&chart==="bar"&&metric?indicatorBar(rows.filter(r=>Number.isFinite(r[metric])).map(r=>({label:r.label,n:r[metric]})),1,false):"";if(display==="chart")return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}</div>`;return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}<div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px">${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],"Groupe"))}</th>${cols.map(([,l])=>`<th style="text-align:right;padding:6px">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td style="padding:6px;border-top:1px solid #e5e7eb">${escapeHtml(r.label)}</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:1px solid #e5e7eb">${r[k]===undefined?"":(typeof r[k]==="number"&&!Number.isInteger(r[k])?r[k].toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(r[k])))}</td>`).join("")}</tr>`).join("")}<tr style="font-weight:700"><td style="padding:6px;border-top:2px solid #cbd5e1">Total</td>${cols.map(([k])=>{const all=pairs.map(([,v])=>v),nums=all.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);let v="";if(k==="count")v=nums.length;else if(k==="sum")v=sumNumbers(nums);else if(k==="mean")v=nums.length?sumNumbers(nums)/nums.length:"";else if(k==="median"&&nums.length){const m=Math.floor(nums.length/2);v=nums.length%2?nums[m]:(nums[m-1]+nums[m])/2}else if(k==="min"&&nums.length)v=nums[0];else if(k==="max"&&nums.length)v=nums[nums.length-1];return `<td style="text-align:right;padding:6px;border-top:2px solid #cbd5e1">${typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v))}</td>`}).join("")}</tr></tbody></table></div></div>`}
+function indicatorCrossBlock(src,groupSrc,pairs,stats,chart,title,display="both"){const rows=indicatorCrossRows(src,groupSrc,pairs,stats);if(!rows.length)return `<div class="indicator-card"><h4>${escapeHtml(title)}</h4><div class="help">Aucune donnée croisée disponible.</div></div>`;if(!indicatorNumeric(src)){const total=rows.reduce((a,r)=>a+(r.count||0),0),items=rows.map(r=>({label:r.label,n:r.count||0}));const graph=display!=="table"?(chart==="pie"?indicatorPie(items,total):chart==="bar"?indicatorBar(items,total,stats.has("percent")):""):"",table=display!=="chart"?`<div>${items.map(x=>`<div class="comparison-modality-row" data-comparison-modality="${escapeHtml(x.label)}">${escapeHtml(x.label)}${stats.has("count")?` : <strong>${x.n}</strong>`:""}${stats.has("percent")&&total?` (${(100*x.n/total).toFixed(1)} %)` : ""}</div>`).join("")}<div class="comparison-total-row" data-comparison-total="Effectif" style="font-weight:700;border-top:2px solid #cbd5e1;margin-top:6px;padding-top:6px">Total${stats.has("count")?` : <strong>${total}</strong>`:""}${stats.has("percent")&&total?` (100.0 %)` : ""}</div></div>`:"";return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}${table}</div>`}const cols=[["count","Valeurs renseignées"],["sum","Somme"],["mean","Moyenne"],["median","Médiane"],["min","Minimum"],["max","Maximum"]].filter(([k])=>stats.has(k));const metric=cols.find(([k])=>k!=="count")?.[0]||cols[0]?.[0];const graph=display!=="table"&&chart==="bar"&&metric?indicatorBar(rows.filter(r=>Number.isFinite(r[metric])).map(r=>({label:r.label,n:r[metric]})),1,false):"";if(display==="chart")return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}</div>`;return `<div class="indicator-card"><h4>${escapeHtml(title)} — par ${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],codeOf(groupSrc.Question_Code)))}</h4>${graph}<div style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px">${escapeHtml(first(groupSrc,["Libelle","Libellé","Titre"],"Groupe"))}</th>${cols.map(([,l])=>`<th style="text-align:right;padding:6px">${escapeHtml(l)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr><td style="padding:6px;border-top:1px solid #e5e7eb">${escapeHtml(r.label)}</td>${cols.map(([k])=>`<td style="text-align:right;padding:6px;border-top:1px solid #e5e7eb">${r[k]===undefined?"":(typeof r[k]==="number"&&!Number.isInteger(r[k])?r[k].toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(r[k])))}</td>`).join("")}</tr>`).join("")}<tr style="font-weight:700"><td style="padding:6px;border-top:2px solid #cbd5e1">Total</td>${cols.map(([k])=>{const all=pairs.map(([,v])=>v),nums=all.map(Number).filter(Number.isFinite).sort((a,b)=>a-b);let v="";if(k==="count")v=nums.length;else if(k==="sum")v=sumNumbers(nums);else if(k==="mean")v=nums.length?sumNumbers(nums)/nums.length:"";else if(k==="median"&&nums.length){const m=Math.floor(nums.length/2);v=nums.length%2?nums[m]:(nums[m-1]+nums[m])/2}else if(k==="min"&&nums.length)v=nums[0];else if(k==="max"&&nums.length)v=nums[nums.length-1];return `<td style="text-align:right;padding:6px;border-top:2px solid #cbd5e1">${typeof v==="number"&&!Number.isInteger(v)?v.toLocaleString(undefined,{maximumFractionDigits:2}):escapeHtml(String(v))}</td>`}).join("")}</tr></tbody></table></div></div>`}
 
 function renderIndicators(q,periodOverride=null,respondentOnly=false){const tokens=indicatorQuestionCodes(q),hydrated=indicatorHydratedResponses(periodOverride,respondentOnly),title=first(q,["Libelle","Libellé","Titre"],"Indicateurs"),blocks=[];if(!indicatorHasCampaign())return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div class="help">Aucune campagne n’est identifiable dans cet aperçu. Les indicateurs ne mélangent pas automatiquement les données de plusieurs campagnes. Ouvrez un lien de campagne pour afficher ses résultats.</div></section>`;for(const raw of tokens){let kind="q",typeCode="",qc=raw;if(raw.startsWith("f:")){kind="f";typeCode=raw.slice(2)}else if(raw.startsWith("fq:")){kind="fq";const rest=raw.slice(3),i=rest.indexOf(":");if(i<0)continue;typeCode=rest.slice(0,i);qc=rest.slice(i+1)}else if(raw.startsWith("q:"))qc=raw.slice(2);const cfg=indicatorSourceConfig(q,raw,kind);if(kind==="f"){const ft=indicatorFicheType(typeCode);if(!ft)continue;const counts=hydrated.map(h=>(h.fiches?.[typeCode]||[]).length),total=sumNumbers(counts),withAny=counts.filter(n=>n>0).length,parts=[];if(cfg.stats.has("total"))parts.push([resolveRefCode(ft.Parent_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")?"Nombre total de sous-fiches":"Nombre total de fiches",total]);if(cfg.stats.has("withAny"))parts.push(["Répondants avec au moins une fiche",withAny]);if(counts.length&&cfg.stats.has("mean"))parts.push(["Nombre moyen de fiches par répondant",total/counts.length]);if(counts.length&&cfg.stats.has("min"))parts.push(["Nombre minimum de fiches par répondant",Math.min(...counts)]);if(counts.length&&cfg.stats.has("max"))parts.push(["Nombre maximum de fiches par répondant",Math.max(...counts)]);const ficheTitle=first(ft,["Libelle_pluriel","Libellé_pluriel","Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode);if(cfg.groupBy){const spec=indicatorFicheGroupSpec(cfg.groupBy,typeCode),groupSrc=spec?.kind==="main"?(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(spec.questionCode)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")):spec?indicatorFicheQuestion(spec.questionCode,spec.typeCode):null;if(groupSrc){const pairs=hydrated.flatMap(h=>indicatorFicheCountGroupData(h,typeCode,spec));blocks.push(indicatorFicheCountCrossBlock(ft,groupSrc,pairs,cfg.stats,ficheTitle));continue}}blocks.push(`<div class="indicator-card"><h4>${escapeHtml(ficheTitle)}</h4>${indicatorKpis(parts)}</div>`);continue}let src,vals,pairs=[];if(kind==="fq"){src=indicatorFicheQuestion(qc,typeCode);if(!src)continue;const rows=hydrated.flatMap(h=>(h.fiches?.[typeCode]||[]).map(f=>({h,f})));vals=rows.map(({h,f})=>indicatorEffectiveFicheAnswer(h,f,src,qc)).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy){const groupSrc=indicatorFicheQuestion(cfg.groupBy,typeCode);pairs=rows.map(({h,f})=>[groupSrc?indicatorEffectiveFicheAnswer(h,f,groupSrc,cfg.groupBy):f.answers?.[cfg.groupBy],indicatorEffectiveFicheAnswer(h,f,src,qc)])}}else{src=(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(qc)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(!src)continue;vals=hydrated.map(h=>h.principalAnswers?.[qc]).filter(v=>v!==undefined&&v!==null&&v!==""&&!(Array.isArray(v)&&!v.length));if(cfg.groupBy)pairs=hydrated.map(h=>[h.principalAnswers?.[cfg.groupBy],h.principalAnswers?.[qc]])}const ft=kind==="fq"?indicatorFicheType(typeCode):null,labelText=`${kind==="fq"&&ft?`${first(ft,["Libelle_singulier","Libellé_singulier","Libelle","Nom"],typeCode)} — `:""}${first(src,["Libelle","Libellé","Titre"],qc)}`;if(cfg.groupBy){const groupSrc=kind==="fq"?indicatorFicheQuestion(cfg.groupBy,typeCode):(state.definition?.questions||[]).find(x=>String(codeOf(x.Question_Code))===String(cfg.groupBy)&&!resolveRefCode(x.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code"));if(groupSrc){blocks.push(indicatorCrossBlock(src,groupSrc,pairs,cfg.stats,cfg.chart,labelText,cfg.display));continue}}blocks.push(indicatorNumeric(src)?indicatorNumericBlock(vals,cfg.stats,labelText,cfg.chart,cfg.display):indicatorCategoricalBlock(src,vals,cfg.stats,cfg.chart,labelText,cfg.display))}return `<section class="content-indicators" id="indicator-${escapeHtml(codeOf(q.Question_Code))}" data-display-block="${escapeHtml(codeOf(q.Question_Code))}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${escapeHtml(title)}</h3><div style="display:grid;gap:14px">${blocks.join("")||'<div class="help">Aucune donnée disponible pour les indicateurs sélectionnés dans cette campagne.</div>'}</div></section>`}
 function renderIndicatorsSafe(q){try{return renderIndicators(q)}catch(e){console.error("[Gristionnaire] Erreur bloc Indicateurs",codeOf(q?.Question_Code),e);const qc=escapeHtml(codeOf(q?.Question_Code));const title=escapeHtml(first(q,["Libelle","Libellé","Titre"],"Indicateurs"));return `<section class="content-indicators" id="indicator-${qc}" data-display-block="${qc}"><h3 style="${escapeHtml(labelStyle(q))}">📊 ${title}</h3><div class="help"><strong>Impossible de calculer ce bloc Indicateurs.</strong><br><small>Les autres éléments de la section restent accessibles.</small></div></section>`}}
@@ -954,16 +954,51 @@ function comparisonParseNumber(text){
 function comparisonKpis(html){
   const tmp=document.createElement("div");tmp.innerHTML=html;
   const found=new Map();
+  const add=(title,name,text,isTotal=false)=>{
+    const metric=comparisonParseNumber(text);
+    if(!title||!name||!metric)return;
+    found.set(`${title}\u0000${name}`,{title,name,isTotal,...metric});
+  };
   tmp.querySelectorAll(".indicator-card").forEach(card=>{
     const title=card.querySelector("h4")?.textContent?.trim()||"";
+    // Les KPI simples conservent leur fonctionnement historique.
     card.querySelectorAll("small").forEach(label=>{
-      // La disposition KPI du questionnaire est <small>libellé</small><div>valeur</div>.
       const valueEl=label.nextElementSibling;
-      if(!title||!valueEl||valueEl.tagName!=="DIV")return;
-      const metric=comparisonParseNumber(valueEl.textContent);
-      if(!metric)return;
-      const name=label.textContent.trim();
-      if(name)found.set(`${title}\u0000${name}`,{title,name,...metric});
+      if(valueEl?.tagName==="DIV")add(title,label.textContent.trim(),valueEl.textContent);
+    });
+    // Un regroupement produit un tableau : les colonnes peuvent être des
+    // effectifs, sommes, moyennes... Les clés incluent la modalité ET la mesure.
+    // Une catégorie absente n'est pas convertie artificiellement en zéro.
+    card.querySelectorAll("table").forEach(table=>{
+      const heads=[...table.querySelectorAll("thead tr:last-child th,thead tr:last-child td")]
+        .map(cell=>cell.textContent.trim());
+      if(heads.length<2)return;
+      table.querySelectorAll("tbody tr").forEach(tr=>{
+        const cells=[...tr.children].filter(el=>/^(TH|TD)$/.test(el.tagName));
+        if(cells.length!==heads.length)return;
+        const group=cells[0].textContent.trim();
+        if(!group)return;
+        const isTotal=group.toLocaleLowerCase("fr-FR")==="total"||Boolean(tr.closest("tfoot"));
+        for(let i=1;i<cells.length;i++){
+          const measure=heads[i]||`Mesure ${i}`;
+          add(title,`${group} — ${measure}`,cells[i].textContent,isTotal);
+        }
+      });
+    });
+    // Ne lire que les lignes de données marquées par les rendus catégoriels.
+    // Les graphiques (dont les secteurs) peuvent afficher les mêmes valeurs :
+    // les parcourir produirait des doublons et des libellés incorrects.
+    card.querySelectorAll('.comparison-modality-row[data-comparison-modality]').forEach(row=>{
+      const modality=String(row.getAttribute('data-comparison-modality')||'').trim();
+      const count=row.querySelector(':scope > strong');
+      if(modality&&modality.toLowerCase()!=="total"&&count){
+        add(title,`${modality} — Effectif`,count.textContent);
+      }
+    });
+    card.querySelectorAll('.comparison-total-row[data-comparison-total]').forEach(row=>{
+      const measure=row.getAttribute('data-comparison-total')||'Effectif';
+      const count=row.querySelector(':scope > strong');
+      if(count)add(title,`Total — ${measure}`,count.textContent,true);
     });
   });
   return found;
@@ -992,17 +1027,58 @@ function comparisonNumericRows(series){
     const values=series.map(p=>p.kpis.get(key)||null);
     const metrics=values.filter(Boolean);
     if(!metrics.length||new Set(metrics.map(x=>x.unit)).size!==1)return null;
-    return {key,unit:metrics[0].unit,title:metrics[0].title,name:metrics[0].name,values};
+    return {key,unit:metrics[0].unit,title:metrics[0].title,name:metrics[0].name,isTotal:metrics[0].isTotal===true,values};
   }).filter(Boolean);
 }
-function renderComparisonTable(series,options,reference){
+function comparisonVisibleRows(series,mode='auto'){
   const rows=comparisonNumericRows(series);
+  if(mode==='always')return rows;
+  if(mode==='never')return rows.filter(r=>!r.isTotal);
+  const groups=new Map();
+  for(const row of rows){
+    if(row.isTotal)continue;
+    const base=String(row.name||'').split(' — ').slice(0,-1).join(' — ')||String(row.name||'');
+    const set=groups.get(row.title)||new Set();set.add(base);groups.set(row.title,set);
+  }
+  return rows.filter(r=>!r.isTotal||(groups.get(r.title)?.size||0)>1);
+}
+function renderComparisonTable(series,options,reference){
+  const rows=comparisonVisibleRows(series,options.tableTotals||"auto");
   if(!rows.length)return '<div class="help" role="status">Aucun indicateur numérique comparable. Consultez les détails des périodes ci-dessous.</div>';
   const referenceIndex=Math.max(0,series.findIndex(p=>p.code===reference));
   const others=series.map((p,index)=>({p,index})).filter(x=>x.index!==referenceIndex);
   const extraHead=others.map(({p})=>`${options.showDiff?`<th scope="col">Écart vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}${options.showPercent?`<th scope="col">Évolution vs ${escapeHtml(series[referenceIndex].label)}<br><small>${escapeHtml(p.label)}</small></th>`:''}`).join('');
   const header=`<thead><tr><th scope="col">Indicateur</th>${series.map(p=>`<th scope="col">${escapeHtml(p.label)}</th>`).join('')}${extraHead}</tr></thead>`;
-  const body=rows.map(row=>{
+  // La clé métier complète reste inchangée, mais l'affichage ne répète pas
+  // « Événements — par Structure détaillée » sur chaque modalité.
+  const displayInfo=row=>{
+    const title=String(row.title||'');
+    const name=String(row.name||'');
+    const cut=name.lastIndexOf(' — ');
+    if(cut>=0&&title.includes(' — par '))return {
+      group:name.slice(cut+3).trim(),
+      modality:name.slice(0,cut).trim(),
+      ventilated:true
+    };
+    return {group:title,modality:name,ventilated:false};
+  };
+  const groupLabels=new Map();
+  for(const row of rows){
+    const d=displayInfo(row);
+    if(!groupLabels.has(d.group))groupLabels.set(d.group,new Set());
+    groupLabels.get(d.group).add(row.title);
+  }
+  const body=rows.map((row,rowIndex)=>{
+    const d=displayInfo(row);
+    const previous=rowIndex?displayInfo(rows[rowIndex-1]):null;
+    // Si deux indicateurs distincts portent le même nom de mesure,
+    // on précise leur origine pour éviter toute ambiguïté.
+    const sectionLabel=groupLabels.get(d.group).size>1
+      ?`${d.group} (${row.title})`:d.group;
+    const previousLabel=previous&&(groupLabels.get(previous.group).size>1
+      ?`${previous.group} (${rows[rowIndex-1].title})`:previous.group);
+    const section=sectionLabel!==previousLabel
+      ?`<tr class="comparison-measure-heading"><th colspan="${1+series.length+others.length*(Number(Boolean(options.showDiff))+Number(Boolean(options.showPercent)))}" scope="colgroup" style="text-align:left;background:#eef3fa;padding:9px 12px;font-weight:700">${escapeHtml(sectionLabel)}</th></tr>`:'';
     const base=row.values[referenceIndex];
     const cell=row.values.map(v=>`<td>${escapeHtml(comparisonFormatValue(v))}</td>`).join('');
     const extras=others.map(({index})=>{
@@ -1016,16 +1092,16 @@ function renderComparisonTable(series,options,reference){
       const percent=options.showPercent?`<td>${ratio===null?'Non calculable':`${!options.showDiff?icon:''}${escapeHtml(comparisonFormatNumber(ratio,''))} %`}</td>`:'';
       return diff+percent;
     }).join('');
-    return `<tr><th scope="row">${escapeHtml(row.title+' — '+row.name)}</th>${cell}${extras}</tr>`;
+    return `${section}<tr${row.isTotal?' class="comparison-total-highlight"':''}><th scope="row">${escapeHtml(d.modality)}</th>${cell}${extras}</tr>`;
   }).join('');
   const note=options.showDiff||options.showPercent?'<p class="help">Chaque écart compare la période indiquée à la référence choisie. Pour les indicateurs en %, les écarts sont en points ; une valeur de référence nulle rend l’évolution relative non calculable.</p>':'';
   return `<section class="comparison-changes"><div class="comparison-table-scroll"><table>${header}<tbody>${body}</tbody></table></div>${note}</section>`;
 }
 function comparisonChartData(series){
-  const rows=comparisonNumericRows(series);
+  const rows=comparisonNumericRows(series).filter(r=>!r.isTotal||state.comparison.chartTotals);
   const metrics=rows.filter(row=>row.values.every(Boolean)).map(row=>({...row,numbers:row.values.map(v=>v.number)}));
   const groups=new Map();
-  for(const m of metrics){const key=`${m.title}\u0000${m.unit}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m);}
+  for(const m of metrics.filter(x=>!x.isTotal)){const key=`${m.title}\u0000${m.unit}`;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(m);}
   return {metrics,groups:[...groups.entries()].filter(([,items])=>items.length>=2&&items.every(x=>x.numbers.every(v=>v>=0)))};
 }
 function comparisonSvgChart(items,labels,type){
@@ -1035,10 +1111,11 @@ function comparisonSvgChart(items,labels,type){
   const fmt=x=>new Intl.NumberFormat('fr-FR',{maximumFractionDigits:2}).format(x);
   const svgText=(x,y,value,attrs='')=>`<text x="${x}" y="${y}" ${attrs}>${escapeHtml(String(value))}</text>`;
   const values=labels.map((_,i)=>type==='stacked'?items.reduce((sum,row)=>sum+row.numbers[i],0):items[0].numbers[i]);
+  const scaleValues=type==='stacked'?values:items.flatMap(item=>item.numbers);
   // Graduations lisibles : pas arrondis (1, 2, 2,5, 5 × 10^n),
   // et pas entier dès que toutes les données sont des comptages entiers.
   const allInteger=items.every(row=>row.numbers.every(Number.isInteger));
-  const lo=Math.min(0,...values),hi=Math.max(0,...values);
+  const lo=Math.min(0,...scaleValues),hi=Math.max(0,...scaleValues);
   const span=Math.max(hi-lo,allInteger?1:Math.abs(hi)*0.1,0.001);
   const rough=span/4;
   const magnitude=10**Math.floor(Math.log10(rough));
@@ -1053,14 +1130,28 @@ function comparisonSvgChart(items,labels,type){
   const barWidth=Math.min(95,plotW/n*.65);
   let content='';
   if(type==='line'){
-    content=`<polyline points="${xs.map((x,i)=>`${x},${y(values[i])}`).join(' ')}" fill="none" stroke="#2763a0" stroke-width="3"/>`;
-    content+=xs.map((x,i)=>`<circle cx="${x}" cy="${y(values[i])}" r="5" fill="#2763a0"/>${svgText(x,y(values[i])-11,fmt(values[i]),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`).join('');
+    const colors=['#2763a0','#c16e31'];
+    content=items.map((item,j)=>{
+      const color=colors[j%colors.length];
+      return `<polyline points="${xs.map((x,i)=>`${x},${y(item.numbers[i])}`).join(' ')}" fill="none" stroke="${color}" stroke-width="3"/>`+
+        xs.map((x,i)=>`<circle cx="${x}" cy="${y(item.numbers[i])}" r="5" fill="${color}"/>${svgText(x,y(item.numbers[i])-11-16*j,fmt(item.numbers[i]),'text-anchor="middle" font-size="12" font-weight="600" fill="'+color+'"')}`).join('');
+    }).join('');
   }else if(type==='stacked'){
     const colors=['#346fba','#e29a45','#45a48d','#9b80cf','#d16d77','#7d95ae'];
     content=xs.map((x,i)=>{let accumulated=0;const segments=items.map((row,j)=>{const v=row.numbers[i],topY=y(accumulated+v),bottomY=y(accumulated);accumulated+=v;return `<rect x="${x-barWidth/2}" y="${topY}" width="${barWidth}" height="${Math.max(0,bottomY-topY)}" fill="${colors[j%colors.length]}"><title>${escapeHtml(row.name)} : ${escapeHtml(fmt(v))}</title></rect>`;}).join('');return segments+svgText(x,y(accumulated)-9,fmt(accumulated),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"');}).join('');
     content+=`<g transform="translate(${left},${height-25})">${items.map((m,i)=>`<rect x="${(i%3)*200}" y="${Math.floor(i/3)*18}" width="9" height="9" fill="${colors[i%colors.length]}"/>${svgText((i%3)*200+15,9+Math.floor(i/3)*18,m.name.slice(0,22),'font-size="11" fill="#394b61"')}`).join('')}</g>`;
   }else{
-    content=xs.map((x,i)=>{const v=values[i],yy=y(v),rectY=Math.min(yy,base),h=Math.max(1,Math.abs(base-yy));return `<rect x="${x-barWidth/2}" y="${rectY}" width="${barWidth}" height="${h}" rx="4" fill="${i%2?'#42a596':'#346fba'}"/>${svgText(x,v>=0?yy-10:yy+20,fmt(v),'text-anchor="middle" font-size="12" font-weight="600" fill="#1d3552"')}`;}).join('');
+    const colors=['#346fba','#c16e31'];
+    content=xs.map((x,i)=>items.map((item,j)=>{
+      const v=item.numbers[i],yy=y(v),bar=barWidth/items.length;
+      const offset=x-barWidth/2+j*bar;
+      const rectY=Math.min(yy,base),h=Math.max(1,Math.abs(base-yy));
+      return `<rect x="${offset}" y="${rectY}" width="${Math.max(1,bar-3)}" height="${h}" rx="3" fill="${colors[j%colors.length]}"><title>${escapeHtml(item.name)} : ${escapeHtml(fmt(v))}</title></rect>`;
+    }).join('')).join('');
+  }
+  if(type!=='stacked'&&items.length>1){
+    const colors=['#346fba','#c16e31'];
+    content+=items.map((item,j)=>`${svgText(left+j*225,height-30,`● ${item.name}`,'font-size="11" fill="'+colors[j%colors.length]+'"')}`).join('');
   }
   return `<div class="comparison-chart-scroll"><svg class="comparison-chart-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif des périodes">${ticks}<line x1="${left}" y1="${base}" x2="${width-right}" y2="${base}" stroke="#71839b"/>${content}${xs.map((x,i)=>svgText(x,height-69,labels[i],'text-anchor="middle" font-size="12" fill="#263e59"')).join('')}</svg></div>`;
 }
@@ -1075,7 +1166,15 @@ function renderComparisonChart(series){
   if(!opts.length)return `<section class="comparison-chart-box"><div class="comparison-chart-fields"><label>Type de graphique<select data-comparison-chart-type><option value="bar">Barres</option><option value="line">Courbe</option><option value="stacked" selected>Barres empilées</option></select></label></div><p class="help" role="status">Aucune ventilation compatible avec un graphique empilé pour ces indicateurs. Sélectionnez « Barres » ou « Courbe » pour afficher un autre graphique.</p></section>`;
   if(!opts.some(x=>x.key===state.comparison.chartMetric))state.comparison.chartMetric=opts[0].key;
   const selected=state.comparison.chartMetric;
-  const items=type==='stacked'?(groups.find(([k])=>k===selected)?.[1]||[]):metrics.filter(x=>x.key===selected);
+  let items=type==='stacked'?(groups.find(([k])=>k===selected)?.[1]||[]):metrics.filter(x=>x.key===selected);
+  // Afficher le total comme deuxième série, uniquement lorsqu'il est de même
+  // titre, de même mesure et de même unité. Jamais dans un empilement.
+  if(type!=='stacked'&&state.comparison.chartTotals&&items.length===1&&!items[0].isTotal){
+    const metric=items[0];
+    const measure=String(metric.name).split(' — ').slice(-1)[0];
+    const total=metrics.find(m=>m.isTotal&&m.title===metric.title&&m.unit===metric.unit&&m.name===`Total — ${measure}`);
+    if(total)items=[metric,total];
+  }
   const title=type==='stacked'?items[0]?.title:`${items[0]?.title} — ${items[0]?.name}`;
   const select=opts.map(o=>`<option value="${escapeHtml(o.key)}" ${o.key===selected?'selected':''}>${escapeHtml(o.label)}</option>`).join('');
   const note=type==='stacked'?'Vérifiez que les composantes positives et de même unité peuvent être additionnées.':'';
@@ -1096,7 +1195,23 @@ function renderIndicatorComparison(q){
   const referenceSelect=selectedPeriods.map(p=>`<option value="${escapeHtml(p.Periode_Code)}" ${String(p.Periode_Code)===state.comparison.reference?'selected':''}>${escapeHtml(p.Libelle||p.Periode_Code)}</option>`).join('');
   const referenceControl=state.comparison.showDiff||state.comparison.showPercent?`<label class="comparison-reference-field">Période de référence<select data-comparison-reference>${referenceSelect}</select></label>`:'';
   const toggle=(name,label,checked)=>`<label class="comparison-option"><input type="checkbox" data-comparison-option="${name}" ${checked?'checked':''}><span>${label}</span></label>`;
-  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-option-list">${toggle('showDiff','Afficher les écarts absolus',state.comparison.showDiff)}${toggle('showPercent','Afficher les évolutions en %',state.comparison.showPercent)}${toggle('showTrend','Afficher les flèches de hausse ou de baisse',state.comparison.showTrend)}${toggle('showChart','Afficher un graphique comparatif',state.comparison.showChart)}</div>${referenceControl}<p class="help">Les options d’écarts sont facultatives. Chaque période est comparée à la référence choisie, sans modifier les réponses.</p></details>`;
+  // Les trois panneaux conservent les attributs data-comparison-* utilisés par les événements existants.
+  const options=`<details class="comparison-options" ${state.comparison.optionsOpen?'open':''}><summary>Options d’affichage</summary><div class="comparison-settings-grid">
+    <section class="comparison-settings-group" aria-label="Comparaison"><h4>Comparaison</h4><p class="comparison-settings-hint">Colonnes facultatives du tableau</p>
+      ${toggle('showDiff','Écarts absolus',state.comparison.showDiff)}
+      ${toggle('showPercent','Évolutions en %',state.comparison.showPercent)}
+      ${toggle('showTrend','Flèches de variation',state.comparison.showTrend)}
+      ${referenceControl}
+    </section>
+    <section class="comparison-settings-group" aria-label="Totaux"><h4>Totaux</h4><p class="comparison-settings-hint">Présentation des lignes de total</p>
+      <label class="comparison-reference-field">Dans le tableau<select data-comparison-table-totals><option value="auto" ${state.comparison.tableTotals==='auto'?'selected':''}>Automatique (plusieurs modalités)</option><option value="always" ${state.comparison.tableTotals==='always'?'selected':''}>Toujours afficher</option><option value="never" ${state.comparison.tableTotals==='never'?'selected':''}>Ne pas afficher</option></select></label>
+      ${toggle('chartTotals','Dans le graphique (hors empilé)',state.comparison.chartTotals)}
+    </section>
+    <section class="comparison-settings-group" aria-label="Graphique"><h4>Graphique</h4><p class="comparison-settings-hint">Visualisation complémentaire</p>
+      ${toggle('showChart','Afficher un graphique',state.comparison.showChart)}
+      <p class="comparison-settings-hint">Le type de graphique et l’indicateur se choisissent sous le tableau.</p>
+    </section>
+  </div></details>`;
   let table='',chart='',details='';
   if(selectedPeriods.length>=2){
     const series=comparisonSeries(q,selectedPeriods);
@@ -1680,6 +1795,10 @@ function render() {
     if(!selected.has(state.comparison.reference))state.comparison.reference=state.comparison.selected[0]||"";
     render();
   }));
+  root.querySelector("[data-comparison-table-totals]")?.addEventListener("change",e=>{
+    if(["auto","always","never"].includes(e.currentTarget.value))state.comparison.tableTotals=e.currentTarget.value;
+    state.comparison.optionsOpen=true;render();
+  });
   root.querySelector("[data-comparison-reference]")?.addEventListener("change",e=>{
     state.comparison.reference=e.currentTarget.value;state.comparison.optionsOpen=true;render();
   });
@@ -1689,7 +1808,7 @@ function render() {
   root.querySelectorAll("[data-comparison-option]").forEach(el=>el.addEventListener("change",e=>{
     state.comparison.optionsOpen=true;
     const option=e.currentTarget.dataset.comparisonOption;
-    if(["showDiff","showPercent","showTrend","showChart"].includes(option))state.comparison[option]=e.currentTarget.checked;
+    if(["showDiff","showPercent","showTrend","showChart","chartTotals"].includes(option))state.comparison[option]=e.currentTarget.checked;
     if(option==="showTrend"&&state.comparison.showTrend&&!state.comparison.showDiff&&!state.comparison.showPercent)state.comparison.showDiff=true;
     render();
   }));
