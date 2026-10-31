@@ -272,3 +272,8 @@ body[data-module="dashboard"] .builder-page-head h1{font-size:24px}
 }
 
 :where(body[data-module="dashboard"]) button{border:1px solid var(--ui-border);background:white;color:var(--ui-text);padding:9px 13px;border-radius:9px;min-height:38px;font-weight:600;cursor:pointer}
+
+/* V4.0 — sélection de période pour le Dashboard consultable. */
+.dashboard-period-control{display:grid;gap:5px;font-size:.84rem;font-weight:650;color:#344054;min-width:210px}
+.dashboard-period-control select{font:inherit;font-weight:400;padding:9px 10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff;max-width:300px;min-width:200px}
+@media(max-width:700px){.dashboard-period-control,.dashboard-period-control select{width:100%;max-width:none}}
