@@ -2830,7 +2830,12 @@ async function boot() {
     const rc=state.previewMode?null:(resumed?.Reponse_Code ?? state.selectedRecord?.Reponse_Code);
     if(rc){const h=hydrateResponse({REPONSES:state.definition.responses,ELEMENTS_REPONSE:state.definition.responseElements,VALEURS_REPONSE:state.definition.responseValues,SELECTIONS_REPONSE:state.definition.responseSelections},state.definition,rc); state.response=h.response; state.principalElement=h.principalElement; state.answers=h.principalAnswers; state.principalReadOnlyQuestions=h.principalReadOnlyQuestions||{}; state.fiches=h.fiches;}
     if(!state.previewMode)applyCampaignPersonalization();
-    state.periodConfig=await readPeriodConfiguration(grist.docApi,state.definition);
+    // Rattacher le mode périodisé au questionnaire de la campagne effective.
+    let periodCampaign=null;
+    if(!state.previewMode){
+      try{periodCampaign=selectedCampaign();}catch{/* Le diagnostic du lien reste géré ailleurs. */}
+    }
+    state.periodConfig=await readPeriodConfiguration(grist.docApi,state.definition,periodCampaign);
     state.selectedPeriod=state.periodConfig?.defaultPeriod||"";
     if(state.response)loadPrincipalForSelectedPeriod();
     render();
