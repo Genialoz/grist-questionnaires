@@ -54,6 +54,21 @@ function closeReadonlyArchiveEditor(){
   state.saveError="";
   return true;
 }
+// Quitter une archive déverrouillée doit fermer son éditeur avant de changer de page.
+// Une confirmation protège les saisies non enregistrées ; refuser conserve la fiche ouverte.
+function closeArchiveEditorForNavigation(){
+  if(!state.ficheEditor && !state.subFicheEditor)return true;
+  if(closeReadonlyArchiveEditor())return true;
+  const config=state.periodConfig;
+  const period=config?.periods?.find(p=>String(p.Periode_Code)===String(state.selectedPeriod));
+  const closed=String(period?.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee";
+  if(!config?.enabled || !closed || !periodEditable(config,state.selectedPeriod))return false;
+  if(!globalThis.confirm?.("Quitter la fiche sans enregistrer les modifications ?\nLes changements non enregistrés seront perdus."))return false;
+  state.ficheEditor=null;
+  state.subFicheEditor=null;
+  state.saveError="";
+  return true;
+}
 function returnFromReadonlyArchiveHome(){
   if(!closeReadonlyArchiveEditor())return false;
   state.selectedPeriod=state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"";
@@ -1418,7 +1433,7 @@ function render() {
   });
   // Une fiche archivée consultée en lecture seule ne doit pas bloquer la navigation.
   // Une fiche réellement modifiable conserve la protection contre l'abandon de saisie.
-  const canLeavePeriodView=()=>closeReadonlyArchiveEditor();
+  const canLeavePeriodView=()=>closeArchiveEditorForNavigation();
   const changePeriodView=(next,{home=false}={})=>{
     if(!canLeavePeriodView())return;
     if(state.principalDirty){showSaveError(new Error("Enregistrez les questions générales avant de quitter cette période."));render();return;}
@@ -1449,14 +1464,14 @@ function render() {
   }));
   root.querySelectorAll("[data-archive-open]").forEach(el=>el.addEventListener("click",()=>changePeriodView(el.dataset.archiveOpen)));
   root.querySelectorAll("[data-archive-page]").forEach(el=>el.addEventListener("click",()=>{
-    if(!closeReadonlyArchiveEditor())return;
+    if(!closeArchiveEditorForNavigation())return;
     const target=Number(el.dataset.archivePage);
     if(!Number.isInteger(target)||target<0||target>=vm.pages.length)return;
     state.pageIndex=target;state.pageHistory=[];state.ficheListUi={};render();
   }));
   root.querySelector("[data-archive-back]")?.addEventListener("click",()=>changePeriodView("__archives__"));
   root.querySelector("[data-archive-home]")?.addEventListener("click",()=>{
-    if(!closeReadonlyArchiveEditor())return;
+    if(!closeArchiveEditorForNavigation())return;
     changePeriodView(state.periodConfig?.defaultPeriod||state.periodConfig?.selectable?.[0]?.Periode_Code||"",{home:true});
   });
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
@@ -1478,7 +1493,12 @@ function render() {
     const targetSection=e.currentTarget.dataset.tocSection||"";const targetIndicator=e.currentTarget.dataset.tocIndicator||"";
     if(!Number.isInteger(targetPage)||targetPage<0||targetPage>=vm.pages.length)return;
     if(targetPage!==state.pageIndex){
-      if(state.periodConfig?.enabled && state.selectedPeriod && closeReadonlyArchiveEditor() &&
+      if(state.ficheEditor||state.subFicheEditor){
+        if(!closeArchiveEditorForNavigation()){
+          if(state.periodConfig?.enabled && state.selectedPeriod && state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod)))return;
+        }
+      }
+      if(state.periodConfig?.enabled && state.selectedPeriod && closeArchiveEditorForNavigation() &&
         (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) &&
           String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
         if(targetPage===0){returnFromReadonlyArchiveHome();return;}
@@ -1493,6 +1513,7 @@ function render() {
   }));
   root.querySelector("[data-validate-toc]")?.addEventListener("click",()=>{if(!locked)finalizeFromToc(vm);});
   root.querySelector("[data-return-toc]")?.addEventListener("click",async()=>{
+    if((state.ficheEditor||state.subFicheEditor) && !closeArchiveEditorForNavigation())return;
     if(!locked && !state.previewMode){beginActionFeedback(state.principalDirty?"Enregistrement et retour au sommaire…":"Retour au sommaire…");render();if(!(await savePrincipal())){clearActionFeedback();render();return;}}
     navigateToPage(vm,positionedTocPage);clearActionFeedback();render();
     requestAnimationFrame(()=>root.querySelector(".questionnaire-toc")?.scrollIntoView({behavior:"smooth",block:"start"}));
@@ -1548,8 +1569,8 @@ function render() {
   nav.querySelectorAll("[data-export-my-pdf]").forEach(el=>el.addEventListener("click",exportMyPdf));
   nav.querySelectorAll("[data-export-my-excel]").forEach(el=>el.addEventListener("click",exportMyExcel));
   document.querySelector("#prev")?.addEventListener("click",async()=>{
-    if(state.periodConfig?.enabled && (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) && String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" && !periodEditable(state.periodConfig,state.selectedPeriod)))){
-      if(!closeReadonlyArchiveEditor())return;
+    if(state.periodConfig?.enabled && (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>String(p.Periode_Code)===String(state.selectedPeriod) && String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee"))){
+      if(!closeArchiveEditorForNavigation())return;
       navigateToPreviousPage(vm);
       if(state.pageIndex===0){returnFromReadonlyArchiveHome();return;}
       render();return;
@@ -1860,9 +1881,8 @@ async function nextPage(vm,page) {
   if(state.periodConfig?.enabled && state.selectedPeriod &&
     (state.selectedPeriod==="__historique__" || state.periodConfig.periods?.some(p=>
       String(p.Periode_Code)===String(state.selectedPeriod) &&
-      String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee" &&
-      !periodEditable(state.periodConfig,state.selectedPeriod)))){
-    if(!closeReadonlyArchiveEditor())return;
+      String(p.Statut??"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase()==="cloturee"))){
+    if(!closeArchiveEditorForNavigation())return;
     const navMode=String(page.Navigation_apres||"").trim();
     const targetRaw=codeOf(page.Page_cible_Code);
     const targetIndex=navMode==="retour_page"?vm.pages.findIndex(p=>String(p.id)===String(targetRaw)||String(codeOf(p.Page_Code))===String(targetRaw)):-1;
