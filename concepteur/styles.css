@@ -660,3 +660,16 @@ body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-wi
   #periods-form .periods-grid { grid-template-columns: minmax(0, 1fr); }
   #periods-form .periods-grid > label { grid-template-rows: auto 40px auto; }
 }
+
+/* Sélecteur d'indicateurs : navigation par pages et sections */
+.indicator-picker-toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin:12px 0;padding:12px;background:#f6f8fb;border:1px solid #dce3ec;border-radius:10px}
+.indicator-picker-toolbar input[type="search"]{flex:1 1 260px;min-width:180px}
+.indicator-picker-list h4{margin:15px 0 8px}
+.indicator-picker-page,.indicator-picker-group{margin:7px 0;border:1px solid #dce3ec;border-radius:8px;padding:7px 10px;background:#fff}
+.indicator-picker-page{background:#f8fafc}
+.indicator-picker-page>summary,.indicator-picker-group>summary{cursor:pointer;padding:4px;list-style:revert}
+.indicator-picker-group{margin-left:12px}
+.indicator-picker-items{padding:8px 0 3px}
+.indicator-picker-entry{padding:5px 0;border-bottom:1px solid #eef1f5}
+.indicator-picker-entry:last-child{border-bottom:0}
+.indicator-picker-list [hidden]{display:none!important}
