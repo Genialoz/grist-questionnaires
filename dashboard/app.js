@@ -1,7 +1,7 @@
 import {rowsFromTable,codeOf,isTrue} from "../shared/grist-common.js";
 import {hydrateResponse} from "../questionnaire/persistence.js";
 const TABLES=["DASHBOARDS","CAMPAGNES","VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE","COLONNES_MATRICE","BIBLIOTHEQUE_REGROUPEMENTS","PARTICIPATIONS","DESTINATAIRES_CAMPAGNE","PERIODES_QUESTIONNAIRE","QUESTIONNAIRES"];
-const state={dashboard:null,campaigns:[],definition:null,responses:[],hydrated:[],tab:"global",selected:null,mode:"view",responseScope:"real",loaded:null,config:null,periodCode:"",periods:[]};
+const state={dashboard:null,campaigns:[],definition:null,responses:[],hydrated:[],tab:"global",selected:null,mode:"view",responseScope:"real",loaded:null,config:null,periodCode:"",periods:[],compareCodes:[],compareReference:"",compareEnabled:false,compareChartEnabled:false,compareChartType:"bar"};
 const DASHBOARD_SHARE_STORAGE_KEY="gristionnaire.dashboardShareGrant";
 const DASHBOARD_SHARE_MAX_AGE_MS=120000;
 function consumeDashboardShareGrant(){try{const raw=localStorage.getItem(DASHBOARD_SHARE_STORAGE_KEY);if(!raw)return null;localStorage.removeItem(DASHBOARD_SHARE_STORAGE_KEY);const x=JSON.parse(raw);const token=String(x?.token||"").trim(),ts=Number(x?.ts||0);if(!token||!ts||Date.now()-ts>DASHBOARD_SHARE_MAX_AGE_MS)return null;return {token,ts}}catch(_){return null}}
@@ -74,6 +74,193 @@ function dashboardApplyPeriod(){
   for(const [type,fiches] of Object.entries(h.fiches||{}))h.fiches[type]=fiches.filter(f=>f.periodeCode===selected);
   return h;
  }).filter(h=>h.response);
+}
+// V4.1 TEST : comparaison en lecture seule, calculée sur un jeu de réponses distinct par période.
+function comparisonOptions(){
+ if(state.mode!=="view"||state.periods.length<2)return "";
+ const codes=new Set(state.compareCodes);
+ return `<details class="dashboard-comparison" ${state.compareEnabled?'open':''}><summary>Comparer plusieurs périodes${state.compareEnabled?' · activé':''}</summary><div class="dashboard-comparison-options"><label><input type="checkbox" data-compare-enabled ${state.compareEnabled?'checked':''}> Activer la comparaison</label><div class="dashboard-comparison-list">${state.periods.map(p=>{const code=codeOf(p.Periode_Code);return `<label><input type="checkbox" data-compare-code="${escapeHtml(code)}" ${codes.has(code)?'checked':''}> ${escapeHtml(p.Libelle||code)}</label>`}).join('')}</div><label>Période de référence <select data-compare-reference>${state.periods.filter(p=>codes.has(codeOf(p.Periode_Code))).map(p=>`<option value="${escapeHtml(codeOf(p.Periode_Code))}" ${state.compareReference===codeOf(p.Periode_Code)?'selected':''}>${escapeHtml(p.Libelle||codeOf(p.Periode_Code))}</option>`).join('')}</select></label><div class="help">Sélectionnez au moins deux périodes. Les écarts sont calculés par rapport à la période de référence. Les statistiques restent liées à chaque période.</div></div></details>`;
+}
+function comparisonHydrated(code){
+ const selected=String(code),records=state.loaded?.ELEMENTS_REPONSE||[],ids=new Set((state.loaded?.CAMPAGNES||[]).filter(c=>state.campaigns.some(x=>String(x.id)===String(c.id))).flatMap(c=>[String(c.id),codeOf(c.Campagne_Code)]));
+ const responses=scopedCampaignResponses(ids).filter(r=>records.some(e=>(String(codeOf(e.Reponse_Code))===String(r.id)||String(codeOf(e.Reponse_Code))===String(codeOf(r.Reponse_Code)))&&String(e.Periode_Code||'')===selected&&!isTrue(e.Supprime_logiquement)));
+ const tables={REPONSES:state.loaded.REPONSES,ELEMENTS_REPONSE:records,VALEURS_REPONSE:state.loaded.VALEURS_REPONSE,SELECTIONS_REPONSE:state.loaded.SELECTIONS_REPONSE};
+ const hydrated=responses.map(r=>{const h=hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id),selected);for(const [type,rows] of Object.entries(h.fiches||{}))h.fiches[type]=rows.filter(f=>String(f.periodeCode||'')===selected);return h}).filter(h=>h.response);
+ return {responses,hydrated};
+}
+function comparisonPeriodName(code){const p=state.periods.find(x=>codeOf(x.Periode_Code)===code);return String(p?.Libelle||code)}
+function comparisonNumeric(raw){const str=String(raw??'').trim().replace(/[\s\u00a0\u202f]/g,'').replace('%','').replace(',','.');if(!str||!/^[-+]?\d+(?:\.\d+)?$/.test(str))return null;const n=Number(str);return Number.isFinite(n)?n:null}
+function comparisonFormat(n){return Number.isFinite(n)?n.toLocaleString('fr-FR',{maximumFractionDigits:2}):'—'}
+function comparisonExtractMetrics(fragment){
+ // Lire les deux formats de blocs : indicateurs réutilisés ET indicateurs créés dans le Dashboard.
+ const metrics=new Map();
+ const add=(key,label,value)=>{
+  const number=comparisonNumeric(value);
+  if(key&&number!==null)metrics.set(key,{label,value:number});
+ };
+ const panels=[...fragment.querySelectorAll('[data-view-tab-panel]')];
+ const scopes=panels.length?panels:[fragment];
+ scopes.forEach((panel,panelIndex)=>{
+  const tabKey=panel.dataset.viewTabPanel||`vue-${panelIndex}`;
+  const cards=[...panel.querySelectorAll('.indicator-card')];
+  cards.forEach((card,cardIndex)=>{
+   const wrapper=card.closest('.content-indicators');
+   const title=card.querySelector(':scope > h3,:scope > h4')?.textContent?.trim()||`Indicateur ${cardIndex+1}`;
+   const base=`${tabKey}/${wrapper?.dataset.displayBlock||''}/${cardIndex}`;
+   const sections=[...card.querySelectorAll('.indicator-part')];
+   const groups=sections.length?sections:[card];
+   groups.forEach((group,groupIndex)=>{
+    const heading=group===card?'':group.querySelector(':scope > h4')?.textContent?.trim()||'';
+    const prefix=[title,heading].filter(Boolean).join(' — ');
+    const groupKey=`${base}/${groupIndex}`;
+    // Indicateurs KPI (sommes, moyennes, nombres de fiches...), indépendamment du style CSS.
+    group.querySelectorAll('small').forEach((label,labelIndex)=>{
+     const next=label.nextElementSibling;
+     if(!next||!next.matches('div,strong,span'))return;
+     const name=label.textContent.trim();
+     add(`${groupKey}/kpi/${name}`,`${prefix} — ${name}`,next.textContent.trim());
+    });
+    // Modalités présentées sous forme de lignes (choix radio, cases à cocher).
+    group.querySelectorAll('.metric-table > div').forEach((line,lineIndex)=>{
+     const label=line.querySelector('span')?.textContent?.trim();
+     const value=line.querySelector('strong')?.textContent?.trim();
+     // Une cellule telle que « 7 (25 %) » représente 7 réponses, pas 725.
+     const leading=value?.match(/^\s*([-+]?\d[\d\s\u00a0\u202f]*(?:[,.]\d+)?)/)?.[1];
+     if(label&&leading)add(`${groupKey}/modalite/${label}`,`${prefix} — ${label}`,leading);
+    });
+    group.querySelectorAll('table').forEach((table,tableIndex)=>{
+     const headers=[...table.querySelectorAll('thead tr:last-child th')].map(th=>th.textContent.trim());
+     table.querySelectorAll('tbody tr, tfoot tr').forEach(tr=>{
+      const cells=[...tr.children].map(td=>td.textContent.trim());
+      if(cells.length<2)return;
+      for(let i=1;i<cells.length;i++){
+       const col=headers[i]||`Colonne ${i+1}`;
+       add(`${groupKey}/table/${tableIndex}/${cells[0]}/${col}`,`${prefix} — ${cells[0]} — ${col}`,cells[i]);
+      }
+     });
+    });
+   });
+  });
+  // Les blocs « Répondants » sont de vrais indicateurs chiffrés du Dashboard.
+  panel.querySelectorAll('.dash-kpi').forEach((k,i)=>{
+   const label=k.querySelector('span')?.textContent?.trim()||'Répondants';
+   add(`${tabKey}/repondants/${i}`,label,k.querySelector('strong')?.textContent?.trim());
+  });
+ });
+ return metrics;
+}
+// Présentation des comparaisons : séparer question, modalité et statistique.
+// Les identifiants techniques des métriques restent inchangés pour la correspondance entre périodes.
+function comparisonPresentation(key,label){
+ const parts=String(label||'').split(' — ').map(x=>x.trim()).filter(Boolean);
+ const withoutPath=value=>String(value||'').split(/\s*›\s*/).pop().trim();
+ const withoutCode=value=>withoutPath(value).replace(/\s*\([^()]*\)\s*$/,'').trim();
+ const statisticNames=new Set(['Moyenne','Somme','Nombre','Minimum','Maximum','Médiane','Total','Nombre total','Valeurs renseignées','Valeurs distinctes','Total des sélections','Sélections moyennes','Moyenne par répondant','Répondants avec au moins une fiche']);
+ let statistic='';
+ if(parts.length&&statisticNames.has(parts[parts.length-1]))statistic=parts.pop();
+ // Le titre de question est affiché UNE fois, dans l'en-tête de groupe.
+ // Les intitulés des blocs peuvent répéter le chemin de la question : les écarter des lignes.
+ const ventilationAt=parts.findIndex(x=>/^Ventilation par\b/i.test(x));
+ const pre=ventilationAt>=0?parts.slice(0,ventilationAt):parts.slice(0,1);
+ const question=pre.findLast?.(x=>/\s›\s/.test(x)||/\([^()]+\)\s*$/.test(x))||pre[0]||'Indicateur';
+ const title=withoutCode(question)||'Indicateur';
+ const candidateParts=ventilationAt>=0?parts.slice(ventilationAt+1):parts.slice(1);
+ const useful=candidateParts.filter(x=>x!=='Global'&&!/^Ventilation par\b/i.test(x))
+  .map(withoutPath).filter(x=>x&&withoutCode(x)!==title);
+ let rowLabel=useful.join(' — ');
+ if(!rowLabel){const tail=String(key).split('/');if(tail.includes('modalite'))rowLabel=tail[tail.length-1];else if(tail.includes('kpi'))rowLabel='Global';else rowLabel='Ensemble';}
+ return {title,rowLabel,statistic};
+}
+// V4.2 : graphiques comparatifs SVG sans dépendance externe. Aucune modification des valeurs sources.
+function comparisonChartSvg(group,samples,kind){
+ const entries=group.rows.filter(r=>samples.some(s=>Number.isFinite(s.metrics.get(r.key)?.value)));
+ if(!entries.length)return '';
+ const series=entries.slice(0,12), labels=samples.map(s=>s.label);
+ const values=series.map(r=>samples.map(s=>s.metrics.get(r.key)?.value??null));
+ const stacked=kind==='stacked';
+ if(stacked&&(series.length<2||values.some(row=>row.some(v=>v!==null&&v<0))))return '';
+ const width=760,height=315,left=68,right=20,top=22,bottom=77,plotW=width-left-right,plotH=height-top-bottom;
+ const n=labels.length,all=values.flat().filter(Number.isFinite);
+ if(!all.length)return '';
+ const totals=labels.map((_,j)=>values.reduce((sum,row)=>sum+(Number.isFinite(row[j])?row[j]:0),0));
+ const max=Math.max(0,...(stacked?totals:all)),min=stacked?0:Math.min(0,...all);
+ const lo=min===max?Math.min(0,min-1):min,hi=min===max?max+1:max;
+ const sx=j=>left+(j+.5)*plotW/n;
+ const sy=v=>top+(hi-v)*plotH/(hi-lo);
+ const colors=['#2563eb','#e87928','#10a37f','#9333ea','#e11d48','#0891b2','#a16207','#64748b','#db2777','#16a34a','#4f46e5','#dc2626'];
+ const parts=[];
+ for(let tick=0;tick<=4;tick++){
+  const v=lo+(hi-lo)*tick/4,y=sy(v);
+  parts.push(`<line x1="${left}" y1="${y.toFixed(1)}" x2="${width-right}" y2="${y.toFixed(1)}" stroke="#dde4eb"/>`);
+  parts.push(`<text x="${left-9}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="11" fill="#475569">${escapeHtml(comparisonFormat(v))}</text>`);
+ }
+ labels.forEach((label,j)=>parts.push(`<text x="${sx(j).toFixed(1)}" y="${height-bottom+19}" text-anchor="middle" font-size="11" fill="#334155">${escapeHtml(label.length>20?label.slice(0,19)+'…':label)}</text>`));
+ if(kind==='line'){
+  values.forEach((row,i)=>{
+   let segment=[];
+   function flush(){if(segment.length>1)parts.push(`<polyline points="${segment.join(' ')}" fill="none" stroke="${colors[i%colors.length]}" stroke-width="2.6" stroke-linejoin="round"/>`);segment=[];}
+   row.forEach((v,j)=>{if(!Number.isFinite(v)){flush();return;}const x=sx(j),y=sy(v);segment.push(`${x.toFixed(1)},${y.toFixed(1)}`);parts.push(`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${labels[j]} : ${comparisonFormat(v)}`)}</title></circle>`)});
+   flush();
+  });
+ }else if(stacked){
+  labels.forEach((label,j)=>{let running=0;values.forEach((row,i)=>{const v=row[j];if(!Number.isFinite(v)||v===0)return;const y=sy(running+v),h=sy(running)-y;parts.push(`<rect x="${(sx(j)-Math.min(55,plotW/n*.30)).toFixed(1)}" y="${y.toFixed(1)}" width="${(2*Math.min(55,plotW/n*.30)).toFixed(1)}" height="${Math.max(.5,h).toFixed(1)}" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${label} : ${comparisonFormat(v)}`)}</title></rect>`);running+=v;});});
+ }else{
+  const gap=plotW/n,barW=Math.max(2,Math.min(32,gap*.72/series.length));
+  values.forEach((row,i)=>row.forEach((v,j)=>{if(!Number.isFinite(v))return;const x=sx(j)+(i-(series.length-1)/2)*barW,y=Math.min(sy(v),sy(0)),h=Math.max(1,Math.abs(sy(v)-sy(0)));parts.push(`<rect x="${(x-barW*.42).toFixed(1)}" y="${y.toFixed(1)}" width="${(barW*.84).toFixed(1)}" height="${h.toFixed(1)}" fill="${colors[i%colors.length]}"><title>${escapeHtml(`${series[i].label} · ${labels[j]} : ${comparisonFormat(v)}`)}</title></rect>`)}));
+ }
+ const legend=series.map((r,i)=>`<span class="dashboard-compare-legend-item"><span class="dashboard-compare-dot" style="background:${colors[i%colors.length]}"></span>${escapeHtml(r.label)}</span>`).join('');
+ const note=entries.length>12?'<div class="help">Graphique limité aux 12 premières lignes ; toutes restent visibles dans le tableau.</div>':'';
+ return `<div class="dashboard-compare-chart"><h3>${escapeHtml(group.title)}</h3><div class="dashboard-compare-svg-wrap"><svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Graphique comparatif : ${escapeHtml(group.title)}" xmlns="http://www.w3.org/2000/svg">${parts.join('')}</svg></div><div class="dashboard-compare-legend">${legend}</div>${note}</div>`;
+}
+function comparisonCharts(groups,samples){
+ if(!state.compareChartEnabled)return '';
+ const kind=state.compareChartType;
+ const valid=groups.map(group=>({group,svg:comparisonChartSvg(group,samples,kind)})).filter(x=>x.svg);
+ return `<div class="dashboard-compare-charts">${valid.length?valid.map(x=>x.svg).join(''):'<div class="status-info">Aucun graphique disponible avec ce type pour les indicateurs sélectionnés. Essayez les barres ou les courbes.</div>'}</div>`;
+}
+function comparisonRender(){
+ const codes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));
+ if(codes.length<2)return '<div class="status-info">Sélectionnez au moins deux périodes pour lancer la comparaison.</div>';
+ const previous={responses:state.responses,hydrated:state.hydrated,periodCode:state.periodCode};
+ const samples=[];
+ try{
+  for(const code of codes){
+   const data=comparisonHydrated(code);
+   state.responses=data.responses;state.hydrated=data.hydrated;state.periodCode=code;
+   const fragment=document.createElement('div');fragment.innerHTML=renderGlobal();
+   samples.push({code,label:comparisonPeriodName(code),count:data.responses.length,metrics:comparisonExtractMetrics(fragment)});
+  }
+ }finally{state.responses=previous.responses;state.hydrated=previous.hydrated;state.periodCode=previous.periodCode;}
+ const ref=samples.find(x=>x.code===state.compareReference)||samples[0];
+ const keys=[...new Set(samples.flatMap(x=>[...x.metrics.keys()]))];
+ const heading=['Modalité / structure','Statistique',...samples.map(x=>x.label),...samples.filter(x=>x!==ref).map(x=>`Écart ${x.label} / ${ref.label}`),...samples.filter(x=>x!==ref).map(x=>`Évolution ${x.label} / ${ref.label}`)];
+ let lastGroup='';
+ const chartGroups=[];
+ const rows=keys.map(key=>{
+  const entry=samples.map(x=>x.metrics.get(key)).find(Boolean);
+  const info=comparisonPresentation(key,entry?.label||key);
+  // Le regroupement repose sur la position stable du bloc, et non sur son titre (potentiellement dupliqué).
+  const groupId=key.split('/').slice(0,3).join('/');
+  if(!chartGroups.length||chartGroups[chartGroups.length-1].id!==groupId)chartGroups.push({id:groupId,title:info.title,rows:[]});
+  chartGroups[chartGroups.length-1].rows.push({key,label:[info.rowLabel,info.statistic].filter(x=>x&&x!=='—').join(' · ')});
+  const titleRow=groupId!==lastGroup?`<tr class="dashboard-compare-group"><th colspan="${heading.length}" scope="colgroup">${escapeHtml(info.title)}</th></tr>`:'';
+  lastGroup=groupId;
+  const base=ref.metrics.get(key)?.value;
+  const values=samples.map(x=>`<td>${x.metrics.has(key)?comparisonFormat(x.metrics.get(key).value):'—'}</td>`).join('');
+  const deltas=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined?comparisonFormat(value-base):'—'}</td>`}).join('');
+  const changes=samples.filter(x=>x!==ref).map(x=>{const value=x.metrics.get(key)?.value;return `<td>${value!==undefined&&base!==undefined&&base!==0?`${comparisonFormat((value-base)/Math.abs(base)*100)} %`:'—'}</td>`}).join('');
+  return `${titleRow}<tr><th scope="row">${escapeHtml(info.rowLabel)}</th><td>${escapeHtml(info.statistic||'—')}</td>${values}${deltas}${changes}</tr>`;
+ }).join('');
+ const table=keys.length?`<div class="dash-table-wrap"><table class="dash-table dashboard-compare-table"><thead><tr>${heading.map(h=>`<th scope="col">${escapeHtml(h)}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>`:'<div class="status-info">Aucun résultat numérique comparable n’a été trouvé pour les indicateurs sélectionnés.</div>';
+ return `<section class="dashboard-comparison-results"><h2>Comparaison multi-périodes</h2><p class="help">Tableau comparatif unique · Référence : ${escapeHtml(ref.label)}. Les cellules « — » correspondent à une donnée absente ou non calculable. Les évolutions ne sont pas calculées lorsque la référence vaut zéro.</p>${table}${keys.length?`<div class="dashboard-compare-graph-controls"><label><input type="checkbox" data-compare-chart-enabled ${state.compareChartEnabled?'checked':''}> Afficher les graphiques comparatifs</label><label>Type de graphique <select data-compare-chart-type ${state.compareChartEnabled?'':'disabled'}><option value="bar" ${state.compareChartType==='bar'?'selected':''}>Barres</option><option value="line" ${state.compareChartType==='line'?'selected':''}>Courbes</option><option value="stacked" ${state.compareChartType==='stacked'?'selected':''}>Barres empilées</option></select></label></div>${comparisonCharts(chartGroups,samples)}`:''}</section>`;
+}
+
+function bindComparison(){
+ document.querySelector('[data-compare-enabled]')?.addEventListener('change',e=>{state.compareEnabled=e.target.checked;render()});
+ document.querySelectorAll('[data-compare-code]').forEach(input=>input.addEventListener('change',e=>{const code=e.target.dataset.compareCode;state.compareCodes=e.target.checked?[...new Set([...state.compareCodes,code])]:state.compareCodes.filter(x=>x!==code);if(!state.compareCodes.includes(state.compareReference))state.compareReference=state.compareCodes[0]||'';render()}));
+ document.querySelector('[data-compare-reference]')?.addEventListener('change',e=>{state.compareReference=e.target.value;render()});
+ document.querySelector('[data-compare-chart-enabled]')?.addEventListener('change',e=>{state.compareChartEnabled=e.target.checked;render()});
+ document.querySelector('[data-compare-chart-type]')?.addEventListener('change',e=>{state.compareChartType=e.target.value;render()});
 }
 function responseScopeLabel(){return {real:"Réponses réelles",test:"Simulations",all:"Toutes les réponses (avec simulations)"}[state.responseScope]||"Réponses réelles"}
 function responseScopeControl(){return `<label>Périmètre <select data-response-scope>${["real","test","all"].map(scope=>`<option value="${scope}" ${state.responseScope===scope?"selected":""}>${escapeHtml({real:"Réponses réelles",test:"Simulations",all:"Toutes les réponses (avec simulations)"}[scope])}</option>`).join("")}</select></label>`}
@@ -200,12 +387,12 @@ function csvCell(v){const s=String(v??"").replace(/\r?\n/g," ");return /[;"\n]/.
 function dashboardExportRows(){const rows=[["Dashboard",state.dashboard?.Nom||"Tableau de bord"],["Campagne",state.campaigns?.[0]?.Nom||""],["Réponses",state.responses.length],["Périmètre",responseScopeLabel()],["Période",state.periodCode?(state.periods.find(p=>codeOf(p.Periode_Code)===state.periodCode)?.Libelle||state.periodCode):"Vue globale (sans filtre)"],[]],root=document.querySelector('#root');const panels=[...root.querySelectorAll('[data-view-tab-panel]')],targets=panels.length?panels:[root];targets.forEach((panel,pi)=>{const tabId=panel.dataset?.viewTabPanel||"",btn=tabId?root.querySelector(`[data-view-tab="${CSS.escape(tabId)}"]`):null;rows.push([btn?.textContent?.trim()||`Vue ${pi+1}`]);panel.querySelectorAll('.dash-kpi').forEach(k=>rows.push([k.querySelector('span')?.textContent?.trim()||"Indicateur",k.querySelector('strong')?.textContent?.trim()||""]));panel.querySelectorAll('.indicator-card,.dash-card,.dashboard-configured-block').forEach(card=>{const title=card.querySelector('h3,h4')?.textContent?.trim();if(title)rows.push([title]);card.querySelectorAll('table').forEach(table=>{[...table.rows].forEach(tr=>rows.push([...tr.cells].map(td=>td.textContent.trim())));rows.push([])});card.querySelectorAll('.metric-table>div').forEach(line=>rows.push([...line.children].map(x=>x.textContent.trim())));rows.push([])});rows.push([])});return rows}
 function exportDashboardData(){const csv="sep=;\r\n"+dashboardExportRows().map(r=>r.map(csvCell).join(";")).join("\r\n"),blob=new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a"),name=String(state.dashboard?.Nom||"dashboard").replace(/[<>:"/\\\\|?*]+/g,"_").trim()||"dashboard";a.href=url;a.download=`${name}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
 function printDashboard(all=false){document.body.classList.toggle('dashboard-print-all',all);const done=()=>{document.body.classList.remove('dashboard-print-all');window.removeEventListener('afterprint',done)};window.addEventListener('afterprint',done);window.print()}
-function bind(){bindResponseScope();document.querySelector('[data-dashboard-period]')?.addEventListener('change',async e=>{state.periodCode=String(e.target.value||'');state.selected=null;try{await loadViewer(String(state.dashboard?.id||''))}catch(err){document.querySelector('#status').innerHTML=`<div class="status-error">${escapeHtml(err?.message||err)}</div>`}});document.querySelector('[data-print-current]')?.addEventListener('click',()=>printDashboard(false));document.querySelector('[data-print-all]')?.addEventListener('click',()=>printDashboard(true));document.querySelector('[data-export-dashboard]')?.addEventListener('click',exportDashboardData);document.querySelectorAll('[data-response]').forEach(r=>r.onclick=()=>{state.selected=Number(r.dataset.response);render()});document.querySelector('[data-back]')?.addEventListener('click',()=>{state.selected=null;render()})}
+function bind(){bindResponseScope();bindComparison();document.querySelector('[data-dashboard-period]')?.addEventListener('change',async e=>{state.periodCode=String(e.target.value||'');state.selected=null;try{await loadViewer(String(state.dashboard?.id||''))}catch(err){document.querySelector('#status').innerHTML=`<div class="status-error">${escapeHtml(err?.message||err)}</div>`}});document.querySelector('[data-print-current]')?.addEventListener('click',()=>printDashboard(false));document.querySelector('[data-print-all]')?.addEventListener('click',()=>printDashboard(true));document.querySelector('[data-export-dashboard]')?.addEventListener('click',exportDashboardData);document.querySelectorAll('[data-response]').forEach(r=>r.onclick=()=>{state.selected=Number(r.dataset.response);render()});document.querySelector('[data-back]')?.addEventListener('click',()=>{state.selected=null;render()})}
 function render(){const root=document.querySelector('#root');const periodNote=state.periodCode
  ? `<div class="status-info" role="status">Suivi de saisie : les données de la période sélectionnée sont prises en compte, même si le questionnaire n’est pas validé globalement.${!state.responses.length?' Aucune réponse enregistrée n’a été trouvée pour cette période dans la campagne et le périmètre sélectionnés.':''}</div>`
- : "";root.innerHTML=renderHeader()+periodNote+(state.selected!=null?renderDetail(state.selected):renderGlobal());bind()}
+ : "";root.innerHTML=renderHeader()+comparisonOptions()+periodNote+(state.selected!=null?renderDetail(state.selected):state.compareEnabled?comparisonRender():renderGlobal());bind()}
 function renderDashboardChooser(rows){const root=document.querySelector('#root');root.innerHTML=`<div class="dash-head"><div><h1>Choisir un tableau de bord</h1><div class="muted">Plusieurs tableaux de bord sont disponibles. Sélectionnez celui que vous souhaitez consulter.</div></div></div><div class="dash-grid" style="margin-top:14px">${rows.map(d=>`<button type="button" class="dash-card" data-dashboard-choice="${escapeHtml(String(d.id))}" style="text-align:left;cursor:pointer"><h3>${escapeHtml(d.Nom||d.Dashboard_Code||`Dashboard ${d.id}`)}</h3><div class="muted">Ouvrir ce tableau de bord</div></button>`).join("")}</div>`;root.querySelectorAll('[data-dashboard-choice]').forEach(btn=>btn.addEventListener('click',async()=>{try{document.querySelector('#status').innerHTML='<div class="status-info">Chargement du tableau de bord…</div>';await loadViewer(String(btn.dataset.dashboardChoice||""))}catch(e){document.querySelector('#status').innerHTML=`<div class="status-error">${escapeHtml(e?.message||e)}</div>`}}))}
-async function loadViewer(selectedDashboardId="",tokenOverride="",strictShared=false){const loaded={};for(const t of TABLES){if(t==="DASHBOARDS")loaded[t]=await fetchDashboardTable();else if(t==="PERIODES_QUESTIONNAIRE"||t==="QUESTIONNAIRES"||t==="PAGES"||t==="SECTIONS"){try{loaded[t]=await fetch(t)}catch{loaded[t]=[]}}else loaded[t]=await fetch(t)}state.loaded=loaded;const token=String(tokenOverride||param('Dashboard_')||"").trim(),availableDashboards=loaded.DASHBOARDS.filter(active);if(state.mode==="view"&&availableDashboards.length===1){document.body.classList.add("dashboard-shared-mode");removeAdminModuleNav()}let d=selectedDashboardId?availableDashboards.find(x=>String(x.id)===String(selectedDashboardId)):token?availableDashboards.find(x=>String(x.Jeton_acces||x.Jeton_dashboard||"")===token):null;if(!d&&!token&&!strictShared&&availableDashboards.length===1)d=availableDashboards[0];if(!d&&!token&&!strictShared&&availableDashboards.length>1){document.body.classList.remove("dashboard-shared-mode");loadAdminModuleNav();state.dashboard=null;state.campaigns=[];state.definition=null;state.responses=[];state.hydrated=[];document.querySelector('#status').innerHTML='';renderDashboardChooser(availableDashboards);return false}if(!d)throw new Error(strictShared?'Ce lien de tableau de bord n’est plus valide ou le tableau de bord n’est plus accessible.':'Tableau de bord introuvable ou non autorisé.');state.dashboard=d;const campaignRaw=codeOf(d.Campagne_Code);const directCampaign=loaded.CAMPAGNES.find(c=>dashboardCampaignAvailable(c)&&(String(c.id)===String(campaignRaw)||String(codeOf(c.Campagne_Code))===String(campaignRaw)));const groupRaw=directCampaign?campaignGroup(directCampaign):String(campaignRaw||"");state.campaigns=loaded.CAMPAGNES.filter(c=>dashboardCampaignAvailable(c)&&(campaignGroup(c)===groupRaw||String(c.id)===String(campaignRaw)||String(codeOf(c.Campagne_Code))===String(campaignRaw)));if(!state.campaigns.length)throw new Error('La campagne associée à ce tableau de bord est inaccessible. Vérifiez DASHBOARDS.Campagne_Code avec le Code campagne (groupe) affiché dans le Concepteur.');const vraw=codeOf(state.campaigns[0].Version_Code),version=loaded.VERSIONS_QUESTIONNAIRES.find(v=>String(v.id)===vraw||codeOf(v.Version_Code)===vraw);if(!version)throw new Error('Version du questionnaire inaccessible.');const vc=codeOf(version.Version_Code),byVersion=rows=>rows.filter(r=>!('Version_Code' in r)||resolveRefCode(r.Version_Code,loaded.VERSIONS_QUESTIONNAIRES,'Version_Code')===vc);state.definition={version,questions:byVersion(loaded.QUESTIONS).filter(active),ficheTypes:byVersion(loaded.TYPES_FICHES).filter(active),choices:loaded.CHOIX_QUESTIONS.filter(active),referentials:loaded.REFERENTIELS.filter(active),referentialValues:loaded.VALEURS_REFERENTIELS.filter(active),structures:loaded.STRUCTURES.filter(active),responses:loaded.REPONSES,responseElements:loaded.ELEMENTS_REPONSE,responseValues:loaded.VALEURS_REPONSE,responseSelections:loaded.SELECTIONS_REPONSE,matrixColumns:(loaded.COLONNES_MATRICE||[]).filter(active)};const ids=new Set(state.campaigns.flatMap(c=>[String(c.id),codeOf(c.Campagne_Code)]));state.responses=scopedCampaignResponses(ids);const tables={REPONSES:loaded.REPONSES,ELEMENTS_REPONSE:loaded.ELEMENTS_REPONSE,VALEURS_REPONSE:loaded.VALEURS_REPONSE,SELECTIONS_REPONSE:loaded.SELECTIONS_REPONSE};state.hydrated=state.responses.map(r=>hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id))).filter(h=>h.response);dashboardApplyPeriod();document.querySelector('#status').innerHTML='';render();return true}
+async function loadViewer(selectedDashboardId="",tokenOverride="",strictShared=false){const loaded={};for(const t of TABLES){if(t==="DASHBOARDS")loaded[t]=await fetchDashboardTable();else if(t==="PERIODES_QUESTIONNAIRE"||t==="QUESTIONNAIRES"||t==="PAGES"||t==="SECTIONS"){try{loaded[t]=await fetch(t)}catch{loaded[t]=[]}}else loaded[t]=await fetch(t)}state.loaded=loaded;const token=String(tokenOverride||param('Dashboard_')||"").trim(),availableDashboards=loaded.DASHBOARDS.filter(active);if(state.mode==="view"&&availableDashboards.length===1){document.body.classList.add("dashboard-shared-mode");removeAdminModuleNav()}let d=selectedDashboardId?availableDashboards.find(x=>String(x.id)===String(selectedDashboardId)):token?availableDashboards.find(x=>String(x.Jeton_acces||x.Jeton_dashboard||"")===token):null;if(!d&&!token&&!strictShared&&availableDashboards.length===1)d=availableDashboards[0];if(!d&&!token&&!strictShared&&availableDashboards.length>1){document.body.classList.remove("dashboard-shared-mode");loadAdminModuleNav();state.dashboard=null;state.campaigns=[];state.definition=null;state.responses=[];state.hydrated=[];document.querySelector('#status').innerHTML='';renderDashboardChooser(availableDashboards);return false}if(!d)throw new Error(strictShared?'Ce lien de tableau de bord n’est plus valide ou le tableau de bord n’est plus accessible.':'Tableau de bord introuvable ou non autorisé.');state.dashboard=d;const campaignRaw=codeOf(d.Campagne_Code);const directCampaign=loaded.CAMPAGNES.find(c=>dashboardCampaignAvailable(c)&&(String(c.id)===String(campaignRaw)||String(codeOf(c.Campagne_Code))===String(campaignRaw)));const groupRaw=directCampaign?campaignGroup(directCampaign):String(campaignRaw||"");state.campaigns=loaded.CAMPAGNES.filter(c=>dashboardCampaignAvailable(c)&&(campaignGroup(c)===groupRaw||String(c.id)===String(campaignRaw)||String(codeOf(c.Campagne_Code))===String(campaignRaw)));if(!state.campaigns.length)throw new Error('La campagne associée à ce tableau de bord est inaccessible. Vérifiez DASHBOARDS.Campagne_Code avec le Code campagne (groupe) affiché dans le Concepteur.');const vraw=codeOf(state.campaigns[0].Version_Code),version=loaded.VERSIONS_QUESTIONNAIRES.find(v=>String(v.id)===vraw||codeOf(v.Version_Code)===vraw);if(!version)throw new Error('Version du questionnaire inaccessible.');const vc=codeOf(version.Version_Code),byVersion=rows=>rows.filter(r=>!('Version_Code' in r)||resolveRefCode(r.Version_Code,loaded.VERSIONS_QUESTIONNAIRES,'Version_Code')===vc);state.definition={version,questions:byVersion(loaded.QUESTIONS).filter(active),ficheTypes:byVersion(loaded.TYPES_FICHES).filter(active),choices:loaded.CHOIX_QUESTIONS.filter(active),referentials:loaded.REFERENTIELS.filter(active),referentialValues:loaded.VALEURS_REFERENTIELS.filter(active),structures:loaded.STRUCTURES.filter(active),responses:loaded.REPONSES,responseElements:loaded.ELEMENTS_REPONSE,responseValues:loaded.VALEURS_REPONSE,responseSelections:loaded.SELECTIONS_REPONSE,matrixColumns:(loaded.COLONNES_MATRICE||[]).filter(active)};const ids=new Set(state.campaigns.flatMap(c=>[String(c.id),codeOf(c.Campagne_Code)]));state.responses=scopedCampaignResponses(ids);const tables={REPONSES:loaded.REPONSES,ELEMENTS_REPONSE:loaded.ELEMENTS_REPONSE,VALEURS_REPONSE:loaded.VALEURS_REPONSE,SELECTIONS_REPONSE:loaded.SELECTIONS_REPONSE};state.hydrated=state.responses.map(r=>hydrateResponse(tables,state.definition,codeOf(r.Reponse_Code)||String(r.id))).filter(h=>h.response);dashboardApplyPeriod();state.compareCodes=state.compareCodes.filter(code=>state.periods.some(p=>codeOf(p.Periode_Code)===code));if(!state.compareCodes.includes(state.compareReference))state.compareReference=state.compareCodes[0]||"";document.querySelector('#status').innerHTML='';render();return true}
 
 function dashboardConfig(row){try{const x=JSON.parse(String(row?.Configuration_JSON||"{}"));return x&&typeof x==="object"&&!Array.isArray(x)?x:{blocks:[]}}catch{return{blocks:[]}}}
 function dashboardGroupRows(rows){const m=new Map;for(const c of rows.filter(dashboardCampaignAvailable)){const g=campaignGroup(c);if(!g)continue;if(!m.has(g))m.set(g,[]);m.get(g).push(c)}return [...m].map(([code,rows])=>({code,rows,first:rows[0],name:String(first(rows[0],["Nom","Libelle","Libellé"],code))})).sort((a,b)=>a.name.localeCompare(b.name,"fr"))}
@@ -236,7 +423,7 @@ function builderConfigFromForm(){const tabs=[...document.querySelectorAll('[data
 function optionHtml(items,value,placeholder="— Sélectionner —"){return `<option value="">${placeholder}</option>${items.map(x=>`<option value="${escapeHtml(x.token??x.value)}" ${String(value||"")===String(x.token??x.value)?"selected":""}>${escapeHtml(x.label)}</option>`).join("")}`}
 function defaultUnitColumnLabel(src,group){if(src?.kind==="tracking")return"Participants";if(src?.kind==="q")return"Répondants";if(src?.kind==="fq"){const ft=versionFicheTypes(group).find(f=>String(codeOf(f.TypeFiche_Code))===String(src.typeCode||""));return ft&&String(codeOf(ft.Parent_Code)||"").trim()?"Sous-fiches":"Fiches"}return"Unités"}
 function builderBlockHtml(b,group){const type=b.type||"text",id=b.id||uid('B'),head=type==="text"?"Texte":type==="respondents"?"Répondants":type==="reuse"?"Indicateur existant":"Indicateur Dashboard",summary=String(b.title||head),common=`<div class="builder-block-head"><strong>${head}</strong><div><button type="button" data-move-up>↑</button><button type="button" data-move-down>↓</button><button type="button" data-remove-block>Supprimer</button></div></div><label>Titre du bloc<input data-block-title value="${escapeHtml(b.title||"")}"></label>`;let body="";if(type==="respondents")body=`<div class="help">Affiche le nombre de réponses consolidées de la campagne.</div>`;else if(type==="text")body=`<label>Texte<textarea data-block-text rows="5">${escapeHtml(b.text||"")}</textarea></label>`;else if(type==="reuse"){const inds=builderIndicatorBlocks(group);body=`<label>Indicateur du questionnaire<select data-block-indicator><option value="">— Sélectionner —</option>${inds.map(q=>`<option value="${escapeHtml(codeOf(q.Question_Code))}" ${String(b.indicatorCode||"")===String(codeOf(q.Question_Code))?"selected":""}>${escapeHtml(dashboardSourceLabel(q))}</option>`).join("")}</select></label><label>Affichage<select data-block-display><option value="inherit" ${b.display==="inherit"||!b.display?"selected":""}>Réglage de l’indicateur</option><option value="both" ${b.display==="both"?"selected":""}>Tableau + graphique</option><option value="chart" ${b.display==="chart"?"selected":""}>Graphique uniquement</option><option value="table" ${b.display==="table"?"selected":""}>Tableau uniquement</option></select></label>`}else{const sources=sourceOptions(group),src=sourceByToken(group,b.source),vents=[...ventilationOptions(group,b.source),...dashboardGroupingOptions(group,b.source)],stats=statChoices(src),chosen=new Set(b.stats?.length?b.stats:defaultStatsForSource(src));body=`<div class="builder-indicator-grid"><label>Question / donnée analysée<select data-source>${optionHtml(sources,b.source)}</select></label><label>Résultat<select data-scope><option value="global" ${b.scope==="global"||!b.scope?"selected":""}>Global uniquement</option><option value="ventilation" ${b.scope==="ventilation"?"selected":""}>Ventilation uniquement</option><option value="both" ${b.scope==="both"?"selected":""}>Global + ventilation</option></select></label><label class="group-field">Ventilation par<select data-group-by>${optionHtml(vents,b.groupBy)}</select></label><label>Affichage<select data-block-display><option value="both" ${b.display==="both"||!b.display?"selected":""}>Tableau + graphique</option><option value="chart" ${b.display==="chart"?"selected":""}>Graphique uniquement</option><option value="table" ${b.display==="table"?"selected":""}>Tableau uniquement</option></select></label><label>Graphique<select data-chart><option value="bar" ${b.chart==="bar"||!b.chart?"selected":""}>Barres</option><option value="pie" ${b.chart==="pie"?"selected":""}>Camembert</option><option value="none" ${b.chart==="none"?"selected":""}>Aucun</option></select></label><label>Ordre d’affichage<select data-sort-order><option value="auto" ${b.sortOrder==="auto"||!b.sortOrder?"selected":""}>Automatique (regroupement / modalités)</option><option value="reverse" ${b.sortOrder==="reverse"?"selected":""}>Ordre inverse</option><option value="alpha_asc" ${b.sortOrder==="alpha_asc"?"selected":""}>Alphabétique A → Z</option><option value="alpha_desc" ${b.sortOrder==="alpha_desc"?"selected":""}>Alphabétique Z → A</option><option value="frequency_desc" ${b.sortOrder==="frequency_desc"?"selected":""}>Fréquence décroissante</option><option value="frequency_asc" ${b.sortOrder==="frequency_asc"?"selected":""}>Fréquence croissante</option><option value="value_asc" ${b.sortOrder==="value_asc"?"selected":""}>Valeur croissante</option><option value="value_desc" ${b.sortOrder==="value_desc"?"selected":""}>Valeur décroissante</option></select></label><label>Libellé du résultat global<input data-global-label placeholder="Global" value="${escapeHtml(b.globalLabel||"")}"></label><label>Libellé de la ventilation<input data-ventilation-label placeholder="Ventilation par …" value="${escapeHtml(b.ventilationLabel||"")}"></label></div><div class="stats-box"><strong>Calculs</strong><div class="stats-checks">${stats.map(([v,l])=>`<label><input type="checkbox" data-stat value="${v}" ${chosen.has(v)?"checked":""}> ${escapeHtml(l)}</label>`).join("")||'<span class="help">Choisissez d’abord une question.</span>'}</div><label class="check"><input type="checkbox" data-show-total-row ${b.showTotalRow?"checked":""}> Afficher une ligne Total dans le tableau</label><label class="check"><input type="checkbox" data-show-unit-column ${b.showUnitColumn!==false?"checked":""}> Afficher la colonne de base de calcul</label><label>Libellé de la colonne de base<input data-unit-column-label placeholder="${escapeHtml(defaultUnitColumnLabel(src,group))}" value="${escapeHtml(b.unitColumnLabel||"")}"></label><label class="check"><input type="checkbox" data-show-empty-groups ${b.showEmptyGroups?"checked":""}> Afficher les catégories sans réponse</label></div>`}return `<details class="builder-block" data-builder-block data-block-id="${escapeHtml(id)}" data-block-type="${escapeHtml(type)}"><summary class="builder-collapse-summary"><span><strong data-block-summary-title>${escapeHtml(summary)}</strong><small>${escapeHtml(head)}</small></span><span class="dashboard-disclosure">▾</span></summary><div class="builder-block-body">${common}${body}</div></details>`}
-const DASHBOARD_CONSULTATION_PAGE="https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire/p/50?style=singlePage";
+const DASHBOARD_CONSULTATION_PAGE="https://grist.numerique.gouv.fr/o/docs/hPbcNzv8BmMc/Gristionnaire-TEST/p/50?style=singlePage";
 function shareUrlForToken(token){if(!token)return"";try{const u=new URL(DASHBOARD_CONSULTATION_PAGE);u.searchParams.set("Dashboard_",token);return u.toString()}catch{return""}}
 function currentDashboardShareUrl(row){if(!row)return"";const token=String(row.Jeton_acces||row.Jeton_dashboard||"").trim();if(!token)return"";return shareUrlForToken(token)||String(row.URL_dashboard||"").trim()}
 function renderShare(row){const url=currentDashboardShareUrl(row);if(!row)return'<div class="share-card muted">Enregistrez d’abord le Dashboard pour obtenir son lien de partage.</div>';return `<div class="share-card"><div><strong>Partage</strong><div class="help">Lien de consultation du Dashboard</div></div><input id="share-url" readonly value="${escapeHtml(url||"Lien indisponible")}"><button type="button" id="copy-dashboard-link" ${url?"":"disabled"}>Copier le lien</button><button type="button" id="open-dashboard-preview" ${url?"":"disabled"}>Ouvrir la consultation</button></div>`}
