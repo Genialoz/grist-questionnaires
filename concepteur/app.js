@@ -538,7 +538,12 @@ async function addMatrixLines(parent,labels){
  const sm=S.data.QUESTIONS[0]||{},v=versionRow();if(!v)throw new Error("Version introuvable.");
  const lk=field(sm,["Libelle","Libellé","Question","Titre"]),tk=field(sm,["Type_question","Type_reponse","Type","Format"]),base=maxOrder(matrixLines(parent)),actions=[];
  clean.forEach((lab,i)=>{const vals={Question_Code:unique("LIGNE"),Version_Code:v.id,Section_Code:Number(codeOf(parent.Section_Code)||parent.Section_Code),Question_parente_Code:Number(parent.id),Ordre:base+i,Est_ligne_matrice:true};if(codeOf(parent.Page_Code)&&field(sm,["Page_Code"]))vals.Page_Code=Number(codeOf(parent.Page_Code));if(codeOf(parent.TypeFiche_Code)&&field(sm,["TypeFiche_Code"]))vals.TypeFiche_Code=Number(codeOf(parent.TypeFiche_Code));if(lk)vals[lk]=lab;if(tk)vals[tk]=matrixLineQuestionType(parent);if(field(sm,["Mode_obligation"]))vals.Mode_obligation="Facultative";if(field(sm,["Active"]))vals.Active=true;actions.push(["AddRecord","QUESTIONS",null,vals])});
- await applyDesignerActions(actions);await reload();const fresh=S.data.QUESTIONS.find(q=>String(q.id)===String(parent.id));if(fresh){S.selected={type:"question",row:fresh};renderTree();renderEditor()}status(`${clean.length} ligne${clean.length>1?"s":""} ajoutée${clean.length>1?"s":""}.`);
+ await applyDesignerActions(actions);await reload();const fresh=S.data.QUESTIONS.find(q=>String(q.id)===String(parent.id));if(fresh){
+  S.selected={type:"question",row:fresh};renderTree();renderEditor();
+  // Après le remplacement des lignes, rester dans Modalités > Lignes.
+  document.querySelector('#edit-form .inspector-tabs [data-group="choices"]')?.click();
+  document.querySelector('#edit-form .matrix-editor-tabs [data-view="lines"]')?.click();
+ }status(`${clean.length} ligne${clean.length>1?"s":""} ajoutée${clean.length>1?"s":""}.`);
 }
 async function addMatrixColumns(parent,labels){
  const clean=(labels||[]).map(x=>String(x||"").trim()).filter(Boolean);if(!clean.length)return;const base=maxOrder(matrixColumns(parent)),actions=[];
