@@ -104,6 +104,13 @@ textarea { min-height:110px; resize:vertical; }
 .matrix-table thead .matrix-total-header{vertical-align:middle}
 .matrix-table tr:last-child td,.matrix-table tr:last-child th{border-bottom:0}
 .matrix-table th:last-child,.matrix-table td:last-child{border-right:0}
+/* Effacement discret des lignes de matrices radio : l'icône reste dans l'en-tête,
+   sans rallonger le texte ni créer une nouvelle ligne. */
+.matrix-table tbody th{position:relative}
+.matrix-table tbody th:has(> .matrix-clear-row){padding-right:40px}
+.matrix-clear-row{position:absolute;right:7px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#777;font-size:20px;line-height:1;cursor:pointer}
+.matrix-clear-row:hover,.matrix-clear-row:focus-visible{background:#f3edf9;color:#65418f;border-color:#d9cbe8}
+.matrix-clear-row:focus-visible{outline:2px solid #65418f;outline-offset:1px}
 .matrix-input{width:100%;min-width:90px;box-sizing:border-box}
 .matrix-total{font-weight:700;background:#fafafa;font-variant-numeric:tabular-nums}
 .matrix-mobile-label{display:none}

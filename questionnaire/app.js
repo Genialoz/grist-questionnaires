@@ -1442,7 +1442,7 @@ function renderMatrix(q,answers=state.answers,ficheMode=false,forcedReadOnly=fal
     return `<td><span class="matrix-mobile-label">${escapeHtml(c.label)}</span><input class="matrix-input" type="${kind}" ${base} ${attrs} value="${escapeHtml(v)}"></td>`;
   }).join("");
   const total=kind==="number"&&isTrue(q.Afficher_total_ligne)?`<td class="matrix-total" data-matrix-row-total="${escapeHtml(qc)}:${escapeHtml(rc)}">0</td>`:"";
-  return `<tr><th scope="row">${escapeHtml(first(r,["Libelle","Libellé","Titre"],rc))}${isRequiredQuestion(r)?' <span class="required">*</span>':""}</th>${cells}${total}</tr>`;}).join("");
+  return `<tr><th scope="row">${escapeHtml(first(r,["Libelle","Libellé","Titre"],rc))}${isRequiredQuestion(r)?' <span class="required">*</span>':""}${kind==="radio"&&!ro?`<button type="button" class="matrix-clear-row" data-clear-matrix-question="${escapeHtml(qc)}" data-clear-matrix-row="${escapeHtml(rc)}"${ficheMode?' data-clear-matrix-fiche="1"':""} aria-label="Effacer la réponse de cette ligne" title="Effacer la réponse">×</button>`:""}</th>${cells}${total}</tr>`;}).join("");
   const hasRowTotal=kind==="number"&&isTrue(q.Afficher_total_ligne);
   const header=headerLevels?headerLevels.map((cells,level)=>`<tr class="matrix-header-level matrix-header-level-${Math.min(level+1,4)}">${level===0?`<th class="matrix-corner" rowspan="${headerLevels.length}"></th>`:""}${cells.map(c=>`<th scope="${c.colSpan>1?"colgroup":"col"}" colspan="${c.colSpan}">${escapeHtml(c.label)}</th>`).join("")}${level===0&&hasRowTotal?`<th scope="col" class="matrix-total-header" rowspan="${headerLevels.length}">Total</th>`:""}</tr>`).join(""):`<tr><th class="matrix-corner"></th>${cols.map(c=>`<th scope="col">${escapeHtml(c.label)}</th>`).join("")}${hasRowTotal?'<th scope="col">Total</th>':""}</tr>`;
   const foot=kind==="number"&&isTrue(q.Afficher_total_colonne)?`<tfoot><tr><th scope="row">Total</th>${cols.map(c=>`<td class="matrix-total" data-matrix-col-total="${escapeHtml(qc)}:${escapeHtml(c.code)}">0</td>`).join("")}${hasRowTotal?`<td class="matrix-total" data-matrix-grand-total="${escapeHtml(qc)}">0</td>`:""}</tr></tfoot>`:"";
@@ -1895,6 +1895,7 @@ function render() {
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
   root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
+  root.querySelectorAll("[data-clear-matrix-row]").forEach(el=>el.addEventListener("click",clearMatrixRowAnswer));
   updateMatrixTotals(root);
   root.querySelectorAll("[data-clear-question]").forEach(el=>el.addEventListener("click", e=>{
     e.preventDefault();
@@ -2212,6 +2213,26 @@ async function saveCurrentSubFiche() {
     await persistFiche(type,editor);
     state.subFicheEditor=null; state.saving=false; showActionSuccess("Sous-fiche enregistrée"); scrollToEditor(`[data-subfiche-group="${CSS.escape(editor.typeCode)}"]`);
   } catch(e) { state.saving=false; clearActionFeedback();showSaveError(e); render(); }
+}
+
+function clearMatrixRowAnswer(e){
+  e.preventDefault();
+  const btn=e.currentTarget, qc=btn.dataset.clearMatrixQuestion, rc=btn.dataset.clearMatrixRow;
+  if(!qc||!rc)return;
+  const q=(state.definition?.questions??[]).find(x=>codeOf(x.Question_Code)===qc);
+  if(matrixKind(q)!=="radio"||isTrue(q.Lecture_seule)||responseIsLocked())return;
+  const isFiche=btn.dataset.clearMatrixFiche==="1";
+  const editor=isFiche?(btn.closest("[data-subfiche-editor]")?state.subFicheEditor:state.ficheEditor):null;
+  if(isFiche&&!editor)return;
+  if(!isFiche&&isTrue(state.principalReadOnlyQuestions?.[qc]))return;
+  const row=btn.closest("tr");
+  const radios=[...(row?.querySelectorAll('input[type="radio"][data-matrix-question]')??[])];
+  if(!radios.length||radios.every(r=>r.disabled))return;
+  const answers=isFiche?editor.answers:state.answers;
+  answers[qc]??={};
+  answers[qc][rc]="";
+  radios.filter(r=>!r.disabled).forEach(r=>{r.checked=false;});
+  if(!isFiche)state.principalDirty=true;
 }
 
 function onMatrixAnswer(e){
