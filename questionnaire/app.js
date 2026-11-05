@@ -2233,6 +2233,10 @@ function clearMatrixRowAnswer(e){
   answers[qc][rc]="";
   radios.filter(r=>!r.disabled).forEach(r=>{r.checked=false;});
   if(!isFiche)state.principalDirty=true;
+  // L'effacement d'une ligne utilisée dans une condition doit aussi masquer
+  // immédiatement les questions dépendantes.
+  const usedInCondition=(state.definition?.rules??[]).some(r=>codeOf(r.Question_source_Code)===rc);
+  if(usedInCondition)render();
 }
 
 function onMatrixAnswer(e){
@@ -2245,6 +2249,12 @@ function onMatrixAnswer(e){
   if(kind==="radio")answers[qc][rc]=el.checked?cc:"";
   else if(kind==="checkbox"){let arr=Array.isArray(answers[qc][rc])?[...answers[qc][rc]].map(String):[];if(el.checked){if(el.dataset.exclusive==="1")arr=[cc];else{arr=arr.filter(v=>{const x=el.closest('[data-matrix]')?.querySelector(`[data-matrix-row="${CSS.escape(rc)}"][data-matrix-col="${CSS.escape(v)}"]`);return x?.dataset.exclusive!=="1"});if(!arr.includes(cc))arr.push(cc);}}else arr=arr.filter(v=>v!==cc);answers[qc][rc]=arr; if(el.checked&&el.dataset.exclusive==="1"){el.closest('tr')?.querySelectorAll('input[type="checkbox"]').forEach(x=>{if(x!==el)x.checked=false;});}else if(el.checked){el.closest('tr')?.querySelectorAll('input[type="checkbox"][data-exclusive="1"]').forEach(x=>x.checked=false);}}
   else {answers[qc][rc]??={};answers[qc][rc][cc]=el.value;updateMatrixTotals(el.closest('[data-matrix]')??document);}
+  // Une ligne de matrice peut être utilisée comme source de condition.
+  // Sans nouveau rendu, une question masquée ne devient jamais visible.
+  // Pour les saisies texte/nombre, on attend l'événement change afin de ne pas
+  // détruire le champ actif à chaque frappe.
+  const drivesCondition=(state.definition?.rules??[]).some(r=>codeOf(r.Question_source_Code)===rc);
+  if(drivesCondition && (e.type==='change' || ['radio','checkbox'].includes(kind))) render();
 }
 
 function collectPrincipalMatrixAnswers(root=document, answers=state.answers){
