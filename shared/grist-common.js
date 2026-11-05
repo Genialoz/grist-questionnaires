@@ -40,7 +40,18 @@ const num = v => v === "" || v == null ? NaN : Number(v);
 
 export function evaluateRule(rule, answers = {}) {
   const source = codeOf(rule.Question_source_Code);
-  const actual = answers[source];
+  let actual = answers[source];
+  // Les lignes des matrices sont des QUESTIONS avec leur propre Question_Code.
+  // Leurs réponses sont stockées sous answers[codeMatrice][codeLigne].
+  if (actual === undefined) {
+    for (const matrix of Object.values(answers ?? {})) {
+      if (matrix && !Array.isArray(matrix) && typeof matrix === "object" &&
+          Object.prototype.hasOwnProperty.call(matrix, source)) {
+        actual = matrix[source];
+        break;
+      }
+    }
+  }
   const expected = rule.Valeur_comparaison ?? rule.Valeur ?? rule.Valeur_texte ?? rule.Valeur_attendue ?? "";
   const op = String(rule.Operateur ?? "=").trim().toLowerCase();
   if (["vide","empty","est vide"].includes(op)) return actual == null || actual === "" || (Array.isArray(actual) && !actual.length);
