@@ -57,15 +57,37 @@ export function evaluateRule(rule, answers = {}) {
   if (["vide","empty","est vide"].includes(op)) return actual == null || actual === "" || (Array.isArray(actual) && !actual.length);
   if (["non vide","not empty","pas vide"].includes(op)) return !(actual == null || actual === "" || (Array.isArray(actual) && !actual.length));
   if (["contient","contains"].includes(op)) return Array.isArray(actual) ? actual.map(String).includes(String(expected)) : String(actual ?? "").includes(String(expected));
+  if (["ne contient pas","not contains","does not contain"].includes(op) && (actual == null || actual === "" || (Array.isArray(actual) && !actual.length))) return false;
   if (["ne contient pas","not contains","does not contain"].includes(op)) return Array.isArray(actual) ? !actual.map(String).includes(String(expected)) : !String(actual ?? "").includes(String(expected));
   if ([">",">=","<","<="].includes(op)) {
     const a=num(actual), b=num(expected); if (!Number.isFinite(a)||!Number.isFinite(b)) return false;
     return op===">"?a>b:op===">="?a>=b:op==="<"?a<b:a<=b;
   }
   const a=norm(actual), b=norm(expected);
+  if (["!=","<>","≠"].includes(op) && (actual == null || actual === "" || (Array.isArray(actual) && !actual.length))) return false;
+  if (["ne contient pas","not contains","does not contain"].includes(op) && (actual == null || actual === "" || (Array.isArray(actual) && !actual.length))) return false;
   if (["!=","<>","≠"].includes(op)) return Array.isArray(a) ? !a.map(String).includes(String(b ?? "")) : String(a ?? "") !== String(b ?? "");
   if (Array.isArray(a)) return a.map(String).includes(String(b ?? ""));
   return String(a ?? "") === String(b ?? "");
+}
+
+// Expressions avec numéros de règles : "1 ET (2 OU 3)". Aucune exécution de code arbitraire.
+export function evaluateConditionExpression(expression, results) {
+  const tokens = String(expression).toUpperCase().replace(/\bAND\b/g,"ET").replace(/\bOR\b/g,"OU").match(/\d+|ET|OU|[()]/g) || [];
+  const compact = String(expression).toUpperCase().replace(/\bAND\b/g,"ET").replace(/\bOR\b/g,"OU").replace(/\s+/g,"");
+  if (!tokens.length || tokens.join("") !== compact) return false;
+  let pos = 0;
+  function atom() {
+    const tok=tokens[pos++];
+    if(tok==="(") {const value=orExpr(); if(tokens[pos++]!==")") throw Error("Parenthèse manquante"); return value;}
+    if(!/^\d+$/.test(tok||"")) throw Error("Numéro de règle attendu");
+    const index=Number(tok)-1;
+    if(index<0 || index>=results.length) throw Error("Numéro de règle inconnu");
+    return Boolean(results[index]);
+  }
+  function andExpr(){let v=atom(); while(tokens[pos]==="ET"){pos++;const rhs=atom();v=v&&rhs;}return v;}
+  function orExpr(){let v=andExpr(); while(tokens[pos]==="OU"){pos++;const rhs=andExpr();v=v||rhs;}return v;}
+  try {const answer=orExpr();return pos===tokens.length && answer;}catch{return false;}
 }
 
 export function evaluateCondition(condition, rules = [], answers = {}) {
@@ -75,6 +97,7 @@ export function evaluateCondition(condition, rules = [], answers = {}) {
   if (!relevant.length) return false;
   const results = relevant.map(r => evaluateRule(r, answers));
   const logic = String(condition.Operateur_global ?? condition.Operateur_logique ?? condition.Logique ?? condition.Type_operateur ?? "AND").toUpperCase();
+  if (logic.startsWith("EXPR:")) return evaluateConditionExpression(logic.slice(5), results);
   return logic === "OR" || logic === "OU" ? results.some(Boolean) : results.every(Boolean);
 }
 
