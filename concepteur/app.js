@@ -754,8 +754,8 @@ function conditionSourceOptions(target,excludeTarget=true){
  for(const q of ordinary){
   if(isMatrixLine(q))continue;
   if(isMatrixQuestion(q)){
-   for(const line of matrixLines(q))result.push([line.id,`${label(q,"question")} › ${label(line,"question")}`]);
-  }else result.push([q.id,label(q,"question")]);
+   for(const line of matrixLines(q))result.push([line.id,`${label(q,"question")} (${codeOf(q.Question_Code)}) › ${label(line,"question")} (${codeOf(line.Question_Code)})`]);
+  }else result.push([q.id,`${label(q,"question")} (${codeOf(q.Question_Code)})`]);
  }
  return result;
 }
@@ -768,7 +768,39 @@ function refreshConditionRule(rule,existingOp="",existingValue=""){const source=
 function renumberConditionRules(){[...document.querySelectorAll("#condition-rules .condition-rule")].forEach((r,i)=>{r.dataset.ruleIndex=i;const strong=r.querySelector(".condition-rule-head strong");if(strong)strong.textContent=`Règle ${i+1}`})}
 function bindConditionRule(rule){const src=rule.querySelector('[name="cond-source"]');if(src)src.onchange=()=>refreshConditionRule(rule,"","");const rm=rule.querySelector("[data-remove-rule]");if(rm)rm.onclick=()=>{rule.remove();renumberConditionRules()}}
 function conditionLogicHtml(logic="AND") {const expr=logic.startsWith("EXPR:");return `<div class="form-field"><label>Combiner les règles<select name="cond-logic"><option value="AND"${logic==="AND"?" selected":""}>Toutes les règles (ET)</option><option value="OR"${logic==="OR"?" selected":""}>Au moins une règle (OU)</option><option value="EXPR"${expr?" selected":""}>Expression personnalisée (ET/OU et parenthèses)</option></select></label><label data-cond-expression-wrap style="display:${expr?"block":"none"}">Expression (numéros des règles)<input name="cond-expression" type="text" value="${esc(expr?logic.slice(5):"1 ET (2 OU 3)")}" placeholder="1 ET (2 OU 3 OU 4)"></label><p class="field-help">Exemple : 1 ET (2 OU 3 OU 4). ET est prioritaire sur OU ; utilisez des parenthèses pour lever toute ambiguïté.</p></div>`}
-function bindConditionLogic(box){const select=box.querySelector('[name="cond-logic"]'),wrap=box.querySelector('[data-cond-expression-wrap]');if(select&&wrap){select.addEventListener("change",()=>{wrap.style.display=select.value==="EXPR"?"block":"none"})}}
+// Presse-papiers de conditions : copie locale au Concepteur (sans modifier Grist).
+let copiedConditionRules=null;
+function installConditionClipboard(box){
+ if(!box||box.querySelector("[data-copy-conditions]"))return;
+ const actions=document.createElement("div");
+ actions.className="form-actions";
+ actions.innerHTML='<button type="button" class="secondary-btn" data-copy-conditions>Copier les conditions</button><button type="button" class="secondary-btn" data-paste-conditions>Coller les conditions</button><span class="field-help" data-clipboard-message aria-live="polite"></span>';
+ const rulesHost=box.querySelector("#condition-rules");
+ if(!rulesHost)return;
+ rulesHost.before(actions);
+ const message=actions.querySelector("[data-clipboard-message]");
+ actions.querySelector("[data-copy-conditions]").onclick=()=>{
+  const rules=[...rulesHost.querySelectorAll(".condition-rule")].map(r=>{
+   const question=conditionSourceById(r.querySelector('[name="cond-source"]')?.value);
+   return {code:codeOf(question?.Question_Code),operator:r.querySelector('[name="cond-op"]')?.value||"=",value:r.querySelector('[name="cond-value"]')?.value??""};
+  });
+  if(!rules.length||rules.some(r=>!r.code)){message.textContent="Sélectionnez une question source pour chaque règle.";return}
+  copiedConditionRules={rules,logic:box.querySelector('[name="cond-logic"]')?.value||"AND",expression:box.querySelector('[name="cond-expression"]')?.value||""};
+  message.textContent=`${rules.length} règle(s) copiée(s).`;
+ };
+ actions.querySelector("[data-paste-conditions]").onclick=()=>{
+  if(!copiedConditionRules){message.textContent="Aucune condition copiée dans cette session.";return}
+  const mapped=copiedConditionRules.rules.map(r=>({...r,source:(S.data.QUESTIONS||[]).find(q=>codeOf(q.Question_Code)===r.code&&vm(q))}));
+  if(mapped.some(r=>!r.source)){message.textContent="Collage impossible : une variable source n’existe pas dans ce questionnaire.";return}
+  if(!confirm("Remplacer les règles affichées par les conditions copiées ? Les modifications ne seront enregistrées qu’après validation."))return;
+  rulesHost.innerHTML=mapped.map((r,i)=>conditionRuleHtml({Question_source_Code:r.source.id,Operateur:r.operator,Valeur_comparaison:r.value},i)).join("");
+  [...rulesHost.querySelectorAll(".condition-rule")].forEach(r=>{bindConditionRule(r);const op=r.querySelector('[name="cond-op"]')?.value||"=",val=r.querySelector('[name="cond-value"]')?.value??"";refreshConditionRule(r,op,val)});
+  const logic=box.querySelector('[name="cond-logic"]');if(logic){logic.value=copiedConditionRules.logic;logic.dispatchEvent(new Event("change"))}
+  const expr=box.querySelector('[name="cond-expression"]');if(expr)expr.value=copiedConditionRules.expression;
+  message.textContent=`${mapped.length} règle(s) collée(s). Cliquez sur « Enregistrer la condition » pour confirmer.`;
+ };
+}
+function bindConditionLogic(box){installConditionClipboard(box);const select=box.querySelector('[name="cond-logic"]'),wrap=box.querySelector('[data-cond-expression-wrap]');if(select&&wrap){select.addEventListener("change",()=>{wrap.style.display=select.value==="EXPR"?"block":"none"})}}
 function readConditionLogic(box,count){const mode=box.querySelector('[name="cond-logic"]')?.value||"AND";if(mode!=="EXPR")return mode;const expr=String(box.querySelector('[name="cond-expression"]')?.value||"").trim();const normalized=expr.toUpperCase().replace(/\bAND\b/g,"ET").replace(/\bOR\b/g,"OU");const tokens=normalized.match(/\d+|ET|OU|[()]/g)||[];if(!tokens.length||tokens.join("")!==normalized.replace(/\s+/g,""))throw Error("Expression invalide. Exemple : 1 ET (2 OU 3)");let pos=0;function atom(){const t=tokens[pos++];if(t==="("){or();if(tokens[pos++]!==")")throw Error("Parenthèses incorrectes");return}if(!/^\d+$/.test(t||"")||Number(t)<1||Number(t)>count)throw Error("Numéro de règle invalide")};function and(){atom();while(tokens[pos]==="ET"){pos++;atom()}}function or(){and();while(tokens[pos]==="OU"){pos++;and()}}or();if(pos!==tokens.length)throw Error("Expression invalide");return "EXPR:"+normalized}
 function conditionEditorHtml(kind,target){const refKey=kind==="display"?field(target,["Condition_affichage_Code"]):field(target,["Condition_obligation_Code"]),cond=refKey?conditionByRef(target[refKey]):null,rules=rulesForCondition(cond),initial=rules.length?rules:[{}],logic=String(cond?.Operateur_global||"AND").toUpperCase();return `<div class="condition-builder" id="condition-builder"><h3>${kind==="display"?"Afficher cette question si…":"Rendre obligatoire si…"}</h3>${conditionLogicHtml(logic)}<div id="condition-rules">${initial.map((r,i)=>conditionRuleHtml(r,i)).join("")}</div><button type="button" class="secondary-btn" id="add-condition-rule">+ Ajouter une règle</button><div class="form-actions"><button type="button" class="btn btn-primary" id="save-condition">Enregistrer la condition</button>${cond?'<button type="button" class="secondary-btn" id="remove-condition">Retirer la condition</button>':""}<button type="button" class="secondary-btn" id="cancel-condition">Annuler</button></div><p class="field-help">Utilisez ET si toutes les règles doivent être vraies ; OU si une seule règle suffit. Les modalités des questions Radio et Liste déroulante sont proposées automatiquement.</p></div>`}
 function bindConditionBuilder(kind,row){const box=$("#condition-builder");if(!box)return;bindConditionLogic(box);[...box.querySelectorAll(".condition-rule")].forEach(r=>{bindConditionRule(r);const source=conditionSourceById(r.querySelector('[name="cond-source"]')?.value);if(source){const op=r.querySelector('[name="cond-op"]')?.value||"=",val=r.querySelector('[name="cond-value"]')?.value??"";refreshConditionRule(r,op,val)}});$("#add-condition-rule").onclick=()=>{const host=$("#condition-rules"),i=host.querySelectorAll(".condition-rule").length;host.insertAdjacentHTML("beforeend",conditionRuleHtml({},i));bindConditionRule(host.lastElementChild)};$("#save-condition").onclick=async()=>{try{await saveMultiCondition(kind,row)}catch(e){status(`Erreur : ${e?.message||e}`,true,true)}};$("#cancel-condition").onclick=()=>$("#condition-builder")?.remove();if($("#remove-condition"))$("#remove-condition").onclick=async()=>{try{await removeSimpleCondition(kind,row)}catch(e){status(`Erreur : ${e?.message||e}`,true,true)}}}
