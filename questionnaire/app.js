@@ -1879,7 +1879,7 @@ function render() {
   });
   root.querySelectorAll("[data-question]").forEach(el=>el.addEventListener("change", onAnswer));
   root.querySelectorAll("[data-multiselect-details]").forEach(el=>{const key=`${el.dataset.multiselectScope||"p"}:${el.dataset.multiselectDetails}`,panel=el.querySelector(".multi-select-panel");if(el.open&&panel){const y=Number(state.multiSelectScroll?.[key]||0);requestAnimationFrame(()=>requestAnimationFrame(()=>{panel.scrollTop=y}))}el.addEventListener("toggle",()=>{if(el.open){state.openMultiSelect=key;return;}if(state.openMultiSelect===key)state.openMultiSelect="";const code=el.dataset.multiselectDetails,scope=el.dataset.multiselectScope||"p";if(scope==="p"){const target=el.querySelector(`[data-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}else{const target=el.querySelector(`[data-fiche-question="${CSS.escape(code)}"]`);if(target)renderPreservingInputFocus(target);else render();}})});
-  root.querySelectorAll("input[data-question],textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
+  root.querySelectorAll("input[data-question]:not([type=checkbox]):not([type=radio]),textarea[data-question]").forEach(el=>el.addEventListener("input", onAnswer));
   root.querySelectorAll("[data-matrix-question]").forEach(el=>{el.addEventListener("change",onMatrixAnswer);if(el.type==="text"||el.type==="number")el.addEventListener("input",onMatrixAnswer);});
   root.querySelectorAll("[data-clear-matrix-row]").forEach(el=>el.addEventListener("click",clearMatrixRowAnswer));
   updateMatrixTotals(root);
@@ -1946,7 +1946,7 @@ function render() {
   root.querySelectorAll("[data-copy-archive-fiche]").forEach(el=>el.addEventListener("click",e=>copyArchivedFicheToPeriod(e.currentTarget.dataset.copyArchiveFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-delete-fiche]").forEach(el=>el.addEventListener("click",e=>cancelCurrentFiche(e.currentTarget.dataset.deleteFiche,Number(e.currentTarget.dataset.index))));
   root.querySelectorAll("[data-fiche-question]").forEach(el=>el.addEventListener("change",onFicheAnswer));
-  root.querySelectorAll("input[data-fiche-question],textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
+  root.querySelectorAll("input[data-fiche-question]:not([type=checkbox]):not([type=radio]),textarea[data-fiche-question]").forEach(el=>el.addEventListener("input",onFicheAnswer));
   root.querySelectorAll("[data-clear-fiche-question]").forEach(el=>el.addEventListener("pointerdown",e=>{
     const btn=e.currentTarget, isSub=!!btn.closest("[data-subfiche-editor]");
     const ed=isSub?state.subFicheEditor:state.ficheEditor, code=btn.dataset.clearFicheQuestion||"";
@@ -1989,6 +1989,22 @@ function render() {
 }
 
 
+// Updating a manually created multi-choice list must not recreate its open panel.
+// Rebuilding it resets the panel's position (especially with long lists).
+function refreshMultiSelectSummary(target, values) {
+  const details=target?.closest?.('[data-multiselect-details]');
+  if(!details)return;
+  const chosen=new Set((Array.isArray(values)?values:[]).map(String));
+  details.querySelectorAll('input[data-multiselect="1"]').forEach(el=>{el.checked=chosen.has(String(el.value));});
+  const selected=[...details.querySelectorAll('input[data-multiselect="1"]:checked')];
+  const labels=selected.map(el=>el.closest('label')?.querySelector('span')?.textContent?.trim()||el.value);
+  const summary=details.querySelector('summary');
+  const title=summary?.querySelector('span');
+  const count=summary?.querySelector('small');
+  if(title)title.textContent=labels.length?labels.join(', '):'— Sélectionner —';
+  if(count)count.textContent=labels.length?`${labels.length} sélection${labels.length>1?'s':''}`:'';
+}
+
 // Keep the selected item visible when a multi-select rerenders because it drives visibility rules.
 function renderPreservingMultiSelectPosition(target) {
   const details=target?.closest?.("[data-multiselect-details]");
@@ -2013,6 +2029,11 @@ function renderPreservingMultiSelectPosition(target) {
   if(Math.abs(delta)>1)window.scrollBy(0,delta);
   const checkbox=[...(freshPanel?.querySelectorAll('input[data-multiselect="1"]')||[])].find(el=>el.value===value);
   checkbox?.focus({preventScroll:true});
+  requestAnimationFrame(()=>{
+    if(freshPanel)freshPanel.scrollTop=scroll;
+    const adjustment=fresh.getBoundingClientRect().top-before;
+    if(Math.abs(adjustment)>1)window.scrollBy(0,adjustment);
+  });
 }
 
 function renderPreservingInputFocus(target) {
@@ -2110,7 +2131,9 @@ function onFicheAnswer(e) {
   for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const isMultiSelect=e.target.dataset.multiselect==="1";
-  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter) (isMultiSelect ? renderPreservingMultiSelectPosition(e.target) : renderPreservingInputFocus(e.target));
+  const needsRender=e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter;
+  if(isMultiSelect){if(needsRender)renderPreservingMultiSelectPosition(e.target);else refreshMultiSelectSummary(e.target,editor.answers[code]);}
+  else if(needsRender)renderPreservingInputFocus(e.target);
 }
 export function collectFicheAnswers(root, currentAnswers={}) {
   const answers={...currentAnswers};
@@ -2307,7 +2330,9 @@ function onAnswer(e) {
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const drivesDataTable=(state.definition.questions ?? []).some(q=>isDataTableQuestion(q)&&String(q.TD_Mode||"all")==="personalized"&&String(q.TD_Context_Source||"campaign")==="question"&&String(q.TD_Context_Question||"")===String(code));
   const isMultiSelect=e.target.dataset.multiselect==="1";
-  if (e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable) (isMultiSelect ? renderPreservingMultiSelectPosition(e.target) : renderPreservingInputFocus(e.target));
+  const needsRender=e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter || drivesDataTable;
+  if(isMultiSelect){if(needsRender)renderPreservingMultiSelectPosition(e.target);else refreshMultiSelectSummary(e.target,state.answers[code]);}
+  else if(needsRender)renderPreservingInputFocus(e.target);
 }
 
 export function validateVisiblePage(page, answers={},definition=state.definition??{}) {
