@@ -63,11 +63,25 @@ export function matrixValidationErrors(question,value,definition={},answers={}){
   return errors;
 }
 
+
+// Comparaison entre questions numériques : deux valeurs renseignées sont nécessaires.
+export function coherenceResult(question,value,answers={}){
+  let cfg;try{cfg=JSON.parse(String(question?.Controle_coherence_JSON||"{}"))}catch{return null}
+  if(!cfg?.enabled||!cfg.source||value==null||value===""||Array.isArray(value))return null;
+  const other=answers[cfg.source];if(other==null||other===""||Array.isArray(other))return null;
+  const a=Number(value),b=Number(other);if(!Number.isFinite(a)||!Number.isFinite(b))return null;
+  const valid=({"<=":a<=b,"<":a<b,">=":a>=b,">":a>b,"=":a===b,"!=":a!==b})[cfg.operator];
+  if(valid!==false)return null;
+  const sign=({"<=":"≤","<":"<",">=":"≥",">":">","=":"=","!=":"≠"})[cfg.operator]||cfg.operator;
+  return {level:cfg.level==="warning"?"warning":"blocking",message:String(cfg.message||`La valeur doit respecter ${sign} ${b}.`)};
+}
+
 export function validateConfiguredQuestion(question,value,definition={},answers={},scalarValidator=validateQuestion){
   const type=typeOf(question);
   if(['description','sommaire','indicateurs','tableau_donnees'].includes(type))return '';
   const effective=effectiveQuestion(question,definition,answers);
   if(effective._obligationError)return effective._obligationError;
   if(type.includes('matrice'))return matrixValidationErrors(effective,value,definition,answers).join(' ');
-  return scalarValidator(effective,value,true);
+  const standard=scalarValidator(effective,value,true);if(standard)return standard;
+  const issue=coherenceResult(effective,value,answers);return issue?.level==='blocking'?issue.message:'';
 }

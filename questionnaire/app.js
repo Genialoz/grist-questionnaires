@@ -1,7 +1,7 @@
 import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion, cleanNumber, sumNumbers} from "../shared/grist-common.js";
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 import {writeWorkbook} from "./xlsx-lite.js";
-import {effectiveQuestion,matrixValidationErrors,validateConfiguredQuestion} from "./validation.js";
+import {effectiveQuestion,matrixValidationErrors,validateConfiguredQuestion,coherenceResult} from "./validation.js";
 import {readPeriodConfiguration, periodSelectionHtml, periodLabel, periodForNewFiche, periodEditable, periodCanChangeStructure, periodMatches} from "./periodes.js";
 
 export const TABLES = [
@@ -1482,7 +1482,7 @@ function renderFicheField(q, answers, forcedReadOnly=false,conditionAnswers=answ
     const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,{...state.answers,...answers});
     return `<div class="content-description fiche-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;
   }
-  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly,conditionAnswers)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div></div>`;
+  return `<div class="field${forcedReadOnly?" imported-readonly":""}" data-fiche-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q,answers,true,forcedReadOnly,conditionAnswers)}${forcedReadOnly?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-fiche-error="${escapeHtml(qc)}"></div>${(()=>{const issue=coherenceResult(q,answers[qc],{...state.answers,...conditionAnswers});return issue?.level==="warning"?`<div class="help" role="status">⚠ ${escapeHtml(issue.message)}</div>`:""})()}</div>`;
 }
 function displayFicheAnswer(type,def,fiche,questionCode) {
   if(!questionCode)return "";
@@ -1762,7 +1762,7 @@ function render() {
       const sectionDescription=first(s,["Description","Texte","Introduction","Texte_introduction"],"");
       if(!s.questions.length && !sectionDescription) return "";
       return `<section class="section" id="section-${escapeHtml(codeOf(s.Section_Code))}">${sectionTitle?`<h2 style="${escapeHtml(titleStyle(s,themeTitles))}">${richTextHtml(sectionTitle)}</h2>`:""}${sectionDescription?`<div class="section-description">${richTextHtml(sectionDescription)}</div>`:""}
-      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorComparison(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div></div>`}).join("")}
+      ${s.questions.map(q=>{const qc=codeOf(q.Question_Code),displayKind=displayBlockKind(q);if(displayKind==="toc")return archiveSpace?"":`<div class="content-toc" data-display-block="${escapeHtml(qc)}">${renderTocHtml(first(q,["Libelle","Libellé","Titre"],""),q)}</div>`;if(displayKind==="description"){const title=first(q,["Libelle","Libellé","Titre"],""),text=personalizedDescriptionText(q,state.answers);return `<div class="content-description" data-display-block="${escapeHtml(qc)}">${title?`<div class="content-description-title" style="${escapeHtml(labelStyle(q))}">${richTextHtml(title)}</div>`:""}${text?`<div class="content-description-text">${richTextHtml(text)}</div>`:""}</div>`;}if(displayKind==="indicators")return renderIndicatorComparison(q);return `<div class="field" data-field="${escapeHtml(qc)}"><label style="${escapeHtml(labelStyle(q))}">${richTextHtml(first(q,["Libelle","Libellé","Titre"],qc))}${isRequiredQuestion(q)?' <span class="required" aria-label="obligatoire">*</span>':""}</label>${q.Aide?`<div class="help">${richTextHtml(q.Aide)}</div>`:""}${renderQuestionControl(q)}${isTrue(state.principalReadOnlyQuestions?.[qc])?`<div class="import-readonly-note">Donnée préremplie en lecture seule</div>`:""}<div class="error" data-error="${escapeHtml(qc)}"></div>${(()=>{const issue=coherenceResult(q,state.answers[qc],state.answers);return issue?.level==="warning"?`<div class="help" role="status">⚠ ${escapeHtml(issue.message)}</div>`:""})()}</div>`}).join("")}
     </section>`;
     }).join("")}
     ${archiveOverview?`<div class="period-archive-placeholder">Sélectionnez une période dans la liste des archives ci-dessus pour afficher ses fiches.</div>`:(page.repeatableTypes ?? []).filter(type=>ficheTypeVisible(type,state.definition,state.answers)).map(type=>renderRepeatableType(type,state,state.definition,locked)).join("")}
@@ -2130,6 +2130,7 @@ function onFicheAnswer(e) {
   const combined={...state.answers,...(state.ficheEditor?.answers??{}),...editor.answers};
   sanitizeDependentAnswers(state.definition,combined);
   for (const key of Object.keys(editor.answers)) editor.answers[key]=combined[key] ?? "";
+  for(const target of state.definition.questions||[]){let cfg;try{cfg=JSON.parse(String(target.Controle_coherence_JSON||"{}"))}catch{continue}if(!cfg?.enabled||cfg.source!==code||cfg.level!=="warning")continue;const targetCode=codeOf(target.Question_Code),node=document.querySelector(`[data-error="${CSS.escape(targetCode)}"]`);if(node){const currentIssue=coherenceResult(target,state.answers[targetCode],state.answers);node.textContent=currentIssue?.message||"";node.dataset.coherenceLevel=currentIssue?.level||"";}}
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const isMultiSelect=e.target.dataset.multiselect==="1";
   const needsRender=e.target.type==="radio" || (e.target.type==="checkbox"&&!isMultiSelect) || state.definition.rules.some(r=>codeOf(r.Question_source_Code)===code) || drivesFilter;
@@ -2328,6 +2329,10 @@ function onAnswer(e) {
     state.answers[code]=selected;
   } else state.answers[code]=e.target.value;
   sanitizeDependentAnswers(state.definition,state.answers);
+  const current=(state.definition.questions||[]).find(q=>String(codeOf(q.Question_Code))===String(code));
+  const issue=current?coherenceResult(current,state.answers[code],state.answers):null;
+  const msgNode=document.querySelector(`[data-error="${CSS.escape(code)}"]`);
+  if(msgNode){msgNode.textContent=issue?.message||"";msgNode.dataset.coherenceLevel=issue?.level||"";}
   const drivesFilter=(state.definition.choiceFilters ?? []).some(f=>String(f.Source ?? "Question")==="Question" && resolveRefCode(f.Question_source_Code,state.definition.questions,"Question_Code")===code);
   const drivesDataTable=(state.definition.questions ?? []).some(q=>isDataTableQuestion(q)&&String(q.TD_Mode||"all")==="personalized"&&String(q.TD_Context_Source||"campaign")==="question"&&String(q.TD_Context_Question||"")===String(code));
   const isMultiSelect=e.target.dataset.multiselect==="1";
@@ -2643,6 +2648,8 @@ async function savePrincipal(){try{
     return true;
   }
   collectPrincipalMatrixAnswers(document,state.answers);
+  const invalidCoherence=(buildViewModel(state.definition,state.answers).pages||[]).flatMap(pg=>(pg.sections||[]).flatMap(sec=>sec.questions||[])).find(q=>coherenceResult(q,state.answers[codeOf(q.Question_Code)],state.answers)?.level==="blocking");
+  if(invalidCoherence){const issue=coherenceResult(invalidCoherence,state.answers[codeOf(invalidCoherence.Question_Code)],state.answers);showSaveError(new Error(`${first(invalidCoherence,["Libelle","Titre"],codeOf(invalidCoherence.Question_Code))} : ${issue.message}`));return false;}
   state.saving=true;render();
   await ensureResponse();
   // Concurrence optimiste au bon niveau : seule une modification concurrente
