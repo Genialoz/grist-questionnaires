@@ -14,6 +14,7 @@ const state = { periodConfig:null, selectedPeriod:"", definition:null, answers:{
 
 
 function pageHistoryKey(page){return String(codeOf(page?.Page_Code)||page?.id||"");}
+function referenceOptionExclusive(question,code){try{const values=JSON.parse(String(question?.Modalites_ref_exclusives_JSON||"[]"));return Array.isArray(values)&&values.map(String).includes(String(code))}catch{return false}}
 function navigateToPage(vm,targetIndex,{record=true}={}){
   if(!vm?.pages?.length||targetIndex<0||targetIndex>=vm.pages.length||targetIndex===state.pageIndex)return false;
   if(record){
@@ -494,10 +495,10 @@ export function optionsFor(q, def, answers={}) {
     const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
     if (source==="STRUCTURES") {
       const rows=sortByOrder((def.structures ?? []).filter(active));
-      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code)),source:"structure",rowId:v.id,exclusive:false})),rows,"Structure_Code","Parent_Code");
+      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code)),source:"structure",rowId:v.id,exclusive:referenceOptionExclusive(q,codeOf(v.Structure_Code))})),rows,"Structure_Code","Parent_Code");
     } else if (source==="VALEURS_REFERENTIELS") {
       const rows=sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)));
-      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.ValeurRef_Code),label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code)),source:"reference",rowId:v.id,exclusive:false})),rows,"ValeurRef_Code","Parent_Code");
+      refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.ValeurRef_Code),label:first(v,["Libelle","Libellé","Valeur","ValeurRef_Code"],codeOf(v.ValeurRef_Code)),source:"reference",rowId:v.id,exclusive:referenceOptionExclusive(q,codeOf(v.ValeurRef_Code))})),rows,"ValeurRef_Code","Parent_Code");
     }
   }
   const seen=new Set();
