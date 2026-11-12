@@ -8,6 +8,22 @@ export function rowsFromTable(table) {
   });
 }
 
+// Ordre métier des structures : Ordre, puis ordre manuel Grist tant que la colonne n'est pas initialisée.
+export function sortStructuresByOrder(rows = []) {
+  return rows.map((row, index) => ({row, index})).sort((a, b) => {
+    const rank = x => {
+      const raw = x.Ordre;
+      if (raw !== null && raw !== undefined && String(raw).trim() !== "") {
+        const n = Number(raw);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      const n = Number(x.manualSort);
+      return Number.isFinite(n) ? n : Number.MAX_SAFE_INTEGER;
+    };
+    return rank(a.row) - rank(b.row) || a.index - b.index;
+  }).map(x => x.row);
+}
+
 export function normalizeRef(value) {
   // Grist représente une référence vide par 0 dans les données brutes.
   if (value == null || value === "" || value === 0) return null;
