@@ -1,4 +1,4 @@
-import {rowsFromTable, sortByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion, cleanNumber, sumNumbers} from "../shared/grist-common.js";
+import {rowsFromTable, sortByOrder, sortStructuresByOrder, codeOf, evaluateCondition, isTrue, isRequiredQuestion, validateQuestion, cleanNumber, sumNumbers} from "../shared/grist-common.js";
 import {serializeAnswer, hydrateResponse, assertRevision, validateWholeResponse, generateResumeToken, findResponseByResumeToken} from "./persistence.js";
 import {writeWorkbook} from "./xlsx-lite.js";
 import {effectiveQuestion,matrixValidationErrors,validateConfiguredQuestion,coherenceResult} from "./validation.js";
@@ -494,7 +494,7 @@ export function optionsFor(q, def, answers={}) {
     const ref=def.referentials.find(r=>codeOf(r.Referentiel_Code)===rc);
     const source=String(ref?.Type_source ?? "VALEURS_REFERENTIELS").trim().toUpperCase();
     if (source==="STRUCTURES") {
-      const rows=sortByOrder((def.structures ?? []).filter(active));
+      const rows=sortStructuresByOrder((def.structures ?? []).filter(active));
       refs=applyChoiceFilters(q,def,answers,rows.map(v=>({value:codeOf(v.Structure_Code),label:first(v,["Nom","Libelle","Libellé","Structure_Code"],codeOf(v.Structure_Code)),source:"structure",rowId:v.id,exclusive:referenceOptionExclusive(q,codeOf(v.Structure_Code))})),rows,"Structure_Code","Parent_Code");
     } else if (source==="VALEURS_REFERENTIELS") {
       const rows=sortByOrder(def.referentialValues.filter(v=>resolveRefCode(v.Referentiel_Code,def.referentials,"Referentiel_Code")===rc && active(v)));
