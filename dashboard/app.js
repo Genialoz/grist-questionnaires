@@ -663,6 +663,12 @@ function renderIndividualDetailContent(index){
  const allQuestions=state.definition?.questions||[],ficheTypes=state.definition?.ficheTypes||[];
  const main=allQuestions.filter(q=>active(q)&&!resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')&&!['description','sommaire','indicateurs','tableau_donnees'].includes(String(first(q,['Type_question','Type'],'')).toLowerCase()));
  const answerRows=(answers,questions)=>questions.map(q=>`<div class="answer-row"><strong>${escapeHtml(questionLabel(q))}</strong>${escapeHtml(scalarDisplay(answers?.[codeOf(q.Question_Code)],q))}</div>`).join('');
+ // Questionnaire classique : aucune navigation de fiches, les réponses s'affichent directement.
+ // Se baser sur la définition du questionnaire, et non sur le nombre de fiches du répondant :
+ // un répondant sans fiche dans une enquête à fiches doit conserver l'interface existante.
+ if(!ficheTypes.length){
+  return `<h2>${escapeHtml(responseLabel(h,index))}</h2><section class="dash-card"><h3>Réponses du questionnaire</h3>${main.length?answerRows(h.principalAnswers,main):'<div class="help">Aucune question à afficher.</div>'}</section>`;
+ }
  const fiches=[];
  for(const ft of ficheTypes){const fc=codeOf(ft.TypeFiche_Code),rows=(h.fiches?.[fc]||[]).filter(f=>!state.periodCode||!f.periodeCode||String(f.periodeCode)===String(state.periodCode)),questions=allQuestions.filter(q=>resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')===fc);rows.forEach((f,i)=>{const title=String(f.title||f.titre||f.Nom||f.Libelle||'').trim()||`${ficheLabel(ft)} ${i+1}`;fiches.push({title:`${ficheLabel(ft)} — ${title}`,html:answerRows(f.answers,questions)})})}
  const panels=fiches.map((f,i)=>`<section data-individual-fiche-panel="${i}" ${i===0?'':'hidden'}><h3 style="margin-top:12px">${escapeHtml(f.title)}</h3>${f.html||'<div class="help">Aucune question dans cette fiche.</div>'}</section>`).join('');
