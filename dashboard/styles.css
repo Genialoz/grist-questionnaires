@@ -320,3 +320,18 @@ body.dashboard-view-mode .dashboard-period-control select{min-width:200px;max-wi
 .dashboard-compare-legend-item{font-size:12px;color:#334155;display:inline-flex;align-items:center;gap:5px}
 .dashboard-compare-dot{width:10px;height:10px;border-radius:3px;display:inline-block;flex-shrink:0}
 @media print{.dashboard-compare-graph-controls{display:none}.dashboard-compare-charts{display:block}.dashboard-compare-chart{break-inside:avoid;margin-bottom:14px}}
+
+/* Gestion des périodes : commandes alignées, y compris sur écrans étroits. */
+.dashboard-period-settings{display:grid;gap:14px}
+.dashboard-period-default-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:end}
+.dashboard-period-default-grid>label{display:grid;gap:6px;min-width:0;margin:0}
+.dashboard-period-default-grid select{width:100%;min-width:0;min-height:40px;box-sizing:border-box}
+.dashboard-period-check{display:flex;align-items:center;gap:9px;min-height:32px;margin:0}
+.dashboard-period-check input{flex:0 0 auto}
+.dashboard-period-control{align-self:end}
+.dashboard-comparison-options{align-items:end}
+.dashboard-comparison-options>label:has(select){display:grid;gap:6px;align-items:end}
+.dashboard-comparison-options select{min-height:38px;box-sizing:border-box}
+@media(max-width:720px){.dashboard-period-default-grid{grid-template-columns:minmax(0,1fr)}.dashboard-comparison-options{display:grid;grid-template-columns:minmax(0,1fr)}.dashboard-comparison-options>label{min-width:0}.dashboard-comparison-options select{width:100%;min-width:0}}
+
+.dashboard-period-builder[hidden],.dashboard-period-default-grid>[hidden]{display:none!important}
