@@ -55,6 +55,8 @@ body.dashboard-view-mode .dashboard-view-actions button:hover{background:#f7f9fc
  body.dashboard-view-mode .dash-table-wrap{overflow:visible!important}
  body.dashboard-view-mode .dash-table{min-width:0!important}
  body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]{display:block!important}
+ /* Ne jamais inclure la liste des réponses individuelles dans le PDF global. */
+ body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel="individual-responses"]{display:none!important}
  body.dashboard-view-mode.dashboard-print-all [data-view-tab-panel]+[data-view-tab-panel]{break-before:page;page-break-before:always}
 }
 
@@ -335,3 +337,20 @@ body.dashboard-view-mode .dashboard-period-control select{min-width:200px;max-wi
 @media(max-width:720px){.dashboard-period-default-grid{grid-template-columns:minmax(0,1fr)}.dashboard-comparison-options{display:grid;grid-template-columns:minmax(0,1fr)}.dashboard-comparison-options>label{min-width:0}.dashboard-comparison-options select{width:100%;min-width:0}}
 
 .dashboard-period-builder[hidden],.dashboard-period-default-grid>[hidden]{display:none!important}
+
+/* Export PDF séparé : le contenu est construit depuis le répondant sélectionné. */
+#dashboard-individual-print-sheet{display:none}
+@media print{
+ body.dashboard-print-individual > *:not(#dashboard-individual-print-sheet){display:none!important}
+ body.dashboard-print-individual #dashboard-individual-print-sheet{display:block!important;position:static!important;max-width:none!important;padding:0!important;background:#fff!important;color:#222!important}
+ body.dashboard-print-individual .individual-print-header{border-bottom:1px solid #ddd;margin-bottom:14px;padding-bottom:10px}
+ body.dashboard-print-individual .individual-print-header h1{font-size:20px;margin:0 0 5px}
+ body.dashboard-print-individual .individual-print-header p{margin:0;color:#555}
+ body.dashboard-print-individual #dashboard-individual-print-sheet [data-individual-main],
+ body.dashboard-print-individual #dashboard-individual-print-sheet [data-individual-fiche-panel]{display:block!important}
+ body.dashboard-print-individual #dashboard-individual-print-sheet .dash-card{box-shadow:none!important;border:1px solid #ddd!important;margin:12px 0;break-inside:auto!important}
+ body.dashboard-print-individual #dashboard-individual-print-sheet [data-individual-fiche-panel]{break-inside:avoid;page-break-inside:avoid}
+ body.dashboard-print-individual #dashboard-individual-print-sheet .answer-row{break-inside:avoid}
+ body.dashboard-print-individual #dashboard-individual-print-sheet button,
+ body.dashboard-print-individual #dashboard-individual-print-sheet select{display:none!important}
+}
