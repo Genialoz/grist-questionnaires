@@ -797,7 +797,7 @@ function renderIndividualResponsesTab(cfg={}){
  const def=choices.some(([k])=>k===cfg.individualDefaultFilter)?cfg.individualDefaultFilter:'all';
  const counts={all:state.hydrated.length,with:0,declared:0,other:0};
  const rows=state.hydrated.map((h,i)=>{const category=individualResponseCategory(h,cfg),n=individualFicheCount(h);counts[category]++;return `<tr data-individual-row data-individual-name="${escapeHtml(responseLabel(h,i).toLocaleLowerCase('fr-FR'))}" data-individual-category="${category}" ${def!=='all'&&def!==category?'hidden':''}><td><strong>${escapeHtml(responseLabel(h,i))}</strong></td><td>${escapeHtml(periodActivityLabel(h))}</td><td>${n}</td><td>${category==='declared'?'Rien à déclarer':category==='with'?'Avec fiches':'Autres réponses'}</td><td><button type="button" data-individual-response="${i}">Consulter</button> <button type="button" data-print-individual="${i}" title="Imprimer les réponses et toutes les fiches de ce répondant">PDF</button></td></tr>`}).join('');
- return `<div class="dash-card"><h3>Réponses individuelles</h3>${hasRule?'':'<div class="help">Configurez une question et une modalité dans le constructeur pour distinguer les déclarations négatives.</div>'}<div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">${choices.map(([key,label])=>`<button type="button" data-individual-category-button="${key}" class="${def===key?'primary':''}" aria-pressed="${def===key?'true':'false'}">${escapeHtml(label)} (${counts[key]})</button>`).join('')}</div><div style="display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:12px 0"><label style="flex:1;min-width:180px">Rechercher une structure<br><input type="search" data-individual-search placeholder="Nom du répondant…" style="width:100%"></label><label style="min-width:180px">Afficher<br><select data-individual-filter style="width:100%">${choices.map(([key,label])=>`<option value="${key}" ${def===key?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><span class="help" data-individual-count aria-live="polite">${counts[def]} réponse(s) affichée(s)</span></div><div class="dash-table-wrap"><table class="dash-table"><thead><tr><th>Répondant / lien personnalisé</th><th>Statut</th><th>Fiches</th><th>Catégorie</th><th>Action</th></tr></thead><tbody>${rows||'<tr><td colspan="5">Aucune réponse enregistrée dans ce périmètre.</td></tr>'}</tbody></table></div></div>`;
+ return `<div class="dash-card"><h3>Réponses individuelles</h3>${hasRule?'':'<div class="help">Configurez une question et une modalité dans le constructeur pour distinguer les déclarations négatives.</div>'}<div style="display:flex;flex-wrap:wrap;gap:8px;margin:12px 0">${choices.map(([key,label])=>`<button type="button" data-individual-category-button="${key}" class="${def===key?'primary':''}" aria-pressed="${def===key?'true':'false'}">${escapeHtml(label)} (${counts[key]})</button>`).join('')}</div><div style="display:flex;flex-wrap:wrap;align-items:end;gap:12px;margin:12px 0"><label style="flex:1;min-width:180px">Rechercher une structure<br><input type="search" data-individual-search placeholder="Nom du répondant…" style="width:100%"></label><label style="min-width:180px">Afficher<br><select data-individual-filter style="width:100%">${choices.map(([key,label])=>`<option value="${key}" ${def===key?'selected':''}>${escapeHtml(label)}</option>`).join('')}</select></label><span class="help" data-individual-count aria-live="polite">${counts[def]} réponse(s) affichée(s)</span></div><div class="individual-export-toolbar"><strong>Exporter les réponses individuelles</strong><label>Périmètre<select data-individual-export-scope><option value="visible">Répondants filtrés / affichés</option><option value="all">Tous les répondants de la période</option></select></label><button type="button" data-individual-export-pdf>PDF unique</button><button type="button" data-individual-export-zip>ZIP · un PDF par répondant</button><span class="help" data-individual-export-status role="status" aria-live="polite"></span></div><div class="dash-table-wrap"><table class="dash-table"><thead><tr><th>Répondant / lien personnalisé</th><th>Statut</th><th>Fiches</th><th>Catégorie</th><th>Action</th></tr></thead><tbody>${rows||'<tr><td colspan="5">Aucune réponse enregistrée dans ce périmètre.</td></tr>'}</tbody></table></div></div>`;
 }
 function updateIndividualResponseList(host){
  if(!host)return;const search=String(host.querySelector('[data-individual-search]')?.value||'').toLocaleLowerCase('fr-FR').trim(),filter=host.querySelector('[data-individual-filter]')?.value||'all';let shown=0;
@@ -859,6 +859,89 @@ function printIndividualResponse(index){
  window.addEventListener('afterprint',cleanup);
  try{window.print()}catch(err){cleanup();throw err}
 }
+// V4.3.22 — Exports groupés : aucun appel serveur, les PDF sont créés localement.
+// Le périmètre « affichés » reprend exactement la recherche et la catégorie actives.
+function individualExportIndices(host){
+ const scope=host.querySelector('[data-individual-export-scope]')?.value||'visible';
+ if(scope==='all')return state.hydrated.map((_,i)=>i);
+ return [...host.querySelectorAll('[data-individual-row]')].filter(row=>!row.hidden).map(row=>Number(row.querySelector('[data-individual-response]')?.dataset.individualResponse)).filter(i=>Number.isInteger(i)&&i>=0&&i<state.hydrated.length);
+}
+function individualExportDocument(index){
+ const el=document.createElement('div');el.innerHTML=renderIndividualDetailContent(index);
+ el.querySelectorAll('[data-individual-main],[data-individual-fiche-panel]').forEach(panel=>{panel.hidden=false;panel.removeAttribute('hidden')});
+ el.querySelectorAll('button,select,[data-individual-position]').forEach(n=>n.remove());
+ const lines=[];
+ const clean=s=>String(s||'').replace(/\s+/g,' ').trim();
+ const title=clean(el.querySelector('h2')?.textContent)||responseLabel(state.hydrated[index],index);
+ lines.push({text:title,kind:'respondent'});
+ for(const node of el.querySelectorAll('h3,.answer-row')){
+  if(node.classList.contains('answer-row')){
+   const label=clean(node.querySelector('strong')?.textContent);
+   const value=clean(node.textContent.slice((node.querySelector('strong')?.textContent||'').length));
+   lines.push({text:label+(value?' : '+value:' : —'),kind:'answer'});
+  }else lines.push({text:clean(node.textContent),kind:'heading'});
+ }
+ return {title,lines};
+}
+function individualExportHeader(){
+ const period=state.periodCode?(state.periods||[]).find(p=>String(codeOf(p.Periode_Code))===String(state.periodCode)):null;
+ return [String(state.dashboard?.Nom||'Tableau de bord'),String(state.campaigns?.[0]?.Nom||''),period?String(period.Libelle||period.Nom||state.periodCode):''].filter(Boolean);
+}
+// PDF texte paginé, autonome (A4, police PDF standard). Pas de service tiers ni de dépendance réseau.
+function createIndividualPdf(documents){
+ const cp1252={'€':128,'‚':130,'ƒ':131,'„':132,'…':133,'†':134,'‡':135,'ˆ':136,'‰':137,'Š':138,'‹':139,'Œ':140,'Ž':142,'‘':145,'’':146,'“':147,'”':148,'•':149,'–':150,'—':151,'˜':152,'™':153,'š':154,'›':155,'œ':156,'ž':158,'Ÿ':159};
+ const latin=s=>{let out='';for(const c of String(s)){const n=c.codePointAt(0);out+=String.fromCharCode(n<=255?n:(cp1252[c]||63))}return out};
+ const pdfText=s=>latin(s).replace(/\\/g,'\\\\').replace(/\(/g,'\\(').replace(/\)/g,'\\)').replace(/[\r\n]/g,' ');
+ const pages=[];let ops=[],y=795;
+ const start=()=>{ops=[];y=795};
+ const finish=()=>{if(ops.length)pages.push(ops.join('\n'));start()};
+ const line=(str,size=10,bold=false,indent=0)=>{if(y<54)finish();ops.push(`BT /${bold?'F2':'F1'} ${size} Tf 1 0 0 1 ${44+indent} ${y} Tm (${pdfText(str)}) Tj ET`);y-=size+5};
+ const wrap=(txt,max)=>{const words=String(txt).split(/\s+/),result=[];let current='';for(const w of words){if(!w)continue;if(w.length>max){if(current){result.push(current);current=''}for(let j=0;j<w.length;j+=max)result.push(w.slice(j,j+max));continue}if((current+' '+w).trim().length>max){result.push(current);current=w}else current=(current+' '+w).trim()}if(current)result.push(current);return result.length?result:['']};
+ start();
+ for(let i=0;i<documents.length;i++){
+  if(i)finish();
+  individualExportHeader().forEach((s,j)=>wrap(s,j===0?65:90).forEach(w=>line(w,j===0?16:10,j===0)));
+  y-=12;
+  for(const item of documents[i].lines){if(item.kind==='heading'||item.kind==='respondent')y-=6;for(const w of wrap(item.text,item.kind==='answer'?100:85))line(w,item.kind==='respondent'?14:item.kind==='heading'?12:10,item.kind!=='answer',item.kind==='answer'?6:0)}
+ }
+ finish();
+ const objects=['','<< /Type /Catalog /Pages 2 0 R >>','', '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>','<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>'];
+ const kids=[];
+ for(const content of pages){const pageId=objects.length,streamId=pageId+1;kids.push(`${pageId} 0 R`);objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${streamId} 0 R >>`);objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`)}
+ objects[2]=`<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
+ let output='%PDF-1.4\n%\xE2\xE3\xCF\xD3\n',offsets=[0];
+ for(let i=1;i<objects.length;i++){offsets.push(output.length);output+=`${i} 0 obj\n${objects[i]}\nendobj\n`}
+ const xref=output.length;output+=`xref\n0 ${objects.length}\n0000000000 65535 f \n`;
+ for(let i=1;i<offsets.length;i++)output+=`${String(offsets[i]).padStart(10,'0')} 00000 n \n`;
+ output+=`trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
+ return new Blob([Uint8Array.from(output,c=>c.charCodeAt(0))],{type:'application/pdf'});
+}
+function safeExportName(s){return String(s||'repondant').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9_-]+/g,'_').replace(/^_+|_+$/g,'').slice(0,70)||'repondant'}
+function downloadIndividualBlob(blob,name){const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),60000)}
+async function exportIndividualResponses(button,format){
+ const host=button.closest('.dash-card');if(!host)return;
+ const message=host.querySelector('[data-individual-export-status]'),indices=individualExportIndices(host);
+ if(!indices.length){if(message)message.textContent='Aucun répondant dans ce périmètre.';return}
+ const buttons=[...host.querySelectorAll('[data-individual-export-pdf],[data-individual-export-zip]')];buttons.forEach(b=>b.disabled=true);
+ if(message)message.textContent=`Préparation de ${indices.length} répondant(s)…`;
+ try{
+  const documents=indices.map(individualExportDocument),base=safeExportName(state.dashboard?.Nom||'Dashboard');
+  if(format==='pdf')downloadIndividualBlob(createIndividualPdf(documents),`${base}_reponses.pdf`);
+  else{
+   if(typeof JSZip==='undefined')throw new Error('La bibliothèque ZIP locale est indisponible.');
+   const zip=new JSZip(),used=new Set();
+   for(let i=0;i<documents.length;i++){
+    const baseName=safeExportName(documents[i].title),id=indices[i],name=`${baseName}_${id+1}.pdf`;
+    if(used.has(name))throw new Error('Nom de fichier en double.');used.add(name);
+    zip.file(name,await createIndividualPdf([documents[i]]).arrayBuffer());
+   }
+   const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'});
+   downloadIndividualBlob(blob,`${base}_reponses_individuelles.zip`);
+  }
+  if(message)message.textContent=`Export préparé : ${indices.length} répondant(s).`;
+ }catch(err){if(message)message.textContent=`Export impossible : ${err?.message||err}`;}
+ finally{buttons.forEach(b=>b.disabled=false)}
+}
 function showIndividualResponseDetail(index){
  if(!Number.isInteger(index)||index<0||index>=state.hydrated.length)return;
  const existing=document.querySelector('#individual-response-dialog');if(existing)existing.remove();
@@ -883,5 +966,5 @@ async function load(){loadAdminModuleNav();const token=param('Dashboard_'),consu
 
 document.addEventListener('input',e=>{const host=e.target.closest?.('.dash-card');if(host&&(e.target.matches('[data-individual-search]')||e.target.matches('[data-individual-filter]')))updateIndividualResponseList(host)});
 document.addEventListener('change',e=>{if(e.target.matches('[data-individual-filter]'))updateIndividualResponseList(e.target.closest('.dash-card'))});
-document.addEventListener('click',e=>{const category=e.target.closest?.('[data-individual-category-button]');if(category){const host=category.closest('.dash-card'),select=host?.querySelector('[data-individual-filter]');if(select){select.value=category.dataset.individualCategoryButton;updateIndividualResponseList(host)}return}const print=e.target.closest?.('[data-print-individual]');if(print){printIndividualResponse(Number(print.dataset.printIndividual));return}const detail=e.target.closest?.('[data-individual-response]');if(detail){showIndividualResponseDetail(Number(detail.dataset.individualResponse));return}const btn=e.target.closest?.('[data-view-tab]');if(!btn)return;const host=btn.closest('.dashboard-tabs');if(!host)return;host.querySelectorAll('[data-view-tab]').forEach(x=>x.classList.toggle('is-active',x===btn));host.querySelectorAll('[data-view-tab-panel]').forEach(p=>{const active=p.dataset.viewTabPanel===btn.dataset.viewTab;p.hidden=!active;p.classList.toggle('is-active',active)})});
+document.addEventListener('click',e=>{const category=e.target.closest?.('[data-individual-category-button]');if(category){const host=category.closest('.dash-card'),select=host?.querySelector('[data-individual-filter]');if(select){select.value=category.dataset.individualCategoryButton;updateIndividualResponseList(host)}return}const exportButton=e.target.closest?.('[data-individual-export-pdf],[data-individual-export-zip]');if(exportButton){exportIndividualResponses(exportButton,exportButton.hasAttribute('data-individual-export-zip')?'zip':'pdf');return}const print=e.target.closest?.('[data-print-individual]');if(print){printIndividualResponse(Number(print.dataset.printIndividual));return}const detail=e.target.closest?.('[data-individual-response]');if(detail){showIndividualResponseDetail(Number(detail.dataset.individualResponse));return}const btn=e.target.closest?.('[data-view-tab]');if(!btn)return;const host=btn.closest('.dashboard-tabs');if(!host)return;host.querySelectorAll('[data-view-tab]').forEach(x=>x.classList.toggle('is-active',x===btn));host.querySelectorAll('[data-view-tab-panel]').forEach(p=>{const active=p.dataset.viewTabPanel===btn.dataset.viewTab;p.hidden=!active;p.classList.toggle('is-active',active)})});
 grist.ready({requiredAccess:'full'});load().catch(e=>{document.querySelector('#status').innerHTML=`<div class="status-error">${escapeHtml(e?.message||e)}</div>`});
