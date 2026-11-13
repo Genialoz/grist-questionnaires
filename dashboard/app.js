@@ -399,7 +399,7 @@ function scalarDisplay(v,q){if(Array.isArray(v))return v.map(x=>indicatorGroupLa
 function selectedTokens(){const out=[];for(const b of configuredIndicatorBlocks())for(const t of indicatorQuestionCodes(b))if(!out.includes(t))out.push(t);return out}
 function tokenTitle(t){if(t.startsWith("f:")){const f=indicatorFicheType(t.slice(2));return f?`Nb ${ficheLabel(f)}`:t}if(t.startsWith("fq:")){const r=t.slice(3),i=r.indexOf(":"),fc=r.slice(0,i),qc=r.slice(i+1),q=indicatorFicheQuestion(qc,fc);return q?questionLabel(q):t}const qc=t.startsWith("q:")?t.slice(2):t,q=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===qc);return q?questionLabel(q):t}
 function responseTokenValue(h,t){if(t.startsWith("f:"))return (h.fiches?.[t.slice(2)]||[]).length;if(t.startsWith("fq:")){const r=t.slice(3),i=r.indexOf(":"),fc=r.slice(0,i),qc=r.slice(i+1),q=indicatorFicheQuestion(qc,fc),vals=(h.fiches?.[fc]||[]).map(x=>x.answers?.[qc]).filter(v=>v!==undefined&&v!==null&&v!=="");if(!vals.length)return"—";if(q&&indicatorNumeric(q))return vals.map(Number).filter(Number.isFinite).reduce((a,b)=>a+b,0);return [...new Set(vals.flatMap(v=>Array.isArray(v)?v:[v]).map(v=>indicatorGroupLabel(q,v)))].join(", ")}const qc=t.startsWith("q:")?t.slice(2):t,q=(state.definition?.questions||[]).find(x=>codeOf(x.Question_Code)===qc);return scalarDisplay(h.principalAnswers?.[qc],q)}
-function renderHeader(){const d=state.dashboard,c=state.campaigns[0],sharedView=state.mode==="view";return `<div class="dash-head"><div><h1>${escapeHtml(d?.Nom||"Tableau de bord")}</h1><div class="muted">${escapeHtml(c?.Nom||"Campagne")}${sharedView?"":` · ${escapeHtml(responseScopeLabel())}`}</div></div><div class="dashboard-view-actions">${sharedView?"":responseScopeControl()}${dashboardPeriodControl()}<button type="button" data-print-current>Imprimer / PDF cet onglet</button><button type="button" data-print-all>Imprimer / PDF tout le Dashboard</button><button type="button" data-export-dashboard>Exporter les données</button></div></div>`}
+function renderHeader(){const d=state.dashboard,c=state.campaigns[0],sharedView=state.mode==="view";return `<div class="dash-head"><div><h1>${escapeHtml(d?.Nom||"Tableau de bord")}</h1><div class="muted">${escapeHtml(c?.Nom||"Campagne")}${sharedView?"":` · ${escapeHtml(responseScopeLabel())}`}</div></div><div class="dashboard-view-actions">${sharedView?"":responseScopeControl()}${dashboardPeriodControl()}<button type="button" data-print-current>Imprimer / PDF cet onglet</button><button type="button" data-print-all>Imprimer / PDF tout le Dashboard</button><button type="button" data-export-dashboard>Exporter Excel (.xlsx)</button></div></div>`}
 function renderGlobal(){const blocks=configuredIndicatorBlocks();return `<div class="dash-kpis"><div class="dash-kpi"><span>Réponses</span><strong>${state.responses.length}</strong></div><div class="dash-kpi"><span>Blocs d’indicateurs</span><strong>${blocks.length}</strong></div></div><div class="dash-grid" style="margin-top:14px">${blocks.map(renderIndicators).join("")||'<div class="dash-card">Aucun bloc Indicateurs n’est configuré dans cette version.</div>'}</div>`}
 // Pour les questionnaires permanents, distinguer activité de saisie et validation globale.
 function periodActivityLabel(h){
@@ -411,9 +411,130 @@ function periodActivityLabel(h){
 }
 function renderParticipants(){const tokens=selectedTokens();return `<div class="dash-table-wrap"><table class="dash-table"><thead><tr><th>Répondant</th><th>Statut</th>${tokens.map(t=>`<th>${escapeHtml(tokenTitle(t))}</th>`).join("")}</tr></thead><tbody>${state.hydrated.map((h,i)=>`<tr data-response="${i}"><td><strong>${escapeHtml(responseLabel(h,i))}</strong></td><td>${escapeHtml(periodActivityLabel(h))}</td>${tokens.map(t=>`<td>${escapeHtml(String(responseTokenValue(h,t)))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`}
 function renderDetail(i){const h=state.hydrated[i];if(!h)return"";const main=(state.definition?.questions||[]).filter(q=>active(q)&&!resolveRefCode(q.TypeFiche_Code,state.definition?.ficheTypes||[],"TypeFiche_Code")&&!['description','sommaire','indicateurs','tableau_donnees'].includes(String(first(q,["Type_question","Type"],"")).toLowerCase()));const ficheCards=(state.definition?.ficheTypes||[]).map(ft=>{const fc=codeOf(ft.TypeFiche_Code),rows=h.fiches?.[fc]||[];if(!rows.length)return"";return `<div class="dash-card"><h3>${escapeHtml(ficheLabel(ft))} (${rows.length})</h3>${rows.map((r,n)=>`<div style="margin:10px 0;padding-top:8px;border-top:1px solid #eee"><strong>#${n+1}</strong>${(state.definition.questions||[]).filter(q=>resolveRefCode(q.TypeFiche_Code,state.definition.ficheTypes,"TypeFiche_Code")===fc).map(q=>`<div class="answer-row"><strong>${escapeHtml(questionLabel(q))}</strong>${escapeHtml(scalarDisplay(r.answers?.[codeOf(q.Question_Code)],q))}</div>`).join("")}</div>`).join("")}</div>`}).join("");return `<button class="back-btn" data-back>← Retour aux répondants</button><h2>${escapeHtml(responseLabel(h,i))}</h2><div class="participant-detail-grid"><div class="dash-card"><h3>Réponse principale</h3>${main.map(q=>`<div class="answer-row"><strong>${escapeHtml(questionLabel(q))}</strong>${escapeHtml(scalarDisplay(h.principalAnswers?.[codeOf(q.Question_Code)],q))}</div>`).join("")}</div>${ficheCards}</div>`}
-function csvCell(v){const s=String(v??"").replace(/\r?\n/g," ");return /[;"\n]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
-function dashboardExportRows(){const rows=[["Dashboard",state.dashboard?.Nom||"Tableau de bord"],["Campagne",state.campaigns?.[0]?.Nom||""],["Réponses",state.responses.length],["Périmètre",responseScopeLabel()],["Période",state.periodCode?(state.periods.find(p=>codeOf(p.Periode_Code)===state.periodCode)?.Libelle||state.periodCode):"Vue globale (sans filtre)"],[]],root=document.querySelector('#root');const panels=[...root.querySelectorAll('[data-view-tab-panel]')],targets=panels.length?panels:[root];targets.forEach((panel,pi)=>{const tabId=panel.dataset?.viewTabPanel||"",btn=tabId?root.querySelector(`[data-view-tab="${CSS.escape(tabId)}"]`):null;rows.push([btn?.textContent?.trim()||`Vue ${pi+1}`]);panel.querySelectorAll('.dash-kpi').forEach(k=>rows.push([k.querySelector('span')?.textContent?.trim()||"Indicateur",k.querySelector('strong')?.textContent?.trim()||""]));panel.querySelectorAll('.indicator-card,.dash-card,.dashboard-configured-block').forEach(card=>{const title=card.querySelector('h3,h4')?.textContent?.trim();if(title)rows.push([title]);card.querySelectorAll('table').forEach(table=>{[...table.rows].forEach(tr=>rows.push([...tr.cells].map(td=>td.textContent.trim())));rows.push([])});card.querySelectorAll('.metric-table>div').forEach(line=>rows.push([...line.children].map(x=>x.textContent.trim())));rows.push([])});rows.push([])});return rows}
-function exportDashboardData(){const csv="sep=;\r\n"+dashboardExportRows().map(r=>r.map(csvCell).join(";")).join("\r\n"),blob=new Blob(["\ufeff",csv],{type:"text/csv;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a"),name=String(state.dashboard?.Nom||"dashboard").replace(/[<>:"/\\\\|?*]+/g,"_").trim()||"dashboard";a.href=url;a.download=`${name}.csv`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+// Export Excel natif : nombres réels, caractères Unicode et bordures (aucune requête externe).
+function dashboardExcelNumber(value){
+ const raw=String(value??'').trim();
+ if(!raw||/^0\d/.test(raw)||/[\n\r]/.test(raw))return null;
+ const clean=raw.replace(/[\u00a0\u202f\u2009\u2007\u2008\s]/g,'').replace(/\u2212/g,'-').replace(/[€$£]/g,'');
+ if(!/^[+-]?(?:\d+(?:[.,]\d+)?|[.,]\d+)$/.test(clean))return null;
+ if(clean.includes(',')&&clean.includes('.'))return null;
+ const n=Number(clean.replace(',','.'));return Number.isFinite(n)?n:null;
+}
+function dashboardExcelXml(value){return String(value??'').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;')}
+function dashboardExcelColumn(n){let s='';for(let i=n+1;i;i=Math.floor((i-1)/26))s=String.fromCharCode(65+(i-1)%26)+s;return s}
+function dashboardExcelChartRows(chart){
+ if(chart.classList.contains('indicator-bars'))return [...chart.children].map(line=>{
+  const label=line.querySelector(':scope > span:first-child')?.textContent?.trim()||'';
+  const raw=line.querySelector(':scope > strong:last-child')?.textContent?.trim()||'';
+  const number=dashboardExcelNumber(raw.replace(/\s*\([^)]*\)\s*$/,''));
+  return label&&number!==null?[label,number]:null;
+ }).filter(Boolean);
+ if(chart.classList.contains('indicator-pie')){
+  const legend=chart.children[1];if(!legend)return [];
+  return [...legend.children].map(line=>{
+   const text=line.textContent?.trim()||'',label=text.split(/\s+[—–]\s+/)[0]||'',number=dashboardExcelNumber(line.querySelector('strong')?.textContent);
+   return label&&number!==null?[label,number]:null;
+  }).filter(Boolean);
+ }
+ return [];
+}
+function dashboardExcelCollect(){
+ const sheets=[],root=document.querySelector('#root'),panels=[...root.querySelectorAll('[data-view-tab-panel]')];
+ const targets=panels.length?panels:[root];
+ const used=new Set();
+ for(let pi=0;pi<targets.length;pi++){
+  const panel=targets[pi],tabId=panel.dataset?.viewTabPanel||'';
+  // Les réponses individuelles disposent de leur export PDF dédié.
+  const tabButton=tabId?root.querySelector(`[data-view-tab="${CSS.escape(tabId)}"]`):null;
+  const title=tabButton?.textContent?.trim()||`Onglet ${pi+1}`;
+  if(/r[eé]ponses individuelles/i.test(title))continue;
+  let name=title.replace(/[\\/*?:\[\]]/g,' ').trim().slice(0,31)||`Onglet ${pi+1}`;
+  let suffix=2,original=name;
+  while(used.has(name.toLowerCase()))name=original.slice(0,31-String(suffix).length-1)+' '+suffix++;
+  used.add(name.toLowerCase());
+  const rows=[],push=(cells,kind='data')=>rows.push({cells:[...cells],kind});
+  push([state.dashboard?.Nom||'Tableau de bord'],'title');
+  push([title],'section');
+  push(['Campagne',state.campaigns?.[0]?.Nom||''],'metadata');
+  push(['Périmètre',responseScopeLabel()],'metadata');
+  push(['Période',state.periodCode?(state.periods.find(p=>codeOf(p.Periode_Code)===state.periodCode)?.Libelle||state.periodCode):'Vue globale (sans filtre)'],'metadata');
+  push([]);
+  panel.querySelectorAll('.dash-kpi').forEach(k=>push([k.querySelector('span')?.textContent?.trim()||'Indicateur',k.querySelector('strong')?.textContent?.trim()||''],'metadata'));
+  const cards=[...panel.querySelectorAll('.indicator-card,.dash-card,.dashboard-configured-block,.dashboard-comparison-results')].filter(el=>!el.parentElement?.closest('.indicator-card,.dash-card,.dashboard-configured-block,.dashboard-comparison-results'));
+  const sections=cards.length?cards:[panel];
+  for(const card of sections){
+   const heading=card.querySelector('h3,h4,h2')?.textContent?.trim();if(heading)push([heading],'section');
+   // Les graphiques avec tableau affiché exportent les valeurs du tableau (pas deux fois les mêmes données).
+   const tables=[...card.querySelectorAll('table')];
+   for(const table of tables){
+    for(const tr of table.rows){
+     const cells=[...tr.cells].map(td=>td.textContent.trim());
+     push(cells,tr.closest('thead')?'header':tr.closest('tfoot')||tr.classList.contains('dash-total-row')?'total':'data');
+    }
+    push([]);
+   }
+   const metricTables=[...card.querySelectorAll('.metric-table')];
+   for(const table of metricTables){
+    push(['Modalité','Valeur'],'header');
+    for(const line of table.children)push([...line.children].map(x=>x.textContent.trim()));
+    push([]);
+   }
+   // Les blocs en mode graphique seulement n'ont aucune table : extraire directement les nombres du graphique.
+   for(const chart of card.querySelectorAll('.indicator-chart')){
+    const section=chart.closest('.indicator-part,.indicator-subgroup')||card;
+    if(section.querySelector('table,.metric-table'))continue;
+    const data=dashboardExcelChartRows(chart);
+    if(!data.length)continue;
+    const subtitle=chart.closest('.indicator-subgroup')?.querySelector(':scope > strong')?.textContent?.trim()||chart.closest('.indicator-part')?.querySelector('h4')?.textContent?.trim();
+    if(subtitle)push([subtitle],'section');
+    push(['Modalité','Effectif'],'header');data.forEach(row=>push(row));push([]);
+   }
+   // Indicateurs clés sans tableau.
+   if(!tables.length&&!metricTables.length){
+    for(const k of card.querySelectorAll('.indicator-part small')){
+     const value=k.nextElementSibling?.textContent?.trim();if(value)push([k.textContent.trim(),value]);
+    }
+   }
+   push([]);
+  }
+  sheets.push({name,rows});
+ }
+ return sheets;
+}
+async function exportDashboardData(){
+ try{
+  if(typeof JSZip==='undefined')throw new Error('Bibliothèque ZIP indisponible');
+  const sheets=dashboardExcelCollect();
+  if(!sheets.length)throw new Error('Aucun onglet statistique à exporter');
+  const zip=new JSZip();
+  const types=['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">','<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>','<Default Extension="xml" ContentType="application/xml"/>','<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>','<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'];
+  sheets.forEach((_,i)=>types.push(`<Override PartName="/xl/worksheets/sheet${i+1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`));
+  zip.file('[Content_Types].xml',types.join('')+'</Types>');
+  zip.file('_rels/.rels','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>');
+  const sheetEntries=sheets.map((s,i)=>`<sheet name="${dashboardExcelXml(s.name)}" sheetId="${i+1}" r:id="rId${i+1}"/>`).join('');
+  zip.file('xl/workbook.xml',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetEntries}</sheets></workbook>`);
+  const rels=sheets.map((_,i)=>`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i+1}.xml"/>`).join('');
+  zip.file('xl/_rels/workbook.xml.rels',`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}<Relationship Id="rId${sheets.length+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`);
+  // Style 0 : standard ; 1 : titre ; 2 : section ; 3 : en-tête ; 4 : données bordées ; 5 : total.
+  zip.file('xl/styles.xml','<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="12"/><color rgb="FF17324D"/><name val="Calibri"/></font><font><b/><sz val="11"/><color rgb="FFFFFFFF"/><name val="Calibri"/></font></fonts><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFEDF3FA"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor rgb="FF264B70"/><bgColor indexed="64"/></patternFill></fill></fills><borders count="2"><border><left/><right/><top/><bottom/><diagonal/></border><border><left style="thin"><color rgb="FFBCC9D5"/></left><right style="thin"><color rgb="FFBCC9D5"/></right><top style="thin"><color rgb="FFBCC9D5"/></top><bottom style="thin"><color rgb="FFBCC9D5"/></bottom><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="6"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="2" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/><xf numFmtId="2" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyNumberFormat="1"/><xf numFmtId="2" fontId="1" fillId="2" borderId="1" xfId="0" applyBorder="1" applyFill="1" applyFont="1" applyNumberFormat="1"/></cellXfs></styleSheet>');
+  for(let si=0;si<sheets.length;si++){
+   const sheet=sheets[si],width=Math.max(2,...sheet.rows.map(r=>r.cells.length)),columns=Array.from({length:Math.min(width,32)},(_,c)=>`<col min="${c+1}" max="${c+1}" width="${c===0?43:23}" customWidth="1"/>`).join('');
+   const rowXml=sheet.rows.map((row,ri)=>{
+    const style=row.kind==='title'?1:row.kind==='section'?2:row.kind==='header'?3:row.kind==='total'?5:4;
+    const cells=row.cells.map((val,ci)=>{
+     const ref=dashboardExcelColumn(ci)+(ri+1),str=String(val??'');
+     const num=dashboardExcelNumber(str);
+     if(num!==null&&row.kind!=='title'&&row.kind!=='section'&&row.kind!=='header')return `<c r="${ref}" s="${style}"><v>${num}</v></c>`;
+     return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${dashboardExcelXml(str)}</t></is></c>`;
+    }).join('');return `<row r="${ri+1}">${cells}</row>`;
+   }).join('');
+   zip.file(`xl/worksheets/sheet${si+1}.xml`,`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"/></sheetViews><sheetFormatPr defaultRowHeight="16"/><cols>${columns}</cols><sheetData>${rowXml}</sheetData></worksheet>`);
+  }
+  const blob=await zip.generateAsync({type:'blob',compression:'DEFLATE'}),url=URL.createObjectURL(blob),a=document.createElement('a');
+  const name=String(state.dashboard?.Nom||'dashboard').replace(/[<>:"/\\|?*]+/g,'_').trim()||'dashboard';
+  a.href=url;a.download=`${name}.xlsx`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ }catch(err){console.error('Export Excel du Dashboard',err);alert(`Export Excel impossible : ${err.message||err}`)}
+}
 function printDashboard(all=false){document.body.classList.toggle('dashboard-print-all',all);const done=()=>{document.body.classList.remove('dashboard-print-all');window.removeEventListener('afterprint',done)};window.addEventListener('afterprint',done);window.print()}
 function bind(){bindResponseScope();bindComparison();document.querySelector('[data-dashboard-period]')?.addEventListener('change',async e=>{state.periodCode=String(e.target.value||'');state.compareEnabled=false;state.selected=null;try{await loadViewer(String(state.dashboard?.id||''))}catch(err){document.querySelector('#status').innerHTML=`<div class="status-error">${escapeHtml(err?.message||err)}</div>`}});document.querySelector('[data-print-current]')?.addEventListener('click',()=>printDashboard(false));document.querySelector('[data-print-all]')?.addEventListener('click',()=>printDashboard(true));document.querySelector('[data-export-dashboard]')?.addEventListener('click',exportDashboardData);document.querySelectorAll('[data-response]').forEach(r=>r.onclick=()=>{state.selected=Number(r.dataset.response);render()});document.querySelector('[data-back]')?.addEventListener('click',()=>{state.selected=null;render()})}
 function render(){const root=document.querySelector('#root');const periodNote=state.periodCode&&!state.responses.length
