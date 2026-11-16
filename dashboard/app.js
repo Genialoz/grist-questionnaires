@@ -438,6 +438,12 @@ function dashboardExcelChartRows(chart){
  }
  return [];
 }
+// Certains tableaux placent « Total général » dans le tbody sans classe CSS particulière.
+// Ne pas se fier uniquement à <tfoot> : identifier le libellé de la première cellule.
+function dashboardExcelIsTotalRow(cells){
+ const label=String(cells?.[0]??'').replace(/[\u00a0\u202f]/g,' ').replace(/\s+/g,' ').trim();
+ return /^total(?: général)?$/i.test(label);
+}
 function dashboardExcelCollect(){
  const sheets=[],root=document.querySelector('#root'),panels=[...root.querySelectorAll('[data-view-tab-panel]')];
  const targets=panels.length?panels:[root];
@@ -466,7 +472,7 @@ function dashboardExcelCollect(){
    for(const table of tables){
     for(const tr of table.rows){
      const cells=[...tr.cells].map(td=>td.textContent.trim());
-     push(cells,tr.closest('thead')?'header':tr.closest('tfoot')||tr.classList.contains('dash-total-row')?'total':'data');
+     push(cells,tr.closest('thead')?'header':tr.closest('tfoot')||tr.classList.contains('dash-total-row')||dashboardExcelIsTotalRow(cells)?'total':'data');
     }
     push([]);
    }
