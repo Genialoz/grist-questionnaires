@@ -455,9 +455,6 @@ function dashboardExcelCollect(){
   const rows=[],push=(cells,kind='data')=>rows.push({cells:[...cells],kind});
   push([state.dashboard?.Nom||'Tableau de bord'],'title');
   push([title],'section');
-  push(['Campagne',state.campaigns?.[0]?.Nom||''],'metadata');
-  push(['Périmètre',responseScopeLabel()],'metadata');
-  push(['Période',state.periodCode?(state.periods.find(p=>codeOf(p.Periode_Code)===state.periodCode)?.Libelle||state.periodCode):'Vue globale (sans filtre)'],'metadata');
   push([]);
   panel.querySelectorAll('.dash-kpi').forEach(k=>push([k.querySelector('span')?.textContent?.trim()||'Indicateur',k.querySelector('strong')?.textContent?.trim()||''],'metadata'));
   const cards=[...panel.querySelectorAll('.indicator-card,.dash-card,.dashboard-configured-block,.dashboard-comparison-results')].filter(el=>!el.parentElement?.closest('.indicator-card,.dash-card,.dashboard-configured-block,.dashboard-comparison-results'));
