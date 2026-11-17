@@ -1,4 +1,4 @@
-import {rowsFromTable,codeOf,isTrue} from "../shared/grist-common.js";
+import {rowsFromTable,sortByOrder,codeOf,isTrue} from "../shared/grist-common.js";
 import {hydrateResponse} from "../questionnaire/persistence.js";
 const TABLES=["DASHBOARDS","CAMPAGNES","VERSIONS_QUESTIONNAIRES","PAGES","SECTIONS","QUESTIONS","TYPES_FICHES","CHOIX_QUESTIONS","REFERENTIELS","VALEURS_REFERENTIELS","STRUCTURES","REPONSES","ELEMENTS_REPONSE","VALEURS_REPONSE","SELECTIONS_REPONSE","COLONNES_MATRICE","BIBLIOTHEQUE_REGROUPEMENTS","PARTICIPATIONS","DESTINATAIRES_CAMPAGNE","PERIODES_QUESTIONNAIRE","QUESTIONNAIRES"];
 const state={dashboard:null,campaigns:[],definition:null,responses:[],hydrated:[],tab:"global",selected:null,mode:"view",responseScope:"real",loaded:null,config:null,periodCode:"",periods:[],compareCodes:[],compareReference:"",compareEnabled:false,compareChartEnabled:false,compareChartType:"bar",periodDashboardId:""};
@@ -951,12 +951,40 @@ function renderBlocksFromConfig(cfg,group){
  if(tabs.length===1)return `<div class="dashboard-tabs"><div class="dashboard-tab-panel is-active" data-view-tab-panel="${escapeHtml(tabs[0].id)}">${panel(tabs[0])}</div></div>`;
  return `<div class="dashboard-tabs"><div class="dashboard-tab-nav">${tabs.map((t,i)=>`<button type="button" class="dashboard-tab-button ${i===0?'is-active':''}" data-view-tab="${escapeHtml(t.id)}">${escapeHtml(t.title||`Onglet ${i+1}`)}</button>`).join("")}</div>${tabs.map((t,i)=>`<div class="dashboard-tab-panel ${i===0?'is-active':''}" data-view-tab-panel="${escapeHtml(t.id)}" ${i===0?'':'hidden'}>${panel(t)}</div>`).join("")}</div>`;
 }
+// Même hiérarchie que le questionnaire répondant : pages, sections, puis Ordre des questions.
+// Ne jamais se fier à l'ordre de création / d'arrivée des lignes Grist.
+function orderedIndividualQuestions(questions,definition){
+ const vc=codeOf(definition?.version?.Version_Code);
+ const pages=sortByOrder((state.loaded?.PAGES||[]).filter(p=>
+  !p.Version_Code||resolveRefCode(p.Version_Code,state.loaded?.VERSIONS_QUESTIONNAIRES||[],"Version_Code")===vc
+ ));
+ const sections=sortByOrder((state.loaded?.SECTIONS||[]).filter(sec=>
+  pages.some(p=>sameRef(sec.Page_Code,p,"Page_Code"))
+ ));
+ const pageRank=new Map(pages.map((p,i)=>[codeOf(p.Page_Code),i]));
+ // L'ordre de section doit être local à la page (comme dans buildViewModel).
+ const sectionLocalRank=new Map();
+ for(const page of pages){
+  const pc=codeOf(page.Page_Code);
+  sortByOrder(sections.filter(sec=>resolveRefCode(sec.Page_Code,pages,"Page_Code")===pc))
+   .forEach((sec,i)=>sectionLocalRank.set(codeOf(sec.Section_Code),i));
+ }
+ const ranked=sortByOrder(questions).map((q,i)=>({q,i}));
+ ranked.sort((a,b)=>{
+  const pageCode=q=>resolveRefCode(q.Page_Code,pages,"Page_Code") ||
+    resolveRefCode(sections.find(sec=>sameRef(q.Section_Code,sec,"Section_Code"))?.Page_Code,pages,"Page_Code");
+  const pageIndex=q=>pageRank.get(pageCode(q))??Number.MAX_SAFE_INTEGER;
+  const sectionIndex=q=>sectionLocalRank.get(resolveRefCode(q.Section_Code,sections,"Section_Code"))??Number.MAX_SAFE_INTEGER;
+  return pageIndex(a.q)-pageIndex(b.q)||sectionIndex(a.q)-sectionIndex(b.q)||a.i-b.i;
+ });
+ return ranked.map(x=>x.q);
+}
 function renderIndividualDetailContent(index){
  const h=state.hydrated[index];if(!h)return '';
  const cfg=dashboardConfig(state.dashboard),noun=String(cfg.individualFicheLabel||'').trim()||'Fiche';
  const plural=n=>noun+(n>1?'s':'');
  const allQuestions=state.definition?.questions||[],ficheTypes=state.definition?.ficheTypes||[];
- const main=allQuestions.filter(q=>active(q)&&!resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')&&!['description','sommaire','indicateurs','tableau_donnees'].includes(String(first(q,['Type_question','Type'],'')).toLowerCase()));
+ const main=orderedIndividualQuestions(allQuestions.filter(q=>active(q)&&!resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')&&!['description','sommaire','indicateurs','tableau_donnees'].includes(String(first(q,['Type_question','Type'],'')).toLowerCase())),state.definition);
  const answerRows=(answers,questions)=>questions.map(q=>`<div class="answer-row"><strong>${escapeHtml(questionLabel(q))}</strong>${escapeHtml(scalarDisplay(answers?.[codeOf(q.Question_Code)],q))}</div>`).join('');
  // Questionnaire classique : aucune navigation de fiches, les réponses s'affichent directement.
  // Se baser sur la définition du questionnaire, et non sur le nombre de fiches du répondant :
@@ -965,7 +993,7 @@ function renderIndividualDetailContent(index){
   return `<h2>${escapeHtml(responseLabel(h,index))}</h2><section class="dash-card"><h3>Réponses du questionnaire</h3>${main.length?answerRows(h.principalAnswers,main):'<div class="help">Aucune question à afficher.</div>'}</section>`;
  }
  const fiches=[];
- for(const ft of ficheTypes){const fc=codeOf(ft.TypeFiche_Code),rows=(h.fiches?.[fc]||[]).filter(f=>!state.periodCode||!f.periodeCode||String(f.periodeCode)===String(state.periodCode)),questions=allQuestions.filter(q=>resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')===fc);rows.forEach((f,i)=>{const title=String(f.title||f.titre||f.Nom||f.Libelle||'').trim()||`${ficheLabel(ft)} ${i+1}`;fiches.push({title:`${ficheLabel(ft)} — ${title}`,html:answerRows(f.answers,questions)})})}
+ for(const ft of ficheTypes){const fc=codeOf(ft.TypeFiche_Code),rows=(h.fiches?.[fc]||[]).filter(f=>!state.periodCode||!f.periodeCode||String(f.periodeCode)===String(state.periodCode)),questions=sortByOrder(allQuestions.filter(q=>active(q)&&!isTrue(q.Est_ligne_matrice)&&resolveRefCode(q.TypeFiche_Code,ficheTypes,'TypeFiche_Code')===fc));rows.forEach((f,i)=>{const title=String(f.title||f.titre||f.Nom||f.Libelle||'').trim()||`${ficheLabel(ft)} ${i+1}`;fiches.push({title:`${ficheLabel(ft)} — ${title}`,html:answerRows(f.answers,questions)})})}
  const panels=fiches.map((f,i)=>`<section data-individual-fiche-panel="${i}" ${i===0?'':'hidden'}><h3 style="margin-top:12px">${escapeHtml(f.title)}</h3>${f.html||'<div class="help">Aucune question dans cette fiche.</div>'}</section>`).join('');
  // Des rangées séparées maintiennent les commandes parfaitement alignées, même en petite largeur.
  const summary=`<div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px;margin:12px 0"><button type="button" data-individual-main-toggle>Afficher les réponses générales</button><span class="help" style="margin:0">${fiches.length} ${escapeHtml(plural(fiches.length).toLocaleLowerCase('fr-FR'))} au total</span></div>`;
