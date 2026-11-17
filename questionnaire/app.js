@@ -436,7 +436,21 @@ function conditionVisible(conditionCode, def, answers, diagnostics) {
 
 function choiceFiltersForQuestion(q,def) {
   const qc=codeOf(q.Question_Code);
-  return sortByOrder((def.choiceFilters ?? []).filter(f=>active(f) && resolveRefCode(f.Question_Code,def.questions,"Question_Code")===qc));
+  return sortByOrder((def.choiceFilters ?? []).filter(f=>{
+    if (!active(f)) return false;
+    // Les références Grist identifient une question précise, pas uniquement son code
+    // (qui peut être réutilisé dans une autre version du questionnaire).
+    const target=def.questions.find(x=>String(x.id)===String(f.Question_Code));
+    if (target ? String(target.id)!==String(q.id) : resolveRefCode(f.Question_Code,def.questions,"Question_Code")!==qc) return false;
+    // Un filtre pointant vers une question absente de cette version ne doit
+    // jamais effacer la sélection de l'utilisateur.
+    if (String(f.Source??"Question")==="Question") {
+      const source=def.questions.find(x=>String(x.id)===String(f.Question_source_Code))
+        ?? def.questions.find(x=>codeOf(x.Question_Code)===codeOf(f.Question_source_Code));
+      if (!source) return false;
+    }
+    return true;
+  }));
 }
 
 function hierarchyCodes(rows,codeCol,parentCol,start,mode) {
