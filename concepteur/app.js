@@ -65,7 +65,73 @@ async function ensureQuestionnaireActiveColumn(){const sample=S.data.QUESTIONNAI
 function versionsForQuestionnaire(q){const qc=codeOf(q.Questionnaire_Code);return S.data.VERSIONS_QUESTIONNAIRES.filter(v=>ref(v.Questionnaire_Code,S.data.QUESTIONNAIRES,"Questionnaire_Code")===qc)}
 function renderQuestionnaireManager(){const host=$("#questionnaire-list");host.innerHTML=S.data.QUESTIONNAIRES.map(q=>{const isOn=questionnaireIsActive(q),vs=versionsForQuestionnaire(q);return `<div class="questionnaire-card ${isOn?"":"archived"}"><div><h3>${esc(label(q,"questionnaire"))}</h3><p>${vs.length} version${vs.length>1?"s":""} · ${isOn?"Actif":"Archivé"}</p></div><div class="questionnaire-card-actions"><button class="btn open-questionnaire" data-id="${q.id}">Ouvrir</button><button class="btn archive-questionnaire" data-id="${q.id}">${isOn?"Archiver":"Réactiver"}</button><button class="btn btn-danger delete-questionnaire" data-id="${q.id}">Supprimer</button></div></div>`}).join("")||'<div class="empty-state">Aucun questionnaire.</div>';host.querySelectorAll(".open-questionnaire").forEach(b=>b.onclick=()=>{const q=S.data.QUESTIONNAIRES.find(x=>String(x.id)===b.dataset.id);if(!q)return;S.questionnaire=codeOf(q.Questionnaire_Code);S.version=null;S.selected=null;renderSelectors();$("#manage-questionnaires-dialog").close()});host.querySelectorAll(".archive-questionnaire").forEach(b=>b.onclick=async()=>{const q=S.data.QUESTIONNAIRES.find(x=>String(x.id)===b.dataset.id);if(!q)return;try{await ensureQuestionnaireActiveColumn();const fresh=S.data.QUESTIONNAIRES.find(x=>String(x.id)===b.dataset.id),k=field(fresh,["Active","Actif"]);await applyDesignerActions([["UpdateRecord","QUESTIONNAIRES",Number(fresh.id),{[k]:!questionnaireIsActive(fresh)}]]);await reload();renderQuestionnaireManager();status(questionnaireIsActive(fresh)?"Questionnaire archivé.":"Questionnaire réactivé.")}catch(e){status(`Erreur : ${e?.message||e}`,true,true)}});host.querySelectorAll(".delete-questionnaire").forEach(b=>b.onclick=()=>deleteQuestionnaire(b.dataset.id))}
 async function fetchOptionalTable(name){try{return rowsFromTable(await grist.docApi.fetchTable(name))}catch{return []}}
-async function deleteQuestionnaire(id){const q=S.data.QUESTIONNAIRES.find(x=>String(x.id)===String(id));if(!q)return;const vs=versionsForQuestionnaire(q),vIds=new Set(vs.map(v=>String(v.id))),vCodes=new Set(vs.map(v=>codeOf(v.Version_Code)));const campaigns=await fetchOptionalTable("CAMPAGNES"),linkedCampaigns=campaigns.filter(c=>vIds.has(String(codeOf(c.Version_Code)))||vCodes.has(ref(c.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code")));const responses=await fetchOptionalTable("REPONSES");const campaignIds=new Set(linkedCampaigns.map(c=>String(c.id))),campaignCodes=new Set(linkedCampaigns.map(c=>codeOf(c.Campagne_Code)));const linkedResponses=responses.filter(r=>vIds.has(String(codeOf(r.Version_Code)))||vCodes.has(ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code"))||campaignIds.has(String(codeOf(r.Campagne_Code)))||campaignCodes.has(codeOf(r.Campagne_Code)));if(linkedCampaigns.length||linkedResponses.length){alert("Ce questionnaire possède déjà une campagne ou des réponses. Pour protéger les données collectées, archivez-le au lieu de le supprimer.");return}if(!confirm(`Supprimer définitivement « ${label(q,"questionnaire")} » et toute sa définition ? Cette action est irréversible.`))return;const belongs=r=>vIds.has(String(codeOf(r.Version_Code)))||vCodes.has(ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code"));const qs=S.data.QUESTIONS.filter(belongs),qIds=new Set(qs.map(x=>String(x.id))),qCodes=new Set(qs.map(x=>codeOf(x.Question_Code)));const qref=v=>qIds.has(String(codeOf(v)))||qCodes.has(ref(v,S.data.QUESTIONS,"Question_Code"));const conds=S.data.CONDITIONS.filter(belongs),condIds=new Set(conds.map(x=>String(x.id))),condCodes=new Set(conds.map(x=>codeOf(x.Condition_Code)));const cref=v=>condIds.has(String(codeOf(v)))||condCodes.has(ref(v,S.data.CONDITIONS,"Condition_Code"));const actions=[];const rem=(table,arr)=>arr.forEach(r=>actions.push(["RemoveRecord",table,Number(r.id)]));rem("REGLES_CONDITION",S.data.REGLES_CONDITION.filter(r=>cref(r.Condition_Code)));rem("FILTRES_CHOIX",S.data.FILTRES_CHOIX.filter(r=>qref(r.Question_Code)));rem("COLONNES_MATRICE",S.data.COLONNES_MATRICE.filter(r=>qref(r.Question_Code)));rem("CHOIX_QUESTIONS",S.data.CHOIX_QUESTIONS.filter(r=>qref(r.Question_Code)));rem("CONDITIONS",conds);rem("QUESTIONS",qs);rem("TYPES_FICHES",S.data.TYPES_FICHES.filter(belongs));rem("SECTIONS",S.data.SECTIONS.filter(belongs));rem("PAGES",S.data.PAGES.filter(belongs));rem("VERSIONS_QUESTIONNAIRES",vs);actions.push(["RemoveRecord","QUESTIONNAIRES",Number(q.id)]);try{await applyDesignerActions(actions);S.questionnaire=null;S.version=null;S.selected=null;await reload();renderQuestionnaireManager();status("Questionnaire supprimé.",false,true)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}}
+// Suppression sécurisée : une campagne révoquée reste en base si elle possédait des réponses.
+// Un questionnaire avec campagne encore active ne peut jamais être purgé depuis ce dialogue.
+async function deleteQuestionnaire(id){
+ const q=S.data.QUESTIONNAIRES.find(x=>String(x.id)===String(id));
+ if(!q)return;
+ try{
+  const vs=versionsForQuestionnaire(q);
+  const vIds=new Set(vs.map(v=>String(v.id)));
+  const vCodes=new Set(vs.map(v=>String(codeOf(v.Version_Code))));
+  // Un échec de lecture ne doit jamais être interprété comme une table vide.
+  const load=async name=>rowsFromTable(await grist.docApi.fetchTable(name));
+  const [campaigns,responses,elements,values,selections]=await Promise.all([
+   load("CAMPAGNES"),load("REPONSES"),load("ELEMENTS_REPONSE"),
+   load("VALEURS_REPONSE"),load("SELECTIONS_REPONSE")
+  ]);
+  const belongs=r=>{
+   const raw=String(codeOf(r.Version_Code)||"");
+   const resolved=String(ref(r.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code")||"");
+   return Boolean((raw&&vIds.has(raw))||(raw&&vCodes.has(raw))||(resolved&&vCodes.has(resolved)));
+  };
+  const linkedCampaigns=campaigns.filter(belongs);
+  const activeCampaigns=linkedCampaigns.filter(c=>campaignStatus(c)!=="Supprimée");
+  if(activeCampaigns.length){
+   alert(`Suppression bloquée : ${activeCampaigns.length} campagne(s) encore présentes (ouvertes, clôturées ou en brouillon).\n\nSupprimez-les depuis « Campagnes », ou archivez ce questionnaire pour conserver les données.`);
+   return;
+  }
+  const campaignIds=new Set(linkedCampaigns.map(c=>String(c.id)));
+  const campaignCodes=new Set(linkedCampaigns.map(c=>String(codeOf(c.Campagne_Code))));
+  const linkedResponses=responses.filter(r=>belongs(r)||campaignIds.has(String(codeOf(r.Campagne_Code)))||campaignCodes.has(String(codeOf(r.Campagne_Code))));
+  // Les codes métier ne sont pas toujours uniques dans les anciennes copies : en cas
+  // d'ambiguïté, refuser une purge plutôt que toucher une autre enquête.
+  const responseCodesInScope=new Set(linkedResponses.map(r=>String(codeOf(r.Reponse_Code))).filter(Boolean));
+  if(responses.some(r=>!linkedResponses.some(x=>String(x.id)===String(r.id))&&responseCodesInScope.has(String(codeOf(r.Reponse_Code))))){
+   throw new Error("Codes de réponses partagés avec un autre questionnaire. Suppression automatique bloquée pour éviter toute perte croisée.");
+  }
+  const questionCodesInScope=new Set(S.data.QUESTIONS.filter(belongs).map(r=>String(codeOf(r.Question_Code))).filter(Boolean));
+  if(S.data.QUESTIONS.some(r=>!belongs(r)&&questionCodesInScope.has(String(codeOf(r.Question_Code))))){
+   throw new Error("Codes de questions partagés avec un autre questionnaire. Suppression automatique bloquée : archiver ou vérifier les doublons avant de purger.");
+  }
+  // Ne jamais supprimer un lien ou une réponse qui appartient à un autre questionnaire.
+  if(linkedResponses.some(r=>r.Version_Code&& !belongs(r))){
+   throw new Error("Une réponse utilise une campagne de cette copie mais appartient à une autre version. Suppression bloquée : vérifier les rattachements dans Grist.");
+  }
+  const title=String(label(q,"questionnaire")||"");
+  if(linkedCampaigns.length||linkedResponses.length){
+   const accepted=confirm(`« ${title} » contient encore ${linkedResponses.length} réponse(s) et ${linkedCampaigns.length} campagne(s) supprimée(s) mais conservée(s) en base.\n\nPour le supprimer, il faut effacer définitivement toutes ces réponses (y compris les fiches et valeurs associées), les campagnes révoquées et la définition du questionnaire.\n\nCette opération est irréversible. Préparez une sauvegarde du document Grist avant de poursuivre.\n\nAnnuler = conserver les données et pouvoir archiver le questionnaire.\n\nContinuer vers la confirmation finale ?`);
+   if(!accepted)return;
+  }else if(!confirm(`Supprimer définitivement « ${title} » et toute sa définition ? Cette action est irréversible.`))return;
+  // Confirmation par saisie du nom complet afin d'éviter une purge accidentelle.
+  if(prompt(`CONFIRMATION DÉFINITIVE\n\nSaisissez exactement le nom du questionnaire à supprimer :\n${title}`,"")!==title)return;
+  // Construire une seule transaction : aucune suppression préalable si une dépendance échoue.
+  const responseDeleteActions=[];
+  const responseIds=new Set(linkedResponses.map(r=>String(r.id)));
+  const responseCodes=new Set(linkedResponses.map(r=>String(codeOf(r.Reponse_Code))));
+  const els=elements.filter(e=>responseIds.has(String(codeOf(e.Reponse_Code)))||responseCodes.has(String(codeOf(e.Reponse_Code))));
+  const elIds=new Set(els.map(e=>String(e.id)));
+  const elCodes=new Set(els.map(e=>String(codeOf(e.Element_Code))));
+  const vals=values.filter(v=>elIds.has(String(codeOf(v.Element_Code)))||elCodes.has(String(codeOf(v.Element_Code))));
+  const valIds=new Set(vals.map(v=>String(v.id)));
+  const valCodes=new Set(vals.map(v=>String(codeOf(v.Valeur_Code))));
+  const sels=selections.filter(s=>valIds.has(String(codeOf(s.Valeur_Code)))||valCodes.has(String(codeOf(s.Valeur_Code))));
+  const add=(table,arr)=>arr.forEach(r=>responseDeleteActions.push(["RemoveRecord",table,Number(r.id)]));
+  add("SELECTIONS_REPONSE",sels);add("VALEURS_REPONSE",vals);
+  add("ELEMENTS_REPONSE",els);add("REPONSES",linkedResponses);
+  const qs=S.data.QUESTIONS.filter(belongs),qIds=new Set(qs.map(x=>String(x.id))),qCodes=new Set(qs.map(x=>codeOf(x.Question_Code)));const qref=v=>qIds.has(String(codeOf(v)))||qCodes.has(ref(v,S.data.QUESTIONS,"Question_Code"));const conds=S.data.CONDITIONS.filter(belongs),condIds=new Set(conds.map(x=>String(x.id))),condCodes=new Set(conds.map(x=>codeOf(x.Condition_Code)));const cref=v=>condIds.has(String(codeOf(v)))||condCodes.has(ref(v,S.data.CONDITIONS,"Condition_Code"));const actions=[...responseDeleteActions];const rem=(table,arr)=>arr.forEach(r=>actions.push(["RemoveRecord",table,Number(r.id)]));rem("CAMPAGNES",linkedCampaigns);rem("REGLES_CONDITION",S.data.REGLES_CONDITION.filter(r=>cref(r.Condition_Code)));rem("FILTRES_CHOIX",S.data.FILTRES_CHOIX.filter(r=>qref(r.Question_Code)));rem("COLONNES_MATRICE",S.data.COLONNES_MATRICE.filter(r=>qref(r.Question_Code)));rem("CHOIX_QUESTIONS",S.data.CHOIX_QUESTIONS.filter(r=>qref(r.Question_Code)));rem("CONDITIONS",conds);rem("QUESTIONS",qs);rem("TYPES_FICHES",S.data.TYPES_FICHES.filter(belongs));rem("SECTIONS",S.data.SECTIONS.filter(belongs));rem("PAGES",S.data.PAGES.filter(belongs));rem("VERSIONS_QUESTIONNAIRES",vs);actions.push(["RemoveRecord","QUESTIONNAIRES",Number(q.id)]);try{await applyDesignerActions(actions);S.questionnaire=null;S.version=null;S.selected=null;await reload();renderQuestionnaireManager();status("Questionnaire supprimé.",false,true)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}
+ }catch(e){const msg=`Suppression sécurisée impossible : ${e?.message||e}`;status(msg,true,true);alert(msg)}
+}
 function previewDataColumns(q){try{return JSON.parse(String(q?.TD_Columns_Config||"[]")).filter(c=>c&&c.show!==false).sort((a,b)=>Number(a.order||0)-Number(b.order||0))}catch{return []}}
 function previewDataTableHtml(q,dataTables){const src=String(q?.TD_Table_Source||"").trim(),cols=previewDataColumns(q),rows=dataTables?.[src]||[];if(!src||!cols.length)return `<div class="preview-data-empty">Tableau de données non configuré.</div>`;if(String(q?.TD_Mode||"all")==="personalized")return `<div class="preview-data-empty">Aperçu personnalisé : le contexte du répondant sera appliqué dans le questionnaire réel.</div>`;if(!rows.length)return `<div class="preview-data-empty">${esc(q?.TD_NoData_Message||"Aucune donnée à afficher.")}</div>`;const totalCols=dataTotalColumns(q),showTotal=Boolean(q?.[DATA_CFG.total]);const totalRow=showTotal?`<tr class="data-total-row">${cols.map((c,i)=>{if(totalCols.includes(c.id)){const nums=rows.map(r=>parseDataNumber(r[c.id])).filter(n=>n!==null);return `<td><strong>${esc(nums.reduce((a,b)=>a+b,0))}</strong></td>`}return `<td>${i===0?`<strong>${esc(q?.[DATA_CFG.totalLabel]||"Total")}</strong>`:""}</td>`}).join("")}</tr>`:"";return `<div class="preview-data-table"><table><thead><tr>${cols.map(c=>`<th>${esc(c.label||c.id)}</th>`).join("")}</tr></thead><tbody>${rows.map(r=>`<tr>${cols.map(c=>`<td>${esc(r[c.id]??"")}</td>`).join("")}</tr>`).join("")}${totalRow}</tbody></table></div>`}
 function previewDisplayBlockKind(q){const t=String(first(q,["Type_question","Type_reponse","Type","Format"],"")).trim().toLowerCase();return t==="description"?"description":t==="sommaire"?"toc":t==="indicateurs"?"indicators":""}
