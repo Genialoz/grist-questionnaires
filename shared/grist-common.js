@@ -149,6 +149,23 @@ function positiveLimit(v) {
   return Number.isFinite(n) && n>0 ? n : null;
 }
 
+// Les numéros restent des chaînes : les zéros initiaux et le préfixe + sont significatifs.
+// Le contrôle accepte le plan français (01..09, 10 chiffres) et les formats
+// internationaux (+, 8 à 15 chiffres), sans prétendre vérifier l'attribution.
+export function isValidPhoneNumber(value) {
+  const raw=String(value??'').trim();
+  if (!raw || /[^\d+ .()\-\u00a0]/u.test(raw)) return false;
+  if ((raw.match(/\+/g)||[]).length>1 || (raw.includes('+')&&!raw.startsWith('+'))) return false;
+  const digits=raw.replace(/\D/g,'');
+  if (raw.startsWith('+')) {
+    if (!/^\+[1-9]/.test(raw) || digits.length<8 || digits.length>15) return false;
+    // +33 est toujours suivi de neuf chiffres, sans le 0 national.
+    if (digits.startsWith('33')) return /^33[1-9]\d{8}$/.test(digits);
+    return true;
+  }
+  return /^0[1-9]\d{8}$/.test(digits);
+}
+
 export function validateQuestion(question, value, visible=true) {
   if (!visible) return "";
   const required = isRequiredQuestion(question);
@@ -157,6 +174,7 @@ export function validateQuestion(question, value, visible=true) {
   if (empty) return "";
   const type = String(question.Type_question ?? question.Type ?? "").toLowerCase();
   if (type.includes("email") && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value))) return "Adresse e-mail invalide.";
+  if ((type.includes("téléphone") || type.includes("telephone")) && !isValidPhoneNumber(value)) return "Numéro de téléphone invalide (ex. 06 12 34 56 78 ou +33 6 12 34 56 78).";
   if (type.includes("nombre") || type.includes("montant")) {
     const n=Number(value); if (!Number.isFinite(n)) return "Saisissez un nombre valide.";
     if (question.Valeur_min !== "" && question.Valeur_min != null && n < Number(question.Valeur_min)) return `La valeur minimale est ${question.Valeur_min}.`;
@@ -170,7 +188,7 @@ export function validateQuestion(question, value, visible=true) {
   // d'énumérer tous les libellés possibles de types de choix ("Boutons radio",
   // "Choix unique", "Sélection unique", etc.).
   const isFreeText = type.includes("texte") || type.includes("text") ||
-    type.includes("email") || type.includes("e-mail") ||
+    type.includes("email") || type.includes("e-mail") || type.includes("téléphone") || type.includes("telephone") ||
     type.includes("zone de texte") || type.includes("textarea");
   if (isFreeText) {
     const s=String(value);
