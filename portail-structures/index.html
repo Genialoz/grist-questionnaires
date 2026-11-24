@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Gristionnaire — Portail des structures</title>
+  <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main class="container">
+  <header>
+    <small>GRISTIONNAIRE · TEST</small>
+    <h1>Espace de service</h1>
+    <p id="message" role="status">Vérification de l'accès…</p>
+  </header>
+  <section id="contenu" hidden aria-label="Suivi de l'espace">
+    <p class="sous-titre" id="campagne"></p>
+    <p class="statut-publication" id="statut-publication" role="status"></p>
+
+    <section class="bloc-pilotage" aria-labelledby="titre-pilotage">
+      <h2 id="titre-pilotage">Vue d’ensemble</h2>
+      <div class="indicateurs" id="indicateurs"></div>
+      <div id="repartition-globale" class="repartition" role="img" aria-label="Répartition des états du service"></div>
+      <div id="legende-globale" class="legende" aria-live="polite"></div>
+    </section>
+
+    <section class="bloc-suivi" aria-labelledby="titre-suivi">
+      <div class="titre-ligne">
+        <div>
+          <h2 id="titre-suivi">Structures et questionnaires</h2>
+          <p class="note note-acces">Le lien de questionnaire est proposé uniquement lorsqu’il a été autorisé. Il peut permettre la modification des réponses.</p>
+        </div>
+        <button type="button" id="export-excel">Exporter vers Excel (.xlsx)</button>
+      </div>
+      <div class="outils">
+        <label>Rechercher une structure<input type="search" id="recherche" placeholder="Nom de structure…"></label>
+        <label>État<select id="etat"><option value="tous">Tous les états</option><option value="not-started">Pas commencé</option><option value="in-progress">En cours</option><option value="completed">Complété</option></select></label>
+        <label>Trier par<select id="tri"><option value="nom">Nom (A–Z)</option><option value="nom-desc">Nom (Z–A)</option><option value="reponses">Réponses (décroissant)</option><option value="etat">État</option></select></label>
+        <button type="button" id="reset-filtres" class="reset-filtres">Réinitialiser</button>
+      </div>
+      <p id="compteur" class="note" aria-live="polite"></p>
+      <div class="tableau"><table>
+        <thead><tr><th scope="col">Structure</th><th scope="col">État</th><th scope="col">Réponses enregistrées</th><th scope="col">Questionnaire</th></tr></thead>
+        <tbody id="lignes"></tbody>
+      </table></div>
+    </section>
+    <p class="note fin-portail" id="actualisation"></p>
+  </section>
+</main>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
