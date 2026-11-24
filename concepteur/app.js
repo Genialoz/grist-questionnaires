@@ -1,5 +1,13 @@
 import {initDesignerUI, enhanceInspector, questionPreview, previewDraftLabels, enhanceChoiceLists} from "./ui.js";
 import {initPeriodManager} from "./periodes.js";
+import {verifierRattachements} from "./espaces-regles.mjs";
+import {verifierDiffusion} from "./diffusion-regles.mjs";
+import {construireDiffusion, texteDiffusion} from "./portail-diffusion.mjs";
+import {resumeEspace} from "./portail-suivi.mjs";
+import {genererJetonPortail,etatAccesPortail} from "./portail-acces.mjs";
+import {creerPublicationSuivi} from "./portail-publication.mjs";
+import {PORTAIL_PAGE_PROD,PORTAIL_LINK_COLUMN,PORTAIL_LINK_FORMULA,verifierLienPortailGrist} from "./portail-liens.mjs";
+import {verifierPublicationCourante,doitInvaliderPublication} from "./portail-coherence.mjs";
 import {rowsFromTable,sortByOrder,sortStructuresByOrder,codeOf} from "../shared/grist-common.js";
 import {readWorkbook,writeWorkbook} from "./xlsx-lite.js";
 // Fetch persisted answers again before destructive definition batches, including imports.
@@ -1189,7 +1197,408 @@ function campaignModalities(questionId){const q=(S.data.QUESTIONS||[]).find(x=>S
 async function ensureCampaignQuestionnaireLinks(){const rows=S.data.CAMPAGNES||[],actions=[];for(const c of rows){if(codeOf(c.Questionnaire_Code))continue;const vc=ref(c.Version_Code,S.data.VERSIONS_QUESTIONNAIRES,"Version_Code"),v=(S.data.VERSIONS_QUESTIONNAIRES||[]).find(x=>codeOf(x.Version_Code)===vc);const qid=Number(codeOf(v?.Questionnaire_Code));if(qid)actions.push(["UpdateRecord","CAMPAGNES",Number(c.id),{Questionnaire_Code:qid}])}if(actions.length){await applyDesignerActions(actions);await reload()}return actions.length}
 async function ensureCampaignColumns(){let raw;try{raw=await grist.docApi.fetchTable("CAMPAGNES")}catch{throw new Error("La table CAMPAGNES est introuvable.")}const have=new Set(Object.keys(raw||{}));const specs=[["Groupe_Campagne_Code","Text"],["Nom","Text"],["Mode_diffusion","Text"],["Question_personnalisation_Code","Ref:QUESTIONS"],["Valeur_personnalisation","Text"],["Valeur_personnalisation_Libelle","Text"],["Jeton_acces","Text"],["Statut","Text"],["Actif","Bool"],["URL_reprise","Text"],["Suivi_identification_question","Ref:QUESTIONS"],["Suivi_identification_detail","Ref:QUESTIONS"]];const actions=specs.filter(([n])=>!have.has(n)).map(([n,t])=>["AddColumn","CAMPAGNES",n,{type:t}]);if(actions.length){await applyDesignerActions(actions);await reload()}}
 function renderCampaignParticipantChoices(questionId){const box=$("#campaign-participants");if(!box)return;const mods=campaignModalities(questionId);box.innerHTML=mods.length?`<div class="campaign-select-actions"><button type="button" class="secondary-btn" id="campaign-select-all">Tout sélectionner</button><button type="button" class="secondary-btn" id="campaign-select-none">Tout désélectionner</button></div>${mods.map(([value,lab])=>`<label class="check"><input type="checkbox" data-campaign-value="${esc(value)}" data-campaign-label="${esc(lab)}"> ${esc(lab)}</label>`).join("")}`:'<p class="hint">Cette question ne propose aucune modalité utilisable.</p>';const all=$("#campaign-select-all"),none=$("#campaign-select-none");if(all)all.onclick=()=>box.querySelectorAll('[data-campaign-value]').forEach(x=>x.checked=true);if(none)none.onclick=()=>box.querySelectorAll('[data-campaign-value]').forEach(x=>x.checked=false)}
-function renderCampaigns(editGroup=""){const box=$("#campaigns-content"),v=versionRow();if(!box)return;if(!v){box.innerHTML='<p class="hint">Sélectionnez une version.</p>';return}const rows=campaignVersionRows(),groups=new Map();for(const c of rows){const g=campaignGroupCode(c);if(!groups.has(g))groups.set(g,[]);groups.get(g).push(c)}const qopts=campaignQuestionOptions(),editRows=editGroup?(groups.get(editGroup)||[]):[],edit=editRows[0]||null,editMode=edit?campaignMode(edit):"PERSONNALISE",editQ=edit?campaignPersonalizationQuestion(edit):null,editQId=editQ?String(editQ.id):"";const identityQuestions=sortByOrder((S.data.QUESTIONS||[]).filter(q=>vm(q)&&!isMatrixLine(q)&&!isDisplayBlock(q)&&!isMatrixQuestion(q)&&!isDataTableQuestion(q)&&!codeOf(q.TypeFiche_Code))).map(q=>[String(q.id),`${label(q,"question")} (${codeOf(q.Question_Code)||q.id})`]);const identityOptions=(selected)=>`<option value="">— Aucun —</option>${identityQuestions.map(([id,lab])=>`<option value="${esc(id)}" ${String(id)===String(codeOf(selected))?"selected":""}>${esc(lab)}</option>`).join("")}`;const cards=groups.size?[...groups.values()].map(gr=>{const c0=gr[0],uniqueMode=campaignIsUnique(c0),modeLabel=uniqueMode?"Lien unique":"Liens personnalisés",links=uniqueMode?gr.slice(0,1):gr,st=campaignStatus(c0),dates=[c0.Date_ouverture?`Ouverture : ${campaignDateInput(c0.Date_ouverture)}`:"",c0.Date_limite?`Limite : ${campaignDateInput(c0.Date_limite)}`:""].filter(Boolean).join(" · ");return `<div class="campaign-card"><div class="campaign-card-head"><strong>${esc(campaignName(c0))}</strong><span class="badge">${esc(modeLabel)}</span><span class="badge">${esc(st)}</span>${campaignStatusButton(c0)}<button type="button" class="secondary-btn" data-edit-campaign-group="${esc(campaignGroupCode(c0))}">Modifier</button>${!uniqueMode?`<button type="button" class="secondary-btn" data-copy-campaign-group="${esc(campaignGroupCode(c0))}">Copier tous les liens</button>`:""}<button type="button" class="secondary-btn" data-delete-campaign-group="${esc(campaignGroupCode(c0))}">Supprimer la campagne</button></div><div class="hint">${uniqueMode?"Un même lien est diffusé à tous ; chaque répondant obtient sa propre réponse.":`Question : ${esc(label(campaignPersonalizationQuestion(c0),"question"))}`} · Page répondant : ${esc(String(c0.URL_reprise||c0.URL_page_Grist||"—"))}${dates?` · ${esc(dates)}`:""}</div>${links.map(c=>{const url=campaignAccessUrl(c),who=uniqueMode?"Lien unique":campaignParticipantLabel(c);return `<div class="campaign-link-row" style="display:grid;grid-template-columns:minmax(120px,180px) minmax(280px,1fr) auto auto;gap:8px;align-items:center;margin-top:8px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(who)}</span><input style="min-width:0;width:100%" readonly value="${esc(url||'Lien non configuré')}">${url?`<button type="button" class="secondary-btn" style="white-space:nowrap" data-copy-campaign="${esc(url)}">Copier</button>`:"<span></span>"}<button type="button" class="secondary-btn" style="white-space:nowrap" data-delete-campaign-access="${esc(String(c.id))}">Supprimer</button></div>`}).join("")}</div>`}).join(""):'<p class="hint">Aucune campagne créée pour cette version.</p>';box.innerHTML=`<div class="campaign-create editor-section"><h3>${edit?"Modifier la campagne":"Nouvelle campagne"}</h3><div class="form-field"><label>Nom de la campagne <input id="campaign-name" placeholder="Ex. Frais de déplacement 2026-2027" value="${esc(edit?campaignName(edit):"")}"></label></div><div class="form-field"><label>Adresse de la page répondant Grist <input id="campaign-url" placeholder="https://grist.../p/..." value="${esc(edit?String(edit.URL_reprise||edit.URL_page_Grist||""):"https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire/p/38?style=singlePage")}"></label><div class="hint">Utilisée pour générer les liens de diffusion et les liens de reprise.</div></div><div class="two-cols"><div class="form-field"><label>Date d’ouverture (facultative) <input id="campaign-open-date" type="date" value="${esc(edit?campaignDateInput(edit.Date_ouverture):"")}"></label></div><div class="form-field"><label>Date limite (facultative) <input id="campaign-limit-date" type="date" value="${esc(edit?campaignDateInput(edit.Date_limite):"")}"></label></div></div><div class="hint">Une campagne ouverte avec une date d’ouverture future reste inaccessible jusqu’à cette date. Après la date limite, la saisie est automatiquement bloquée.</div><div class="form-field"><label>Mode de diffusion <select id="campaign-mode" ${edit?"disabled":""}><option value="PERSONNALISE" ${editMode==="PERSONNALISE"?"selected":""}>Liens personnalisés</option><option value="LIEN_UNIQUE" ${editMode==="LIEN_UNIQUE"?"selected":""}>Lien unique — une réponse par répondant</option></select></label><div class="hint">Lien unique : le même lien est envoyé à tous, mais chaque répondant reçoit une réponse et un lien de reprise privés.</div></div><div id="campaign-identity-fields" ${editMode==="LIEN_UNIQUE"?'':'style="display:none"'}><h4>Identification dans le suivi des résultats</h4><p class="field-help">Affiche les réponses saisies dans deux colonnes du suivi (sans modifier le lien ni les réponses). Pour une question conditionnelle, la seconde colonne reste vide si elle n’a pas été renseignée.</p><div class="two-cols"><div class="form-field"><label>Variable principale <select id="campaign-identity-main">${identityOptions(edit?.Suivi_identification_question)}</select></label></div><div class="form-field"><label>Variable de détail (facultative) <select id="campaign-identity-detail">${identityOptions(edit?.Suivi_identification_detail)}</select></label></div></div></div><div id="campaign-personalization-fields" ${editMode==="LIEN_UNIQUE"?'style="display:none"':""}><div class="form-field"><label>Question de personnalisation <select id="campaign-question" ${edit?"disabled":""}><option value="">— Sélectionner —</option>${qopts.map(([id,lab])=>`<option value="${esc(id)}" ${String(id)===editQId?"selected":""}>${esc(lab)}</option>`).join("")}</select></label><div class="hint">Le lien préremplira cette question et empêchera le répondant de modifier sa valeur.</div></div>${edit?'<div class="hint">Les participants et jetons déjà créés sont conservés.</div>':`<div class="campaign-structures"><div class="field-help">Participants / valeurs autorisées</div><div id="campaign-participants"><p class="hint">Choisissez d’abord la question de personnalisation.</p></div></div>`}</div><div class="form-actions"><button type="button" class="btn btn-primary" id="create-campaign">${edit?"Enregistrer les modifications":"Créer la campagne en brouillon"}</button>${edit?'<button type="button" class="secondary-btn" id="cancel-campaign-edit">Annuler</button>':""}</div></div><div class="editor-section"><h3>Campagnes de cette version</h3>${cards}</div>`;const modeSel=$("#campaign-mode"),pers=$("#campaign-personalization-fields"),ident=$("#campaign-identity-fields");if(!edit&&modeSel)modeSel.onchange=()=>{const uniqueMode=modeSel.value==="LIEN_UNIQUE";if(pers)pers.style.display=uniqueMode?"none":"";if(ident)ident.style.display=uniqueMode?"":"none";if(!uniqueMode)renderCampaignParticipantChoices($("#campaign-question")?.value||"")};if(!edit){const cq=$("#campaign-question");if(cq)cq.onchange=e=>renderCampaignParticipantChoices(e.target.value)}$("#create-campaign").onclick=async()=>{try{edit?await updateCampaignGroup(editGroup):await createCampaign()}catch(e){status(`Campagnes : ${e?.message||e}`,true,true)}};if(edit)$("#cancel-campaign-edit").onclick=()=>renderCampaigns();box.querySelectorAll("[data-campaign-status]").forEach(b=>b.onclick=async()=>{try{const card=b.closest(".campaign-card"),group=card?.querySelector("[data-edit-campaign-group]")?.dataset.editCampaignGroup||"";await setCampaignGroupStatus(group,b.dataset.campaignStatus)}catch(e){status(`Changement d’état impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-edit-campaign-group]").forEach(b=>b.onclick=()=>renderCampaigns(b.dataset.editCampaignGroup||""));box.querySelectorAll("[data-delete-campaign-access]").forEach(b=>b.onclick=async()=>{try{await deleteCampaignAccess(b.dataset.deleteCampaignAccess)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-delete-campaign-group]").forEach(b=>b.onclick=async()=>{try{await deleteCampaignGroup(b.dataset.deleteCampaignGroup)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-copy-campaign]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copyCampaign);const old=b.textContent;b.textContent="✓ Copié";setTimeout(()=>b.textContent=old,1200)}catch(e){status(`Copie impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-copy-campaign-group]").forEach(b=>b.onclick=async()=>{try{const group=b.dataset.copyCampaignGroup||"",gr=campaignVersionRows().filter(c=>campaignGroupCode(c)===group),lines=[["Participant","Lien personnalisé"],...gr.map(c=>[campaignParticipantLabel(c),campaignAccessUrl(c)||""])],txt=lines.map(cols=>cols.join("\t")).join("\n");await navigator.clipboard.writeText(txt);const old=b.textContent;b.textContent=`✓ ${gr.length} liens copiés`;setTimeout(()=>b.textContent=old,1500)}catch(e){status(`Copie impossible : ${e?.message||e}`,true,true)}})}
+function renderCampaigns(editGroup=""){const box=$("#campaigns-content"),v=versionRow();if(!box)return;if(!v){box.innerHTML='<p class="hint">Sélectionnez une version.</p>';return}const rows=campaignVersionRows(),groups=new Map();for(const c of rows){const g=campaignGroupCode(c);if(!groups.has(g))groups.set(g,[]);groups.get(g).push(c)}const qopts=campaignQuestionOptions(),editRows=editGroup?(groups.get(editGroup)||[]):[],edit=editRows[0]||null,editMode=edit?campaignMode(edit):"PERSONNALISE",editQ=edit?campaignPersonalizationQuestion(edit):null,editQId=editQ?String(editQ.id):"";const identityQuestions=sortByOrder((S.data.QUESTIONS||[]).filter(q=>vm(q)&&!isMatrixLine(q)&&!isDisplayBlock(q)&&!isMatrixQuestion(q)&&!isDataTableQuestion(q)&&!codeOf(q.TypeFiche_Code))).map(q=>[String(q.id),`${label(q,"question")} (${codeOf(q.Question_Code)||q.id})`]);const identityOptions=(selected)=>`<option value="">— Aucun —</option>${identityQuestions.map(([id,lab])=>`<option value="${esc(id)}" ${String(id)===String(codeOf(selected))?"selected":""}>${esc(lab)}</option>`).join("")}`;const cards=groups.size?[...groups.values()].map(gr=>{const c0=gr[0],uniqueMode=campaignIsUnique(c0),modeLabel=uniqueMode?"Lien unique":"Liens personnalisés",links=uniqueMode?gr.slice(0,1):gr,st=campaignStatus(c0),dates=[c0.Date_ouverture?`Ouverture : ${campaignDateInput(c0.Date_ouverture)}`:"",c0.Date_limite?`Limite : ${campaignDateInput(c0.Date_limite)}`:""].filter(Boolean).join(" · ");return `<div class="campaign-card"><div class="campaign-card-head gr-campaign-head"><div class="gr-campaign-identity"><strong class="gr-campaign-name">${esc(campaignName(c0))}</strong><div class="gr-campaign-badges"><span class="badge">${esc(modeLabel)}</span><span class="badge">${esc(st)}</span></div></div><div class="gr-campaign-status-action">${campaignStatusButton(c0)}</div></div><div class="gr-campaign-actions"><div class="gr-primary-actions">${!uniqueMode?`<button type="button" class="secondary-btn" data-distribution-open-v441="${esc(campaignGroupCode(c0))}">Diffuser les liens</button><button type="button" class="secondary-btn" data-space-open-v440="${esc(campaignGroupCode(c0))}">Gérer les espaces</button>`:""}<button type="button" class="secondary-btn" data-edit-campaign-group="${esc(campaignGroupCode(c0))}">Modifier la campagne</button></div><details class="gr-more-actions"><summary>Autres actions</summary><div class="gr-more-buttons">${!uniqueMode?`<button type="button" class="secondary-btn" data-copy-campaign-group="${esc(campaignGroupCode(c0))}">Copier les liens individuels (admin)</button>`:""}<button type="button" class="secondary-btn" data-delete-campaign-group="${esc(campaignGroupCode(c0))}">Supprimer la campagne</button></div></details></div><div class="hint">${uniqueMode?"Un même lien est diffusé à tous ; chaque répondant obtient sa propre réponse.":`Question : ${esc(label(campaignPersonalizationQuestion(c0),"question"))}`} · Page répondant : ${esc(String(c0.URL_reprise||c0.URL_page_Grist||"—"))}${dates?` · ${esc(dates)}`:""}</div>${links.map(c=>{const url=campaignAccessUrl(c),who=uniqueMode?"Lien unique":campaignParticipantLabel(c);return `<div class="campaign-link-row" style="display:grid;grid-template-columns:minmax(120px,180px) minmax(280px,1fr) auto auto;gap:8px;align-items:center;margin-top:8px"><span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(who)}</span><input style="min-width:0;width:100%" readonly value="${esc(url||'Lien non configuré')}">${url?`<button type="button" class="secondary-btn" style="white-space:nowrap" data-copy-campaign="${esc(url)}">Copier</button>`:"<span></span>"}<button type="button" class="secondary-btn" style="white-space:nowrap" data-delete-campaign-access="${esc(String(c.id))}">Supprimer</button></div>`}).join("")}</div>`}).join(""):'<p class="hint">Aucune campagne créée pour cette version.</p>';box.innerHTML=`<div class="campaign-create editor-section"><h3>${edit?"Modifier la campagne":"Nouvelle campagne"}</h3><div class="form-field"><label>Nom de la campagne <input id="campaign-name" placeholder="Ex. Frais de déplacement 2026-2027" value="${esc(edit?campaignName(edit):"")}"></label></div><div class="form-field"><label>Adresse de la page répondant Grist <input id="campaign-url" placeholder="https://grist.../p/..." value="${esc(edit?String(edit.URL_reprise||edit.URL_page_Grist||""):"https://grist.numerique.gouv.fr/o/docs/wquFLHYyyedo/Gristionnaire/p/38?style=singlePage")}"></label><div class="hint">Utilisée pour générer les liens de diffusion et les liens de reprise.</div></div><div class="two-cols"><div class="form-field"><label>Date d’ouverture (facultative) <input id="campaign-open-date" type="date" value="${esc(edit?campaignDateInput(edit.Date_ouverture):"")}"></label></div><div class="form-field"><label>Date limite (facultative) <input id="campaign-limit-date" type="date" value="${esc(edit?campaignDateInput(edit.Date_limite):"")}"></label></div></div><div class="hint">Une campagne ouverte avec une date d’ouverture future reste inaccessible jusqu’à cette date. Après la date limite, la saisie est automatiquement bloquée.</div><div class="form-field"><label>Mode de diffusion <select id="campaign-mode" ${edit?"disabled":""}><option value="PERSONNALISE" ${editMode==="PERSONNALISE"?"selected":""}>Liens personnalisés</option><option value="LIEN_UNIQUE" ${editMode==="LIEN_UNIQUE"?"selected":""}>Lien unique — une réponse par répondant</option></select></label><div class="hint">Lien unique : le même lien est envoyé à tous, mais chaque répondant reçoit une réponse et un lien de reprise privés.</div></div><div id="campaign-identity-fields" ${editMode==="LIEN_UNIQUE"?'':'style="display:none"'}><h4>Identification dans le suivi des résultats</h4><p class="field-help">Affiche les réponses saisies dans deux colonnes du suivi (sans modifier le lien ni les réponses). Pour une question conditionnelle, la seconde colonne reste vide si elle n’a pas été renseignée.</p><div class="two-cols"><div class="form-field"><label>Variable principale <select id="campaign-identity-main">${identityOptions(edit?.Suivi_identification_question)}</select></label></div><div class="form-field"><label>Variable de détail (facultative) <select id="campaign-identity-detail">${identityOptions(edit?.Suivi_identification_detail)}</select></label></div></div></div><div id="campaign-personalization-fields" ${editMode==="LIEN_UNIQUE"?'style="display:none"':""}><div class="form-field"><label>Question de personnalisation <select id="campaign-question" ${edit?"disabled":""}><option value="">— Sélectionner —</option>${qopts.map(([id,lab])=>`<option value="${esc(id)}" ${String(id)===editQId?"selected":""}>${esc(lab)}</option>`).join("")}</select></label><div class="hint">Le lien préremplira cette question et empêchera le répondant de modifier sa valeur.</div></div>${edit?'<div class="hint">Les participants et jetons déjà créés sont conservés.</div>':`<div class="campaign-structures"><div class="field-help">Participants / valeurs autorisées</div><div id="campaign-participants"><p class="hint">Choisissez d’abord la question de personnalisation.</p></div></div>`}</div><div class="form-actions"><button type="button" class="btn btn-primary" id="create-campaign">${edit?"Enregistrer les modifications":"Créer la campagne en brouillon"}</button>${edit?'<button type="button" class="secondary-btn" id="cancel-campaign-edit">Annuler</button>':""}</div></div><div class="editor-section"><h3>Campagnes de cette version</h3>${cards}</div><div class="editor-section" id="space-manager-v440" hidden></div>`;const modeSel=$("#campaign-mode"),pers=$("#campaign-personalization-fields"),ident=$("#campaign-identity-fields");if(!edit&&modeSel)modeSel.onchange=()=>{const uniqueMode=modeSel.value==="LIEN_UNIQUE";if(pers)pers.style.display=uniqueMode?"none":"";if(ident)ident.style.display=uniqueMode?"":"none";if(!uniqueMode)renderCampaignParticipantChoices($("#campaign-question")?.value||"")};if(!edit){const cq=$("#campaign-question");if(cq)cq.onchange=e=>renderCampaignParticipantChoices(e.target.value)}$("#create-campaign").onclick=async()=>{try{edit?await updateCampaignGroup(editGroup):await createCampaign()}catch(e){status(`Campagnes : ${e?.message||e}`,true,true)}};if(edit)$("#cancel-campaign-edit").onclick=()=>renderCampaigns();initSpacesCampaignButtons();initSpaceDistributionButtons();box.querySelectorAll("[data-campaign-status]").forEach(b=>b.onclick=async()=>{try{const card=b.closest(".campaign-card"),group=card?.querySelector("[data-edit-campaign-group]")?.dataset.editCampaignGroup||"";await setCampaignGroupStatus(group,b.dataset.campaignStatus)}catch(e){status(`Changement d’état impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-edit-campaign-group]").forEach(b=>b.onclick=()=>renderCampaigns(b.dataset.editCampaignGroup||""));box.querySelectorAll("[data-delete-campaign-access]").forEach(b=>b.onclick=async()=>{try{await deleteCampaignAccess(b.dataset.deleteCampaignAccess)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-delete-campaign-group]").forEach(b=>b.onclick=async()=>{try{await deleteCampaignGroup(b.dataset.deleteCampaignGroup)}catch(e){status(`Suppression impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-copy-campaign]").forEach(b=>b.onclick=async()=>{try{await navigator.clipboard.writeText(b.dataset.copyCampaign);const old=b.textContent;b.textContent="✓ Copié";setTimeout(()=>b.textContent=old,1200)}catch(e){status(`Copie impossible : ${e?.message||e}`,true,true)}});box.querySelectorAll("[data-copy-campaign-group]").forEach(b=>b.onclick=async()=>{try{const group=b.dataset.copyCampaignGroup||"",gr=campaignVersionRows().filter(c=>campaignGroupCode(c)===group),lines=[["Participant","Lien personnalisé"],...gr.map(c=>[campaignParticipantLabel(c),campaignAccessUrl(c)||""])],txt=lines.map(cols=>cols.join("\t")).join("\n");await navigator.clipboard.writeText(txt);const old=b.textContent;b.textContent=`✓ ${gr.length} liens copiés`;setTimeout(()=>b.textContent=old,1500)}catch(e){status(`Copie impossible : ${e?.message||e}`,true,true)}})}
+// Portail des structures V4.4.0 TEST : gestion interne uniquement, sans émission de liens d'accès.
+const SPACE_TABLE="ESPACES_STRUCTURES", SPACE_MEMBERS="ESPACES_MEMBRES";
+// Droit distinct de Peut_modifier, jusqu'ici réservé à une fonctionnalité future.
+// Ne jamais transformer silencieusement une ancienne case en accès à un jeton de réponse.
+const SPACE_QUESTIONNAIRE_SHARE="Partager_lien_questionnaire";
+async function ensureSpaceQuestionnaireShareColumn(){
+ const raw=await grist.docApi.fetchTable(SPACE_MEMBERS);
+ if(!Object.prototype.hasOwnProperty.call(raw,SPACE_QUESTIONNAIRE_SHARE)){
+  await applyDesignerActions([["AddColumn",SPACE_MEMBERS,SPACE_QUESTIONNAIRE_SHARE,{type:"Bool"}]]);
+ }
+}
+function spaceQuestionnaireLinks(summary){
+ return summary.items.map(item=>({
+  member:item.member,
+  campaign:item.campaign,
+  // Un lien de campagne est un jeton d'édition. Autorisation explicite indépendante.
+  lien:isTrue(item.member?.[SPACE_QUESTIONNAIRE_SHARE])?campaignAccessUrl(item.campaign):""
+ }));
+}
+// V4.4.4.1 TEST : ne jamais annoncer un succès sans preuve de persistance dans Grist.
+async function verifySpaceColumnAndValue(spaceId,column,expected){
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw||{},column)){
+  throw new Error(`La colonne ${column} est introuvable dans ${SPACE_TABLE}. Vérifiez son nom exact et les droits du Concepteur.`);
+ }
+ const row=rowsFromTable(raw).find(item=>String(item.id)===String(spaceId));
+ if(!row)throw new Error(`Espace ${spaceId} introuvable à la relecture. Enregistrement non confirmé.`);
+ if(String(row[column]??"")!==String(expected??"")){
+  throw new Error(`La valeur de ${column} n'a pas été enregistrée dans l'espace ${spaceId}. Vérifiez le type de colonne (Texte), les ACL et les autorisations du widget. Aucun succès n'est confirmé.`);
+ }
+ return row;
+}
+async function ensureSpaceAccessColumn(){
+  // Ajout explicite uniquement sur l'action de préparation, jamais au chargement du Concepteur.
+  const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+  if(!Object.prototype.hasOwnProperty.call(raw,"Jeton_portail")){
+    await applyDesignerActions([["AddColumn",SPACE_TABLE,"Jeton_portail",{type:"Text"}]]);
+  }
+}
+async function ensureSpacePublicationColumn(){
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,"Suivi_public_JSON")){
+  await applyDesignerActions([["AddColumn",SPACE_TABLE,"Suivi_public_JSON",{type:"Text"}]]);
+ }
+}
+// Ne jamais reconstituer l'URL manuellement : seule SELF_HYPERLINK() produit ici
+// une URL de clé de lien acceptée par Grist, avec le mode singlePage ajouté.
+async function ensureSpaceLinkColumn(){
+ if (!PORTAIL_PAGE_PROD) throw new Error("Page du portail PROD non configurée. Aucun lien ne peut être diffusé.");
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,PORTAIL_LINK_COLUMN)){
+  await applyDesignerActions([["AddColumn",SPACE_TABLE,PORTAIL_LINK_COLUMN,{type:"Text",isFormula:true,formula:PORTAIL_LINK_FORMULA}]]);
+ }
+}
+async function spacePublishedLink(space){
+ if (!PORTAIL_PAGE_PROD) throw new Error("Page du portail PROD non configurée. Aucun lien ne peut être diffusé.");
+ if(!space?.Jeton_portail)throw new Error("Préparez d'abord le jeton de cet espace.");
+ if(!space.Suivi_public_JSON)throw new Error("Publiez d'abord le suivi de cet espace.");
+ if(!active(space))throw new Error("Cet espace est désactivé.");
+ await ensureSpaceLinkColumn();
+ const raw=await grist.docApi.fetchTable(SPACE_TABLE);
+ if(!Object.prototype.hasOwnProperty.call(raw,PORTAIL_LINK_COLUMN))throw new Error("La colonne formule Lien_portail est introuvable après création.");
+ const row=rowsFromTable(raw).find(r=>String(r.id)===String(space.id));
+ if(!row)throw new Error("L'espace n'est plus accessible. Actualisez le Concepteur.");
+ if(String(row.Jeton_portail||"")!==String(space.Jeton_portail))throw new Error("Le jeton a changé : rechargez les espaces.");
+ return verifierLienPortailGrist(row[PORTAIL_LINK_COLUMN],row.Jeton_portail);
+}
+async function copySpaceLink(space){
+ const url=await spacePublishedLink(space);
+ await navigator.clipboard.writeText(url);
+ return url;
+}
+async function loadSpaceTables(){
+ const out={};
+ for(const name of [SPACE_TABLE,SPACE_MEMBERS]){
+  try{out[name]=rowsFromTable(await grist.docApi.fetchTable(name))}
+  catch{throw new Error(`Table ${name} absente ou non autorisée. Importez le modèle CSV et sécurisez ses ACL avant utilisation.`)}
+ }
+ return out;
+}
+function spaceCampaignRows(group){
+ return campaignVersionRows().filter(c=>campaignGroupCode(c)===group&&!campaignIsUnique(c)&&campaignStatus(c)!=="Supprimée");
+}
+function spaceRowsFor(group,all){return all[SPACE_TABLE].filter(e=>String(e.Campagne_Groupe||"")===group&&String(e.Version_Id||"")===String(versionRow()?.id||""))}
+function spaceMemberRows(space,all){return all[SPACE_MEMBERS].filter(m=>String(m.Espace_Id)===String(space.id))}
+function spaceName(e){return String(e.Nom||"Espace sans nom")}
+function memberRowId(m){return String(m.Campagne_Lien_Id||"")}
+// Une ligne CAMPAGNES représente un destinataire personnalisé et possède déjà son propre jeton.
+// On conserve seulement son id : aucun jeton de saisie n'est recopié dans les nouvelles tables.
+async function renderSpaceManager(group){
+ const host=$("#space-manager-v440");if(!host)return;
+ const campaigns=spaceCampaignRows(group);
+ if(!campaigns.length){host.innerHTML='<p class="hint">Espaces disponibles uniquement pour les campagnes à liens personnalisés non supprimées.</p>';return}
+ let all;
+ try{await ensureSpaceQuestionnaireShareColumn();all=await loadSpaceTables()}catch(err){host.innerHTML=`<p class="hint">${esc(err.message)}</p>`;return}
+ const spaces=spaceRowsFor(group,all),members=all[SPACE_MEMBERS],v=versionRow();
+ const memberIndex=new Map();
+ for(const space of spaces)for(const m of spaceMemberRows(space,all)){
+  const key=memberRowId(m);
+  if(!memberIndex.has(key))memberIndex.set(key,space);
+ }
+ host.innerHTML=`<p class="hint">Configuration PROD. Publication du suivi uniquement après contrôle des ACL ; aucune réponse détaillée n’est publiée. Chaque lien personnalisé peut appartenir à un seul espace dans cette campagne.</p>
+ <div class="gr-space-create"><label class="field">Nouvel espace<input id="space-new-name-v440" maxlength="120" placeholder="Ex. Service A"></label><button type="button" class="secondary-btn" id="space-create-v440">Créer l’espace</button></div>
+ ${spaces.length?spaces.map(space=>{
+  const selected=spaceMemberRows(space,all),own=new Map(selected.map(m=>[memberRowId(m),m]));
+  return `<div class="campaign-card gr-space-card" data-space-card="${space.id}">
+    <div class="gr-space-heading"><div class="gr-space-title"><strong>${esc(spaceName(space))}</strong><span class="badge">${selected.length} structure(s)</span></div><span class="gr-space-state">${esc(space.Jeton_portail?(space.Suivi_public_JSON?"Suivi publié":"À publier"):"Jeton à préparer")}</span></div>
+    <div class="gr-space-lead">${esc(etatAccesPortail(space))} · Lien portail en page unique</div>
+    <div class="gr-space-actions"><button type="button" class="secondary-btn" data-space-preview="${space.id}">Prévisualiser</button><button type="button" class="secondary-btn" data-space-publish="${space.id}">Publier le suivi</button>${space.Jeton_portail&&space.Suivi_public_JSON&&active(space)?`<button type="button" class="secondary-btn gr-action-primary" data-space-copy-link="${space.id}">Copier le lien</button>`:""}</div>
+    <details class="gr-space-detail"><summary>Structures rattachées (${selected.length}) et accès aux questionnaires</summary>
+    <p class="field-help">Chaque structure appartient à un seul espace par campagne. Le partage du lien personnalisé permet potentiellement la saisie : à autoriser explicitement.</p>
+    <div class="campaign-structures gr-member-list">
+    ${campaigns.map(c=>{
+      const id=String(c.id),taken=memberIndex.get(id),owned=own.has(id),name=campaignParticipantLabel(c),code=campaignParticipantValue(c),m=own.get(id);
+      return `<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:6px 0"><label class="check" style="flex:1;min-width:180px"><input type="checkbox" data-space-check="${space.id}" value="${esc(id)}" ${owned?"checked":""} ${taken&&!owned?"disabled":""}> ${esc(name)}${code&&code!==name?` (${esc(code)})`:""}${taken&&!owned?` — déjà dans ${esc(spaceName(taken))}`:""}</label>${owned?`<label class="check"><input type="checkbox" data-space-edit="${space.id}" value="${esc(id)}" ${isTrue(m.Peut_modifier)?"checked":""}> Modification future autorisée</label><label class="check"><input type="checkbox" data-space-share="${space.id}" value="${esc(id)}" ${isTrue(m[SPACE_QUESTIONNAIRE_SHARE])?"checked":""}> Accès au questionnaire (jeton de saisie)</label>`:""}</div>`
+    }).join("")}</div>
+    <div class="gr-detail-footer"><button type="button" class="secondary-btn gr-action-primary" data-space-save="${space.id}">Enregistrer les rattachements</button></div>
+    </details>
+    <details class="gr-space-detail gr-space-settings"><summary>Paramètres, contrôle et sécurité</summary>
+      <div class="gr-space-settings-row"><label class="field">Nom de l'espace<input data-space-title="${space.id}" value="${esc(spaceName(space))}" maxlength="120"></label><button type="button" class="secondary-btn" data-space-rename="${space.id}">Renommer</button></div>
+      <div class="gr-space-settings-row"><button type="button" class="secondary-btn" data-space-check-publication="${space.id}">Vérifier si le suivi est à jour</button><span class="hint" data-space-publication-result="${space.id}" aria-live="polite">Contrôle à la demande, sans écriture.</span></div>
+      <div class="gr-space-settings-row"><button type="button" class="secondary-btn" data-space-prepare-access="${space.id}">Renouveler / préparer un jeton</button>${space.Jeton_portail?`<button type="button" class="secondary-btn" data-space-revoke-access="${space.id}">Révoquer le jeton</button>`:""}</div>
+      <div class="gr-space-danger"><button type="button" class="secondary-btn" data-space-remove="${space.id}">Supprimer l'espace</button></div>
+    </details>
+    </div>`
+ }).join(""):'<p class="hint">Aucun espace créé pour cette campagne.</p>'}`;
+ // Copie du lien issu de la colonne formule native, jamais d'une URL recomposée en JS.
+ host.querySelectorAll("[data-space-copy-link]").forEach(button=>button.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(button.dataset.spaceCopyLink));
+   if(!space)throw new Error("Espace introuvable.");
+   await copySpaceLink(space);
+   status(`Lien du portail de « ${spaceName(space)} » copié (singlePage). Testez-le en navigation privée.`,false,true);
+  }catch(err){status(`Copie du lien : ${err?.message||err}`,true,true)}
+ });
+ // Contrôle de fraîcheur à la demande : aucune écriture, aucun lien de réponse exposé.
+ host.querySelectorAll("[data-space-check-publication]").forEach(button=>button.onclick=async()=>{
+  const id=String(button.dataset.spaceCheckPublication||"");
+  const space=spaces.find(e=>String(e.id)===id);
+  const result=host.querySelector(`[data-space-publication-result="${id}"]`);
+  if(!space||!result)return;
+  button.disabled=true;result.textContent="Vérification en cours…";
+  try{
+   const fresh=await loadSpaceTables();
+   const live=spaceRowsFor(group,fresh).find(e=>String(e.id)===id);
+   if(!live)throw new Error("L'espace n'est plus accessible.");
+   const responses=rowsFromTable(await grist.docApi.fetchTable("REPONSES"));
+   const byId=new Map(spaceCampaignRows(group).map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(live,fresh).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   const snapshot=creerPublicationSuivi(summary,spaceName(live),campaignName(campaigns[0]),spaceQuestionnaireLinks(summary));
+   const check=verifierPublicationCourante(live.Suivi_public_JSON,snapshot);
+   result.textContent=check.message;
+   result.dataset.etat=check.etat;
+  }catch(error){result.textContent=`Contrôle impossible : ${error?.message||error}`;result.dataset.etat="erreur"}
+  finally{button.disabled=false}
+ });
+ // Préparation administrative d'un identifiant aléatoire distinct des jetons de saisie.
+ // La création d’un jeton n’ouvre aucun accès en soi ; l’ACL contrôle chaque lecture.
+ host.querySelectorAll("[data-space-prepare-access]").forEach(b=>b.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(b.dataset.spacePrepareAccess));
+   if(!space)throw new Error("Espace introuvable.");
+   if(!confirm(`Préparer un nouveau jeton pour « ${spaceName(space)} » ?\nCela invalidera tout jeton précédemment préparé. Aucun lien public ne sera activé.`))return;
+   const token=genererJetonPortail();
+   await ensureSpaceAccessColumn();
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:token, ...(Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")?{Suivi_public_JSON:""}:{})}]]);
+   await verifySpaceColumnAndValue(space.id,"Jeton_portail",token);
+   status("Jeton enregistré et vérifié dans PROD. Publiez le suivi, puis testez le nouveau lien.",false,true);
+   await renderSpaceManager(group);
+  }catch(err){status(`Préparation d'accès : ${err?.message||err}`,true,true)}
+ });
+ host.querySelectorAll("[data-space-revoke-access]").forEach(b=>b.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(b.dataset.spaceRevokeAccess));
+   if(!space)throw new Error("Espace introuvable.");
+   if(!confirm(`Révoquer le jeton préparé pour « ${spaceName(space)} » ?`))return;
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Jeton_portail:"", ...(Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")?{Suivi_public_JSON:""}:{})}]]);
+   await verifySpaceColumnAndValue(space.id,"Jeton_portail","");
+   status("Jeton révoqué et révocation vérifiée. Aucun lien de saisie n'a été modifié.",false,true);
+   await renderSpaceManager(group);
+  }catch(err){status(`Révocation : ${err?.message||err}`,true,true)}
+ });
+ // Publication contrôlée : snapshot minimal, pas d'identifiant technique ni de lien répondant.
+ host.querySelectorAll("[data-space-publish]").forEach(button=>button.onclick=async()=>{
+  try{
+   const space=spaces.find(e=>String(e.id)===String(button.dataset.spacePublish));
+   if(!space?.Jeton_portail)throw new Error("Préparez d'abord un jeton d'espace.");
+   const shared=spaceMemberRows(space,all).filter(m=>isTrue(m[SPACE_QUESTIONNAIRE_SHARE])).length;
+   if(!confirm(`Actualiser la synthèse publiée de « ${spaceName(space)} » ?\nLes noms et statuts seront visibles aux détenteurs du lien.\n${shared} lien(s) de saisie autorisé(s) seront transmis par le portail : leurs détenteurs pourront modifier les réponses correspondantes.\nLa révocation du lien du portail n'annule PAS les jetons de questionnaire déjà transmis.`))return;
+   const responses=rowsFromTable(await grist.docApi.fetchTable("REPONSES"));
+   const byId=new Map(campaigns.map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(space,all).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   const snapshot=creerPublicationSuivi(summary,spaceName(space),campaignName(campaigns[0]),spaceQuestionnaireLinks(summary));
+   await ensureSpacePublicationColumn();
+   await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,{Suivi_public_JSON:snapshot}]]);
+   await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON",snapshot);
+   status("Synthèse enregistrée et vérifiée dans PROD. Le lien peut être copié pour des tests d’accès.",false,true);
+   await renderSpaceManager(group);
+  }catch(err){status(`Publication : ${err?.message||err}`,true,true)}
+ });
+ // Vue exclusivement interne, sans transmission de jeton ni lien vers une réponse.
+ host.querySelectorAll("[data-space-preview]").forEach(button=>button.onclick=async()=>{
+  const id=String(button.dataset.spacePreview||"");
+  const space=spaces.find(e=>String(e.id)===id);
+  if(!space)return;
+  let box=host.querySelector("[data-space-preview-result]");
+  if(!box){box=document.createElement("div");box.dataset.spacePreviewResult="1";box.className="editor-section";host.appendChild(box)}
+  box.innerHTML='<p class="hint">Chargement du suivi interne…</p>';
+  try{
+   // Contrairement à fetchOptionalTable, l'échec de lecture ne doit jamais produire un faux statut « Pas commencé ».
+   const raw=await grist.docApi.fetchTable("REPONSES");
+   const responses=rowsFromTable(raw);
+   const byId=new Map(campaigns.map(c=>[String(c.id),c]));
+   const entries=spaceMemberRows(space,all).map(m=>({member:m,campaign:byId.get(memberRowId(m))}));
+   const summary=resumeEspace(entries,responses,responseMatchesCampaign,resultStatus);
+   box.innerHTML=`<div class="campaign-card"><div class="campaign-card-head"><strong>Suivi interne — ${esc(spaceName(space))}</strong><span class="badge">${summary.total} structure(s)</span></div>
+    <p class="hint">Prévisualisation réservée au Concepteur. Aucun lien d'espace public, aucun droit supplémentaire et aucun accès aux réponses détaillées.</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin:12px 0"><strong>Pas commencé : ${summary.notStarted}</strong><strong>En cours : ${summary.inProgress}</strong><strong>Complété : ${summary.completed}</strong></div>
+    <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th>Structure</th><th>État</th><th>Réponses enregistrées</th><th>Modification future</th></tr></thead><tbody>${summary.items.map(item=>`<tr><td>${esc(campaignParticipantLabel(item.campaign))}</td><td>${esc(resultStatusLabel(item.state))}</td><td>${item.count}</td><td>${isTrue(item.member.Peut_modifier)?"Prévue (non activée)":"Non"}</td></tr>`).join("")}</tbody></table></div>
+    <div class="form-actions"><button type="button" class="secondary-btn" data-close-space-preview>Fermer le suivi</button></div></div>`;
+   box.querySelector("[data-close-space-preview]").onclick=()=>box.remove();
+  }catch(error){box.innerHTML=`<p class="hint">Suivi indisponible : ${esc(error?.message||error)}. Aucun statut n'est affiché tant que les réponses ne sont pas lisibles.</p>`}
+  box.scrollIntoView({block:"nearest",behavior:"smooth"});
+ });
+ const run=async action=>{try{await action();await renderSpaceManager(group)}catch(err){status(`Espaces : ${err?.message||err}`,true,true)}};
+ $("#space-create-v440").onclick=()=>run(async()=>{
+  const name=String($("#space-new-name-v440").value||"").trim();if(!name)throw new Error("Indiquez un nom d’espace.");
+  if(spaces.some(e=>spaceName(e).toLocaleLowerCase()===name.toLocaleLowerCase()))throw new Error("Ce nom d’espace est déjà utilisé dans cette campagne.");
+  await applyDesignerActions([["AddRecord",SPACE_TABLE,null,{Nom:name,Campagne_Groupe:group,Version_Id:String(v.id),Actif:true}]]);
+ });
+ host.querySelectorAll("[data-space-rename]").forEach(b=>b.onclick=()=>run(async()=>{
+  const space=spaces.find(e=>String(e.id)===b.dataset.spaceRename),name=String(host.querySelector(`[data-space-title="${b.dataset.spaceRename}"]`)?.value||"").trim();
+  if(!space||!name)throw new Error("Nom d'espace invalide.");
+  if(spaces.some(e=>e.id!==space.id&&spaceName(e).toLocaleLowerCase()===name.toLocaleLowerCase()))throw new Error("Nom déjà utilisé.");
+  // Le nom figure dans le JSON public : l'ancien instantané doit être invalidé.
+  const changes={Nom:name};
+  if(name!==spaceName(space)&&Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON"))changes.Suivi_public_JSON="";
+  await applyDesignerActions([["UpdateRecord",SPACE_TABLE,space.id,changes]]);
+  if(Object.prototype.hasOwnProperty.call(changes,"Suivi_public_JSON"))await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON","");
+ }));
+ host.querySelectorAll("[data-space-remove]").forEach(b=>b.onclick=()=>run(async()=>{
+  const space=spaces.find(e=>String(e.id)===b.dataset.spaceRemove);if(!space)return;
+  if(!confirm(`Supprimer l'espace « ${spaceName(space)} » et ses rattachements ?\nAucune campagne ni réponse ne sera supprimée.`))return;
+  const actions=[...spaceMemberRows(space,all).map(m=>["RemoveRecord",SPACE_MEMBERS,m.id]),["RemoveRecord",SPACE_TABLE,space.id]];
+  await applyDesignerActions(actions);
+ }));
+ host.querySelectorAll("[data-space-save]").forEach(b=>b.onclick=()=>run(async()=>{
+  // Relecture obligatoire pour empêcher les doubles rattachements si un autre éditeur a modifié l'espace.
+  const fresh=await loadSpaceTables(),space=spaceRowsFor(group,fresh).find(e=>String(e.id)===b.dataset.spaceSave);
+  if(!space)throw new Error("Espace supprimé entre-temps. Rechargez.");
+  const relevant=spaceRowsFor(group,fresh),owned=spaceMemberRows(space,fresh),ownedIds=new Set(owned.map(memberRowId));
+  const checked=[...host.querySelectorAll(`[data-space-check="${space.id}"]:checked`)].map(input=>String(input.value));
+  const candidate=new Set(checked);
+  verifierRattachements({
+   selection:checked,
+   liensCampagne:spaceCampaignRows(group).map(c=>c.id),
+   rattachements:relevant.flatMap(e=>spaceMemberRows(e,fresh).map(m=>({lienId:memberRowId(m),espaceId:e.id}))),
+   espaceId:space.id
+  });
+  const actions=[];
+  for(const m of owned)if(!candidate.has(memberRowId(m)))actions.push(["RemoveRecord",SPACE_MEMBERS,m.id]);
+  for(const id of candidate){
+   const existing=owned.find(m=>memberRowId(m)===id),edit=!!host.querySelector(`[data-space-edit="${space.id}"][value="${id}"]:checked`);
+   const share=!!host.querySelector(`[data-space-share="${space.id}"][value="${id}"]:checked`);
+   if(existing){
+    const changes={};
+    if(isTrue(existing.Peut_modifier)!==edit)changes.Peut_modifier=edit;
+    if(isTrue(existing[SPACE_QUESTIONNAIRE_SHARE])!==share)changes[SPACE_QUESTIONNAIRE_SHARE]=share;
+    if(Object.keys(changes).length)actions.push(["UpdateRecord",SPACE_MEMBERS,existing.id,changes]);
+   }
+   else actions.push(["AddRecord",SPACE_MEMBERS,null,{Espace_Id:space.id,Campagne_Lien_Id:Number(id),Peut_modifier:false,[SPACE_QUESTIONNAIRE_SHARE]:false}]);
+  }
+  // Ajouter ou retirer un membre change le périmètre visible du portail.
+  // Invalidation dans le même lot pour éviter de laisser un ancien suivi accessible.
+  const perimetreChange=doitInvaliderPublication(actions,SPACE_MEMBERS);
+  if(perimetreChange && Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")){
+   actions.push(["UpdateRecord",SPACE_TABLE,space.id,{Suivi_public_JSON:""}]);
+  }
+  if(actions.length)await applyDesignerActions(actions);
+  if(perimetreChange && Object.prototype.hasOwnProperty.call(space,"Suivi_public_JSON")){
+   await verifySpaceColumnAndValue(space.id,"Suivi_public_JSON","");
+  }
+  status(perimetreChange
+   ? "Rattachements enregistrés. Ancien suivi désactivé : republiez le suivi de l'espace avant de recopier son lien."
+   : "Rattachements enregistrés dans PROD. Le suivi reste inchangé si seules les options futures ont été modifiées.",false,true);
+ }));
+}
+function initSpacesCampaignButtons(){
+ const content=$("#campaigns-content");if(!content)return;
+ content.querySelectorAll("[data-space-open-v440]").forEach(b=>b.onclick=async()=>{
+  const group=b.dataset.spaceOpenV440,host=$("#space-manager-v440");if(!host)return;
+  host.dataset.group=group;host.hidden=false;host.innerHTML='<p class="hint">Chargement des espaces…</p>';
+  await renderSpaceManager(group);
+  host.scrollIntoView({block:"nearest",behavior:"smooth"});
+ });
+}
+
+// Portail V4.4.5 TEST — diffusion administrative des liens, créés par formule native Grist.
+function distributionData(group,all){
+ const campaigns=spaceCampaignRows(group),spaces=spaceRowsFor(group,all);
+ const members=spaces.flatMap(space=>spaceMemberRows(space,all));
+ const validated=verifierDiffusion({liens:campaigns,espaces:spaces,membres:members});
+ const indexed=new Map();
+ for(const [linkId,spaceId] of validated.attribution){
+  indexed.set(linkId,spaces.find(e=>String(e.id)===spaceId));
+ }
+ return {campaigns,spaces,indexed};
+}
+async function renderSpaceDistribution(group){
+ const host=$("#space-manager-v440");if(!host)return;
+ let all;try{all=await loadSpaceTables()}catch(err){host.innerHTML=`<p class="hint">${esc(err.message)}</p>`;return}
+ let data;try{data=distributionData(group,all)}catch(err){host.innerHTML=`<p class="hint">${esc(err.message)}</p>`;return}
+ const {campaigns,spaces,indexed}=data;
+ const ungrouped=campaigns.filter(c=>!indexed.has(String(c.id)));
+ const grouped=campaigns.filter(c=>indexed.has(String(c.id)));
+ host.innerHTML=`<div class="editor-section"><h3>Diffusion des liens — ${esc(campaignName(campaigns[0]||{}))}</h3>
+ <p class="hint">Un lien par espace et un lien direct par structure non rattachée. Les liens internes aux espaces restent accessibles uniquement depuis chaque portail.</p>
+ <div class="gr-distribution-top"><button type="button" class="secondary-btn gr-action-primary" id="space-distribution-copy-all-v441">Copier tous les liens de diffusion</button><button type="button" class="secondary-btn" id="space-distribution-export-targeted-v441">Exporter la diffusion (.xlsx)</button><span class="hint" id="space-distribution-count-v441" aria-live="polite"></span></div>
+ <div class="form-row gr-distribution-filters"><label class="field">Rechercher un destinataire<input id="space-distribution-search-v441" placeholder="Structure ou service…" autocomplete="off"></label>
+ <label class="field">Afficher<select id="space-distribution-filter-v441"><option value="all">Tous</option><option value="space">Espaces</option><option value="direct">Liens directs</option></select></label></div>
+ <div id="space-distribution-rows-v441"></div>
+ <div class="form-actions"><button class="secondary-btn" type="button" id="space-distribution-export-v441">Export confidentiel de tous les liens individuels (.xlsx) — administrateur</button><button class="secondary-btn" type="button" id="space-distribution-close-v441">Fermer</button></div>
+ <p class="hint">L'export complet contient des jetons de saisie : à conserver et diffuser uniquement à des personnes autorisées.</p></div>`;
+ const render=()=>{
+  const search=String($("#space-distribution-search-v441")?.value||"").trim().toLocaleLowerCase(),filter=$("#space-distribution-filter-v441")?.value||"all";
+  const rows=[...spaces.map(space=>({type:"space",name:spaceName(space),detail:`${spaceMemberRows(space,all).length} destinataire(s)`,space})),...ungrouped.map(c=>({type:"direct",name:campaignParticipantLabel(c),detail:campaignParticipantValue(c)||"",c}))];
+  const show=rows.filter(r=>(filter==="all"||r.type===filter)&&`${r.name} ${r.detail}`.toLocaleLowerCase().includes(search));
+  const target=$("#space-distribution-rows-v441");if(!target)return;
+  const count=$("#space-distribution-count-v441");if(count)count.textContent=`${spaces.length} espace(s) · ${ungrouped.length} lien(s) direct(s) · ${show.length} affiché(s)`;
+  target.innerHTML=show.map(r=>`<div class="campaign-link-row gr-distribution-row"><div class="gr-distribution-name"><strong>${esc(r.name)}</strong><div class="hint">${r.type==="space"?"Espace · ":"Lien direct · "}${esc(r.detail)}</div></div>${r.type==="space"?(r.space.Jeton_portail&&r.space.Suivi_public_JSON&&active(r.space)?`<button type="button" class="secondary-btn" data-distribution-copy-space="${esc(String(r.space.id))}">Copier le lien espace</button>`:'<span class="hint">Préparer le jeton et publier le suivi</span>'):`<button type="button" class="secondary-btn" data-distribution-copy-v441="${esc(String(r.c.id))}">Copier le lien</button>`}</div>`).join("")||'<p class="hint">Aucun destinataire.</p>';
+  target.querySelectorAll("[data-distribution-copy-space]").forEach(b=>b.onclick=async()=>{
+   try{
+    const space=spaces.find(s=>String(s.id)===String(b.dataset.distributionCopySpace));
+    if(!space)throw new Error("Espace introuvable.");
+    await copySpaceLink(space);
+    status(`Lien du portail de « ${spaceName(space)} » copié (singlePage).`,false,true);
+   }catch(e){status(`Copie de l'espace : ${e?.message||e}`,true,true)}
+  });
+  target.querySelectorAll("[data-distribution-copy-v441]").forEach(b=>b.onclick=async()=>{
+   const c=ungrouped.find(x=>String(x.id)===b.dataset.distributionCopyV441),url=c?campaignAccessUrl(c):"";
+   if(!url){status("Le lien de ce destinataire est indisponible.",true,true);return}
+   try{await navigator.clipboard.writeText(url);status("Lien copié.",false,true)}catch(e){status(`Copie impossible : ${e?.message||e}`,true,true)}
+  });
+ };
+ $("#space-distribution-search-v441").oninput=render;
+ $("#space-distribution-filter-v441").onchange=render;
+ $("#space-distribution-close-v441").onclick=()=>{host.hidden=true;host.innerHTML=""};
+ const diffusionEntries=async()=>{
+  // Recharger à chaque copie : ne jamais diffuser une attribution ou un jeton devenu obsolète.
+  const current=distributionData(group,await loadSpaceTables());
+  const published=[];
+  for(const space of current.spaces){
+   if(!space.Jeton_portail||!space.Suivi_public_JSON||!active(space))throw new Error(`Le suivi de « ${spaceName(space)} » n'est pas publié : diffusion interrompue.`);
+   published.push({name:spaceName(space),url:await spacePublishedLink(space)});
+  }
+  const direct=current.campaigns.filter(c=>!current.indexed.has(String(c.id))).map(c=>({name:campaignParticipantLabel(c),url:campaignAccessUrl(c)}));
+  return construireDiffusion(published,direct);
+ };
+ $("#space-distribution-copy-all-v441").onclick=async()=>{
+  const button=$("#space-distribution-copy-all-v441");button.disabled=true;
+  try{
+   const entries=await diffusionEntries();
+   if(!entries.length)throw new Error("Aucun lien de diffusion disponible.");
+   await navigator.clipboard.writeText(texteDiffusion(entries));
+   status(`${entries.length} lien(s) de diffusion copiés : espaces + structures hors espace. Contenu confidentiel.`,false,true);
+  }catch(e){status(`Copie groupée impossible : ${e?.message||e}`,true,true)}finally{button.disabled=false}
+ };
+ $("#space-distribution-export-targeted-v441").onclick=async()=>{
+  const button=$("#space-distribution-export-targeted-v441");button.disabled=true;
+  try{
+   const entries=await diffusionEntries();
+   if(!entries.length)throw new Error("Aucun lien de diffusion disponible.");
+   const rows=[["Type de diffusion","Destinataire","Lien"],...entries.map(e=>[e.type,e.name,e.url])];
+   downloadBlob(writeWorkbook([{name:"Diffusion",rows}]),`Diffusion_espaces_${safeVar(campaignName(campaigns[0]||{}))}_${new Date().toISOString().slice(0,10)}.xlsx`);
+   status(`${entries.length} lien(s) de diffusion exportés : fichier confidentiel.`,false,true);
+  }catch(e){status(`Export de diffusion impossible : ${e?.message||e}`,true,true)}finally{button.disabled=false}
+ };
+ $("#space-distribution-export-v441").onclick=()=>{
+  try{
+   const rows=[["Campagne","Destinataire","Type de diffusion","Espace","Code / valeur","Lien personnalisé"]];
+   // Export ADMINISTRATIF : y compris les liens des structures regroupées.
+   for(const c of campaigns){const space=indexed.get(String(c.id));rows.push([campaignName(c),campaignParticipantLabel(c),space?"Dans un espace (lien individuel confidentiel)":"Direct",space?spaceName(space):"",campaignParticipantValue(c)||"",campaignAccessUrl(c)||""])}
+   const filename=`Diffusion_complete_${safeVar(campaignName(campaigns[0]||{}))}_${new Date().toISOString().slice(0,10)}.xlsx`;
+   downloadBlob(writeWorkbook([{name:"Liens personnalisés",rows}]),filename);
+   status("Export complet généré : document confidentiel contenant des liens de saisie.",false,true);
+  }catch(e){status(`Export impossible : ${e?.message||e}`,true,true)}
+ };
+ render();
+}
+function initSpaceDistributionButtons(){
+ const content=$("#campaigns-content");if(!content)return;
+ content.querySelectorAll("[data-distribution-open-v441]").forEach(b=>b.onclick=async()=>{
+  const host=$("#space-manager-v440");if(!host)return;
+  host.hidden=false;host.innerHTML='<p class="hint">Chargement de la diffusion…</p>';
+  await renderSpaceDistribution(b.dataset.distributionOpenV441);
+  host.scrollIntoView({block:"nearest",behavior:"smooth"});
+ });
+}
+
 async function updateCampaignGroup(group){const rows=campaignVersionRows().filter(c=>campaignGroupCode(c)===String(group)),name=String($("#campaign-name")?.value||"").trim(),url=String($("#campaign-url")?.value||"").trim(),openDate=campaignDateValue("#campaign-open-date"),limitDate=campaignDateValue("#campaign-limit-date");if(!rows.length)throw new Error("Campagne introuvable.");if(!name)throw new Error("Indiquez un nom de campagne.");if(!url)throw new Error("Indiquez l’adresse de la page répondant Grist.");try{const u=new URL(url);if(!/^https?:$/.test(u.protocol))throw 0}catch{throw new Error("L’adresse de la page répondant n’est pas valide.")}if(campaignIsUnique(rows[0]))await ensureCampaignColumns();const idMain=String($("#campaign-identity-main")?.value||"").trim(),idDetail=String($("#campaign-identity-detail")?.value||"").trim();if(idMain&&idMain===idDetail)throw new Error("Choisissez deux variables différentes.");await applyDesignerActions(rows.map(c=>["UpdateRecord","CAMPAGNES",Number(c.id),{Nom:name,URL_reprise:url,Date_ouverture:openDate,Date_limite:limitDate,...(campaignIsUnique(c)?{Suivi_identification_question:idMain?Number(idMain):null,Suivi_identification_detail:idDetail?Number(idDetail):null}:{})}]));await reload();renderCampaigns();status("Campagne enregistrée.",false,true)}
 async function setCampaignGroupStatus(group,nextStatus){const rows=campaignVersionRows().filter(c=>campaignGroupCode(c)===String(group||""));if(!rows.length)throw new Error("Campagne introuvable.");const current=campaignStatus(rows[0]),next=String(nextStatus||"");if(!["Ouverte","Clôturée"].includes(next))throw new Error("État de campagne invalide.");const verb=next==="Clôturée"?"clôturer":current==="Clôturée"?"réouvrir":"ouvrir";if(!confirm(`${verb.charAt(0).toUpperCase()+verb.slice(1)} la campagne « ${campaignName(rows[0])} » ?`))return;await applyDesignerActions(rows.map(c=>["UpdateRecord","CAMPAGNES",Number(c.id),{Statut:next,Actif:next==="Ouverte"}]));await reload();renderCampaigns();status(next==="Ouverte"?"Campagne ouverte : les liens répondants sont utilisables.":"Campagne clôturée : les liens restent identifiables mais toute saisie est bloquée.",false,true)}
 async function deleteCampaignAccess(id){const c=(S.data.CAMPAGNES||[]).find(x=>String(x.id)===String(id));if(!c)throw new Error("Lien introuvable.");const who=campaignParticipantLabel(c);if(!confirm(`Supprimer le lien de « ${who} » ?\n\nLe jeton sera supprimé. Les réponses déjà enregistrées ne seront pas supprimées.`))return;await applyDesignerActions([["RemoveRecord","CAMPAGNES",Number(c.id)]]);await reload();renderCampaigns();status(`Lien de « ${who} » supprimé.`,false,true)}
