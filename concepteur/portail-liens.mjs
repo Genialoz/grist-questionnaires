@@ -1,8 +1,8 @@
 // Gristionnaire PROD — configuration à finaliser après création de la page du portail.
-// PORTAIL_PAGE_PROD=0 bloque volontairement les liens tant que la page n'est pas connue.
-export const PORTAIL_PAGE_PROD = 0;
+// Page officielle du portail PROD : 60. Ne pas utiliser la page 61 du TEST.
+export const PORTAIL_PAGE_PROD = 60;
 export const PORTAIL_LINK_COLUMN = 'Lien_portail';
-export const PORTAIL_LINK_FORMULA = 'SELF_HYPERLINK(page=0, LinkKey_Portail=$Jeton_portail) + "&style=singlePage" if $Jeton_portail and $Suivi_public_JSON and $Actif else ""';
+export const PORTAIL_LINK_FORMULA = 'SELF_HYPERLINK(page=60, LinkKey_Portail=$Jeton_portail) + "&style=singlePage" if $Jeton_portail and $Suivi_public_JSON and $Actif else ""';
 
 export function verifierLienPortailGrist(value, jeton, page = PORTAIL_PAGE_PROD) {
   if (!Number.isInteger(page) || page < 1) {
