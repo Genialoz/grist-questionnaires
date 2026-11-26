@@ -836,3 +836,12 @@ body[data-module="concepteur"] .td-canvas-preview .preview-data-table td {min-wi
   .campaign-card .gr-campaign-actions{align-items:stretch}
   .campaign-card .gr-more-actions{width:100%}
 }
+
+/* V4.4.16 TEST : repère visuel des fiches et sous-fiches. */
+.fiche-identifier-settings{display:grid;gap:9px;max-width:420px;padding:12px 14px;margin:14px 0;border:1px solid #d8e0e9;border-radius:10px;background:rgba(234,240,247,.48)}
+.fiche-identifier-settings .check{display:flex;align-items:center;gap:9px;margin:0}
+.fiche-identifier-settings .fiche-identifier-prefix-label{font-weight:600;margin:2px 0 -5px}
+.fiche-identifier-settings input[type=text]{width:100%;max-width:320px;box-sizing:border-box}
+.fiche-identifier-settings input:disabled{opacity:.58;cursor:not-allowed;background:#eef1f5}
+.fiche-identifier-settings .fiche-identifier-preview{padding:8px 10px;border-radius:7px;background:#fff;border:1px solid #e1e6ed}
+@media(max-width:520px){.fiche-identifier-settings{max-width:100%;padding:10px}}
